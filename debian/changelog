@@ -1,0 +1,47 @@
+obit (22JUN10k-1ubuntu1ppa1~trusty1) trusty; urgency=low
+
+  * Update to Obit 22JUN10k.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Tue, 11 Nov 2015 14:38:12 +0100
+
+obit (22JUN10j-1ubuntu1ppa1~precise1) precise; urgency=low
+
+  * Update to Obit 22JUN10j.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Thu, 25 Jun 2015 14:23:11 +0200
+
+obit (22JUN10i-1ubuntu3ppa1~precise4) precise; urgency=low
+
+  * Add -lm when linking Obit.so.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Fri, 06 Mar 2015 13:52:17 +0100
+
+obit (22JUN10i-1ubuntu3ppa1~trusty1) trusty; urgency=low
+
+  * Adjust version number.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Fri, 06 Mar 2015 13:16:40 +0100
+
+obit (22JUN10i-1ubuntu3) precise; urgency=low
+
+  * Add missing include.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Fri, 06 Mar 2015 12:13:11 +0100
+
+obit (22JUN10i-1ubuntu2) precise; urgency=low
+
+  * Add missing include.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Fri, 06 Mar 2015 11:59:10 +0100
+
+obit (22JUN10i-1ubuntu1) precise; urgency=low
+
+  * Fix dependencies.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Fri, 06 Mar 2015 11:09:58 +0100
+
+obit (22JUN10i-1) precise; urgency=low
+
+  * Initial release.
+
+ -- Mark Kettenis <kettenis@jive.nl>  Thu, 05 Mar 2015 12:08:10 +0100
