@@ -1,10 +1,10 @@
-obit (22JUN10k-1kern1) trusty; urgency=medium
+obit (22JUN10k-1ubuntu2ppa1~xenial1) xenial; urgency=low
 
-  * kern release
+  * Fix building with libgsl2.
 
- -- Gijs Molenaar (launchpad ppa build key) <gijs@pythonic.nl>  Fri, 22 Jul 2016 11:18:02 +0200
+ -- Mark Kettenis <kettenis@jive.nl>  Mon, 25 Apr 2016 17:11:07 +0200
 
-obit (22JUN10k-1ubuntu1ppa1~trusty1) trusty; urgency=low
+obit (22JUN10k-1ubuntu1ppa1~xenial1) xenial; urgency=low
 
   * Update to Obit 22JUN10k.
 
