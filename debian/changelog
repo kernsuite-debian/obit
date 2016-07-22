@@ -1,3 +1,9 @@
+obit (22JUN10k-1kern1) xenial; urgency=medium
+
+  * build for kern
+
+ -- Gijs Molenaar (launchpad ppa build key) <gijs@pythonic.nl>  Fri, 22 Jul 2016 14:06:22 +0200
+
 obit (22JUN10k-1ubuntu2ppa1~xenial1) xenial; urgency=low
 
   * Fix building with libgsl2.
