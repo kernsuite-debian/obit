@@ -1,3 +1,9 @@
+obit (22JUN10k-1kern1) trusty; urgency=medium
+
+  * kern release
+
+ -- Gijs Molenaar (launchpad ppa build key) <gijs@pythonic.nl>  Fri, 22 Jul 2016 11:18:02 +0200
+
 obit (22JUN10k-1ubuntu1ppa1~trusty1) trusty; urgency=low
 
   * Update to Obit 22JUN10k.
