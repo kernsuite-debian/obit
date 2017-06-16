@@ -1887,6 +1887,7 @@ static void NLFit (NLFitArg *arg)
   gsl_multifit_fdfsolver *solver=NULL;
   gsl_matrix *covar=NULL;
   gsl_vector *work=NULL;
+  gsl_matrix *J;
 #endif /* HAVE_GSL */ 
  
   /* Initialize output */
@@ -1998,6 +1999,8 @@ static void NLFit (NLFitArg *arg)
       return;
     }
     
+    J = gsl_matrix_alloc(nterm, nterm);
+
     /* normalized Chi squares */
     if (nvalid>nterm) {
       sumwt = (ofloat)gsl_blas_dnrm2(solver->f);
@@ -2014,7 +2017,12 @@ static void NLFit (NLFitArg *arg)
       
       /* Errors wanted? */
       if (arg->doError) {
-	gsl_multifit_covar (solver->J, 0.0, covar);
+#ifdef HAVE_GSL_MULTIFIT_FDFSOLVER_JAC
+	gsl_multifit_fdfsolver_jac(solver, J);
+#else
+	gsl_matrix_memcpy(J, solver->J);
+#endif
+	gsl_multifit_covar (J, 0.0, covar);
 	for (i=0; i<nterm; i++) {
 	  arg->coef[arg->nterm+i] = sqrt(gsl_matrix_get(covar, i, i));
 	  /* Clip to sanity range */
@@ -2026,6 +2034,8 @@ static void NLFit (NLFitArg *arg)
 	 for (i=1; i<nterm; i++) arg->coef[i] = MAX(-3.0, MIN(3.0,arg->coef[i])); */
       
     }  /* End if better than lower order */
+
+    gsl_matrix_free(J);
 
     /* Is this good enough? */
     isDone = (arg->ChiSq<0.0) || (arg->ChiSq<=arg->maxChiSq) || (chi2Test>arg->ChiSq);
@@ -2073,6 +2083,7 @@ static void NLFitBP (NLFitArg *arg)
   gsl_multifit_fdfsolver *solver;
   gsl_matrix *covar;
   gsl_vector *work;
+  gsl_matrix *J;
 #endif /* HAVE_GSL */ 
  
   /* determine weighted average, count valid data */
@@ -2148,12 +2159,19 @@ static void NLFitBP (NLFitArg *arg)
   
   /* Errors wanted? */
   if (arg->doError) {
-    gsl_multifit_covar (solver->J, 0.0, covar);
+    J = gsl_matrix_alloc(nterm, nterm);
+#ifdef HAVE_GSL_MULTIFIT_FDFSOLVER_JAC
+    gsl_multifit_fdfsolver_jac(solver, J);
+#else
+    gsl_matrix_memcpy(J, solver->J);
+#endif
+    gsl_multifit_covar (J, 0.0, covar);
     for (i=0; i<nterm; i++) {
       arg->coef[arg->nterm+i] = sqrt(gsl_matrix_get(covar, i, i));
       /* Clip to sanity range
       arg->coef[arg->nterm+i] = MAX (-1.0e5, MIN (1.0e5, arg->coef[arg->nterm+i])); */
     }
+    gsl_matrix_free(J);
   } /* end of get errors */
   
   
