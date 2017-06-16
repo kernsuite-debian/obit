@@ -1,0 +1,20 @@
+--- obit-22JUN10i.orig/python/UV.inc
++++ obit-22JUN10i/python/UV.inc
+@@ -36,6 +36,7 @@
+ #include "ObitUVUtil.h"
+ #include "ObitUVEdit.h"
+ #include "ObitUVWeight.h"
++#include "ObitTableCLUtil.h"
+ #include "ObitTableSNUtil.h"
+ #include "ObitTableNXUtil.h"
+ #include "ObitTableFG.h"
+--- obit-22JUN10i.orig/python/Obit_wrap.c
++++ obit-22JUN10i/python/Obit_wrap.c
+@@ -9742,6 +9742,7 @@ typedef struct {
+ #include "ObitUVUtil.h"
+ #include "ObitUVEdit.h"
+ #include "ObitUVWeight.h"
++#include "ObitTableCLUtil.h"
+ #include "ObitTableSNUtil.h"
+ #include "ObitTableNXUtil.h"
+ #include "ObitTableFG.h"

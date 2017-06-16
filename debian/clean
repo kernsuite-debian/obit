@@ -1,0 +1,15 @@
+config.log
+config.status
+Makefile
+dummy_cfitsio/Makefile
+dummy_cfitsio/fitsio.o
+dummy_cfitsio/libcfitsio.a
+dummy_xmlrpc/Makefile
+dummy_xmlrpc/xmlrpc.o
+dummy_xmlrpc/libxmlrpc.a
+python/Makefile
+python/setup.py
+python/setupdata.py
+python/Obit-1.0.egg-info
+src/Makefile
+tasks/Makefile

@@ -1,0 +1,2 @@
+python/*.py usr/lib/obit/python
+python/*.so usr/lib/obit/python
