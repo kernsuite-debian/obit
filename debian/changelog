@@ -1,3 +1,9 @@
+obit (22JUN10l-1kern1) UNRELEASED; urgency=medium
+
+  * Update to 22JUN10l 
+
+ -- S Bourke <s.bourke5@gmail.com>  Mon, 03 Jul 2017 14:34:01 +0200
+
 obit (22JUN10k-1kern1) xenial; urgency=medium
 
   * build for kern
