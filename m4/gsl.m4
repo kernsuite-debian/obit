@@ -82,6 +82,7 @@ fi
 if test $ac_have_gsl = yes; then
 	AC_DEFINE(HAVE_GSL, 1, [Define to 1 if GSL is available.])
 fi
+AC_CHECK_FUNCS(gsl_multifit_fdfsolver_jac)
 GSL_LIBS="$LIBS"
 CFLAGS="$ac_gsl_saved_CFLAGS"
 LDFLAGS="$ac_gsl_saved_LDFLAGS"

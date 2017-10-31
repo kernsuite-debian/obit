@@ -640,7 +640,7 @@ void ObitAIPSCatUVGetDesc (ObitUVDesc *desc, gchar *buffer,
   /* WCS labels for random parameters. */
   for (i=0; i<desc->nrparm; i++) {
     g_memmove (desc->ptype[i],  &header[myDHDR.KHPTP+i*2], 8);
-    desc->ctype[i][9] = 0; /* null terminate */
+    desc->ptype[i][9] = 0; /* null terminate */
   }
 
   /*  Sort order */
