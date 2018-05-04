@@ -5,7 +5,7 @@ Maintainer: Mark Kettenis <kettenis@jive.nl>
 Build-Depends:
  debhelper (>=9),
  libglib2.0-dev,
- libcfitsio3-dev,
+ libcfitsio3-dev | libcfitsio3-dev, 
  libgsl0-dev,
  python-dev
 Standards-Version: 3.9.7
