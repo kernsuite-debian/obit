@@ -1,3 +1,10 @@
+obit (22JUN10l-1kern2) bionic; urgency=medium
+
+  * build for bionic
+  * fix dependency
+
+ -- KERN packaging <packaging@kernsuite.info>  Fri, 04 May 2018 11:22:32 +0200
+
 obit (22JUN10l-1kern1) xenial; urgency=medium
 
   * Update to 22JUN10l 
