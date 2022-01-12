@@ -1,6 +1,6 @@
-/* $Id: ObitUVCal.c 109 2009-06-10 12:11:14Z bill.cotton $       */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,8 +26,8 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
-#include "ObitUVCal.h"
 #include "ObitUVDesc.h"
+#include "ObitUVCal.h"
 #include "ObitUVSel.h"
 #include "ObitUVCalCalibrate.h"
 #include "ObitUVCalSelect.h"
@@ -206,10 +206,13 @@ ObitUVCal* ObitUVCalClone  (ObitUVCal *in, ObitUVCal *out)
  * Creates necessary structures reading what ever calibration
  * files are needed.
  * Output descriptor modified to reflect data selection.
- * \param in      Object CFto initialize.
+ * \param in      Object to initialize.
  * \param sel     Data selector.
  * \param inDesc  Input  data descriptor.
  * \param outDesc Output data descriptor (after transformations/selection).
+ *                on input, info member "KeepSou":
+ * \li "KeepSou"  OBIT_bool (1,1,1) If present and True keep multisource input
+ *                as multisource output even if only one source selected
  * \param err     ObitError stack.
  */
 void ObitUVCalStart (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc, 
@@ -217,6 +220,9 @@ void ObitUVCalStart (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
 {
   olong i, ichan, ifreq, iif, istok, nfreq, nif, nstok, sid;
   olong incs, incf, incif;
+  gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitInfoType type;
+  gboolean KeepSou=FALSE;
   gchar *routine = "ObitUVCalStart";
 
   /* error checks */
@@ -267,12 +273,14 @@ void ObitUVCalStart (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
   in->numChan   = sel->numberChann;
   in->bChan     = sel->startChann;
   in->eChan     = sel->startChann + sel->numberChann - 1;
-  in->numIF     = inDesc->inaxes[inDesc->jlocif];
+  if (inDesc->jlocif>=0) in->numIF = inDesc->inaxes[inDesc->jlocif];
+  else                   in->numIF = 1;
   in->numIF     = sel->numberIF;
   in->bIF       = sel->startIF;
   in->eIF       = sel->startIF + sel->numberIF - 1;
   in->dropSubA  = sel->dropSubA;
   in->alpha     = sel->alpha;
+  in->alphaRefF = sel->alphaRefF;
 
   /* Get source information - is there a source table, or get from header? */
   if (in->SUTable) { /* Read table */
@@ -294,8 +302,11 @@ void ObitUVCalStart (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
   }
 
   /* If only one source selected make sure no "SOURCE" 
-     random parameter is written */
-  if (((sel->numberSourcesList==1) || (in->SUTable==NULL)) && (outDesc->ilocsu>=0))
+     random parameter is written.  
+     This can be overriden by outDesc->info member KeepSou */
+  ObitInfoListGetTest(outDesc->info, "KeepSou", &type, dim, &KeepSou);
+  if (((sel->numberSourcesList==1) || (in->SUTable==NULL)) && 
+      (outDesc->ilocsu>=0)  && !KeepSou)
     strncpy (outDesc->ptype[outDesc->ilocsu], "REMOVED ", UVLEN_KEYWORD); 
 
   /* Create AntennaLists */
@@ -322,7 +333,7 @@ void ObitUVCalStart (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
 	    ichan = iif + ifreq*nif;
 	  /* Which correlation? */
 	  i = iif*incif + ifreq*incf + istok*incs;
-	  in->SpecIndxWork[i] = (ofloat)pow((double)(in->myDesc->freqArr[ichan]/in->myDesc->freq), 
+	  in->SpecIndxWork[i] = (ofloat)pow((double)(in->myDesc->freqArr[ichan]/in->alphaRefF), 
 					    -(double)in->alpha);
 	}
       }
@@ -337,10 +348,15 @@ void ObitUVCalStart (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
       
       /* Make sure polarization cal present */
       if (sel->doPolCal) {
-	if (in->antennaLists[i]->polType == OBIT_UVPoln_NoCal)
-	  Obit_log_error(err, OBIT_Error, "No polarization Cal info for %s", in->name);
-	if (in->antennaLists[i]->polType == OBIT_UVPoln_Unknown)
-	  Obit_log_error(err, OBIT_Error, "Unknown polarization Cal info for %s", in->name);
+	/* if PDVer>=0 check for PD table, else check AN table */
+	if ((in->PDVer>=0) && (in->PDTable==NULL)) {
+	  Obit_log_error(err, OBIT_Error, "No polarization Cal (PD Table) for %s", in->name);
+	} else if (in->PDVer<0) { /* IF calibration from AN table */
+	  if (in->antennaLists[i]->polType == OBIT_UVPoln_NoCal)
+	    Obit_log_error(err, OBIT_Error, "No polarization Cal info for %s", in->name);
+	  if (in->antennaLists[i]->polType == OBIT_UVPoln_Unknown)
+	    Obit_log_error(err, OBIT_Error, "Unknown polarization Cal info for %s", in->name);
+	}
       }
     } /* End loop over subarrays */
   }
@@ -387,7 +403,7 @@ gboolean  ObitUVCalApply (ObitUVCal *in, ofloat *recIn,
 {
   gboolean OK;
   ofloat *visIn, *visOut, time, scl;
-  olong  i,nrparm, ant1, ant2;
+  olong  i,nrparm, ant1, ant2, suba;
   ObitUVDesc *desc;
   ObitUVSel *sel;
 
@@ -409,11 +425,13 @@ gboolean  ObitUVCalApply (ObitUVCal *in, ofloat *recIn,
 
   /* Get time and baseline */
   time = recIn[desc->iloct];
-  ant1 = (olong)(recIn[desc->ilocb]/256);
-  ant2 = (olong)(recIn[desc->ilocb] - ant1*256);
+  ObitUVDescGetAnts(desc, recIn, &ant1, &ant2, &suba);
 
   /* Remove subarray info? */
-  if (in->dropSubA) recIn[desc->ilocb] = ant2 + ant1*256;
+  if (in->dropSubA) {
+    suba = 1;
+    ObitUVDescSetAnts(desc, recIn, ant1, ant2, suba);
+  }
 
   /* Is this visibility wanted? */
   OK = ObitUVCalWant (in, time, ant1, ant2, recIn, visIn, err);
@@ -430,8 +448,8 @@ gboolean  ObitUVCalApply (ObitUVCal *in, ofloat *recIn,
   OK = ObitUVCalSelect(in, recIn, visIn, visOut,err);
 
   /* If selecting in IF, scale U,V.W */
-  if (sel->startIF>1) {
-    scl = desc->freqIF[sel->startIF-1] / desc->freq;
+  if (sel->ifsel1>0) {
+    scl = desc->freqIF[sel->ifsel1] / desc->freq;
     recOut[desc->ilocu] *= scl;
     recOut[desc->ilocv] *= scl;
     recOut[desc->ilocw] *= scl;
@@ -465,17 +483,18 @@ void ObitUVCalShutdown (ObitUVCal *in, ObitErr *err)
   if (in->doBP)   ObitUVCalBandpassShutdown(in, err);
   if (in->doPol)  ObitUVCalPolarizationShutdown(in, err);
 
-  /* Unref tables */
-  in->SUTable = ObitTableUnref((ObitTable*)in->SUTable);
-  in->BLTable = ObitTableUnref((ObitTable*)in->BLTable);
-  in->BPTable = ObitTableUnref((ObitTable*)in->BPTable);
-  in->FGTable = ObitTableUnref((ObitTable*)in->FGTable);
-  in->CLTable = ObitTableUnref((ObitTable*)in->CLTable);
-  in->SNTable = ObitTableUnref((ObitTable*)in->SNTable);
-  in->CQTable = ObitTableUnref((ObitTable*)in->CQTable);
+  /* Unref tables - NULL pointers to avoid multiple unref */
+  in->SUTable = ObitTableUnref((ObitTable*)in->SUTable); in->SUTable=NULL;
+  in->BLTable = ObitTableUnref((ObitTable*)in->BLTable); in->BLTable=NULL;
+  in->BPTable = ObitTableUnref((ObitTable*)in->BPTable); in->BPTable=NULL;
+  in->FGTable = ObitTableUnref((ObitTable*)in->FGTable); in->FGTable=NULL;
+  in->CLTable = ObitTableUnref((ObitTable*)in->CLTable); in->CLTable=NULL;
+  in->SNTable = ObitTableUnref((ObitTable*)in->SNTable); in->SNTable=NULL;
+  in->CQTable = ObitTableUnref((ObitTable*)in->CQTable); in->CQTable=NULL;
+  in->PDTable = ObitTableUnref((ObitTable*)in->PDTable); in->PDTable=NULL;
   if (in->ANTables) {
     for (i=0; i<in->numANTable; i++) {
-      in->ANTables[i] = ObitTableUnref((ObitTable*)in->ANTables[i]);
+      in->ANTables[i] = ObitTableUnref((ObitTable*)in->ANTables[i]); in->ANTables[i]=NULL;
     }
     g_free(in->ANTables); in->ANTables = NULL;
   }
@@ -499,10 +518,9 @@ gboolean ObitUVCalWant (ObitUVCal *in, ofloat time, olong ant1, olong ant2,
   ObitUVDesc *desc;
   ObitUVSel *sel;
   ofloat uvmin2, uvmax2, uvdis2;
-  olong   kbase, FQID, SourID, iSubA;
+  olong   it1, it2, FQID, SourID, iSubA;
    
-
-   /* error checks */
+  /* error checks */
   g_assert(ObitErrIsA(err));
   if (err->error) return FALSE;
   g_assert (ObitUVCalIsA(in));
@@ -527,8 +545,8 @@ gboolean ObitUVCalWant (ObitUVCal *in, ofloat time, olong ant1, olong ant2,
   }
 
   /* Baseline and subarray number in data */
-  kbase = (olong)RP[desc->ilocb];
-  iSubA = 1 + (olong)(100.0*(RP[desc->ilocb] -(ofloat)kbase) + 0.1);
+  ObitUVDescGetAnts(desc, RP, &it1, &it2, &iSubA);
+
   /* Wanted? */
   if ((sel->SubA > 0) && (sel->SubA != iSubA)) return FALSE;
 
@@ -570,7 +588,6 @@ void ObitUVCalSmooth (ObitUVCal *in, float time, olong ant1, olong ant2,
 {
   ofloat *vis;
   ObitUVDesc *desc;
-  ObitUVSel  *sel;
   olong   i, j, j1, j2, l, ioff, ipol, iif, ifrq, kpol, indx, suprad, inxinc;
   ofloat  s, w, fblank = ObitMagicF();
   
@@ -581,7 +598,6 @@ void ObitUVCalSmooth (ObitUVCal *in, float time, olong ant1, olong ant2,
   
   /* Pointer to visibility data portion of record */
   desc = in->myDesc;
-  sel  = in->mySel;
   vis = &visIn[desc->nrparm];
 
   /* half width of convolution kernal */
@@ -735,6 +751,9 @@ void ObitUVCalInit  (gpointer inn)
   in->CLTable     = NULL;
   in->FGTable     = NULL;
   in->SNTable     = NULL;
+  in->SUTable     = NULL;
+  in->PDTable     = NULL;
+  in->PDVer       = -1;
   in->SmoothConvFn= NULL;
   in->SmoothWork  = NULL;
   in->SpecIndxWork= NULL;
@@ -775,6 +794,8 @@ void ObitUVCalClear (gpointer inn)
   in->FGTable     = ObitUnref(in->FGTable);
   in->SNTable     = ObitUnref(in->SNTable);
   in->CQTable     = ObitUnref(in->CQTable);
+  in->SUTable     = ObitUnref(in->SUTable);
+  in->PDTable     = ObitUnref(in->PDTable);
   if (in->ANTables) {
     for (i=0; i<in->numANTable; i++) in->ANTables[i] = ObitUnref(in->ANTables[i]);
     if (in->ANTables) g_free(in->ANTables);
@@ -839,7 +860,8 @@ void ObitUVCalSmoothInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *desc,
   in->smooth[2]   = sel->smooth[2];
 
   /* Copy descriptor information */
-  in->numIF       = desc->inaxes[desc->jlocif];
+  if (desc->jlocif>=0) in->numIF = desc->inaxes[desc->jlocif];
+  else                 in->numIF = 1;
   in->numChan     = desc->inaxes[desc->jlocf];
   in->numStok     = desc->inaxes[desc->jlocs];
   in->numSubA     = desc->numSubA;

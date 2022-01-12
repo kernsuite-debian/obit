@@ -1,6 +1,6 @@
-/* $Id: ObitFitRegion.c 53 2008-11-20 00:28:56Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006,2008                                          */
+/*;  Copyright (C) 2006,2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -248,8 +248,12 @@ ObitFitRegionCreate (gchar* name, olong corner[2], olong dim[2],
   out->nmodel    = nmodel;
   out->models    = g_malloc0(out->nmodel*sizeof(ObitFitModel*));
 
-  for (i=0; i<out->nmodel; i++) out->models[i] = models[i];
-    return out;
+  for (i=0; i<out->nmodel; i++) {
+    out->models[i] = ObitFitModelCreate("model", models[i]->type,  models[i]->Peak, 
+					models[i]->DeltaX, models[i]->DeltaY, 
+					models[i]->nparm, models[i]->parms);
+  }
+  return out;
 } /* end ObitFitRegionCreate */
 
 /**
@@ -262,7 +266,7 @@ gchar* ObitFitRegionName (olong indx)
 {
   gchar *out=NULL;
   
-  out = g_malloc0 (10);
+  out = g_malloc0 (16);
   sprintf (out, "reg%6.6d", (gint)indx);
   return out;
   
@@ -285,26 +289,26 @@ void ObitFitRegionSubtract (ObitFitRegion* reg, ObitImage *image, ObitErr *err)
   g_assert (ObitIsA(reg, &myClassInfo));
   g_assert (ObitImageIsA(image));
 
-  /* Make work FArray the size of the region */
-  pos1[0] = reg->dim[0]; pos1[1] = reg->dim[1];
+  /* Make work FArray 4x the size of the region */
+  pos1[0] = 4*reg->dim[0]; pos1[1] = 4*reg->dim[1];
   work =  ObitFArrayCreate ("Subtract", ndim, pos1);
 
+  /* compute residuals */
   /* Loop adding (neg)  model to work */
   for (i=0; i<reg->nmodel; i++) {
-    Cen[0] = reg->models[i]->DeltaX;
-    Cen[1] = reg->models[i]->DeltaY;
+    Cen[0] = (olong)(reg->dim[0]*1.5) + reg->models[i]->DeltaX;
+    Cen[1] = (olong)(reg->dim[1]*1.5) + reg->models[i]->DeltaY;
     for (j=0; j<reg->models[i]->nparm; j++) GauMod[j] = reg->models[i]->parms[j];
     GauMod[0] = reg->models[i]->parms[0]; /* ObitFArray2DEGauss from X axis */
     GauMod[1] = reg->models[i]->parms[1];
     GauMod[2] = 90.0+reg->models[i]->parms[2]*RAD2DG;  /* Fooey! */
     ObitFArray2DEGauss (work, reg->models[i]->Peak, Cen, GauMod);
   }
-
   /* Subtract */
-  pos1[0] = reg->corner[0] + reg->dim[0]/2; 
-  pos1[1] = reg->corner[1] + reg->dim[1]/2; ;
-  pos2[0] = 1+reg->dim[0]/2; 
-  pos2[1] = 1+reg->dim[1]/2;
+  pos1[0] = reg->corner[0];
+  pos1[1] = reg->corner[1];
+  pos2[0] = 1+(olong)(reg->dim[0]*1.5); 
+  pos2[1] = 1+(olong)(reg->dim[1]*1.5);
   ObitFArrayShiftAdd (image->image, pos1, work, pos2, -1.0, image->image);
 
   work = ObitFArrayUnref(work); /* cleanup */

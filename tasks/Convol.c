@@ -1,7 +1,7 @@
-/* $Id: Convol.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Convol Obit task convolve an image with another image or a model   */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -428,7 +428,8 @@ void digestInputs(ObitInfoList *myInput, ObitErr *err)
   olong         i;
   ofloat  ftemp, Beam[3]={0.0,0.0,0.0}, useBeam[3]={0.0,0.0,0.0}, 
     oldBeam[3]={0.0,0.0,0.0};
-  gboolean found;
+  gboolean found, doFILT=FALSE;
+  gchar    Opcode[5];
   gchar *routine = "digestInputs";
 
   /* error checks */
@@ -438,6 +439,10 @@ void digestInputs(ObitInfoList *myInput, ObitErr *err)
   /* noScrat - no scratch files for AIPS disks */
   ObitAIPSSetnoScrat(myInput, err);
   if (err->error) Obit_traceback_msg (err, routine, "task Input");
+
+  /* High pass Filter? */
+  ObitInfoListGetTest(myInput, "Opcode", &type, dim, Opcode);
+  doFILT = (!strcmp (Opcode, "FILT"));
 
   /* Deconvolve beam */
   ObitInfoListGet (myInput, "Beam", &type, dim, Beam, err);
@@ -449,23 +454,31 @@ void digestInputs(ObitInfoList *myInput, ObitErr *err)
     Beam[0] /= 3600.0;
     Beam[1] /= 3600.0;
     /* Beam from Header */
-    oldBeam[0] = inImage->myDesc->beamMaj;
-    oldBeam[1] = inImage->myDesc->beamMin;
-    oldBeam[2] = inImage->myDesc->beamPA;
+    if ((inImage->myDesc->beamMaj>0.0) && (inImage->myDesc->beamMin>0.0)) {
+      oldBeam[0] = inImage->myDesc->beamMaj;
+      oldBeam[1] = inImage->myDesc->beamMin;
+      oldBeam[2] = inImage->myDesc->beamPA;
+    } else {  /* Zero size */
+      oldBeam[0] = 0.0;
+      oldBeam[1] = 0.0;
+      oldBeam[2] = 0.0;
+    }
     
     /* Deconvolve to get beam to convolve with */
-    if ((oldBeam[0]>0.0) && (oldBeam[1]>0.0))
-      ObitConvUtilDeconv (Beam[0], Beam[1], Beam[2], 
-			  oldBeam[0], oldBeam[1], oldBeam[2],
+    if ((oldBeam[0]>0.0) && (oldBeam[1]>0.0)) {
+      ObitConvUtilDeconv (Beam[0], Beam[1], 90.-Beam[2], 
+			  oldBeam[0], oldBeam[1], 90.+oldBeam[2],
 			  &useBeam[0], &useBeam[1], &useBeam[2]);
-    else {useBeam[0]=Beam[0]; useBeam[1]=Beam[1]; useBeam[2]=Beam[2];}
+    } else {useBeam[0]=Beam[0]; useBeam[1]=Beam[1]; useBeam[2]=Beam[2];}
     /* No pixel spacing - use pixels */
-    Obit_log_error(err, OBIT_InfoErr,"Convolving with Gaussian %f x %f @ %f",
-		   useBeam[0]*3600.0,useBeam[1]*3600.0,useBeam[2] );
+    if (!doFILT) /* Only if convolving */
+      Obit_log_error(err, OBIT_InfoErr,"Convolving with Gaussian %f x %f @ %f",
+		     useBeam[0]*3600.0,useBeam[1]*3600.0,useBeam[2] );
   } else {
     useBeam[0]=Beam[0]; useBeam[1]=Beam[1]; useBeam[2]=Beam[2];
-    Obit_log_error(err, OBIT_InfoErr,"Convolving with Gaussian %f x %f pixels @ %f",
-		   useBeam[0],useBeam[1],useBeam[2] );
+    if (!doFILT) /* Only if convolving */
+      Obit_log_error(err, OBIT_InfoErr,"Convolving with Gaussian %f x %f pixels @ %f",
+		     useBeam[0],useBeam[1],useBeam[2] );
   }
   ObitErrLog(err);
   
@@ -490,8 +503,9 @@ void digestInputs(ObitInfoList *myInput, ObitErr *err)
   /* Save */
   dim[0] = 1; dim[1] = dim[2] = 1;
   ObitInfoListAlwaysPut (myInput, "rescale", OBIT_float, dim, &ftemp);
-  Obit_log_error(err, OBIT_InfoErr,"Scaling image by %f to preserve units", 
-		 ftemp);
+  if (!doFILT) /* Only if convolving */
+    Obit_log_error(err, OBIT_InfoErr,"Scaling image by %f to preserve units", 
+		   ftemp);
   ObitErrLog(err);
 
   /* Set defaults BLC, TRC */
@@ -527,13 +541,14 @@ void convolGetImage(ObitInfoList *myInput, ObitErr *err)
   olong         trc[IM_MAXDIM] = {0,0,0,0,0,0,0};
   olong         j, k, Aseq, disk, cno;
   gboolean     exist;
-  gchar        *strTemp=NULL, inFile[128];
-  gchar        iAname[13], iAclass[7];
-  gchar        Aname[13], Aclass[7], *Atype = "MA";
+  gchar        *outType, *strTemp=NULL, inFile[129];
+  gchar        iAname[16], iAclass[8];
+  gchar        Aname[16], Aclass[8], *Atype = "MA";
   gchar        tname[101];
   gchar *routine = "convolGetImage";
 
   if (err->error) return;  /* existing error? */
+  strcpy(iAname,"Default name");  /* Default for FITS in/AIPS out */
 
   /* Get region from myInput */
   ObitInfoListGetTest(myInput, "BLC", &type, dim, blc); /* BLC */
@@ -542,6 +557,12 @@ void convolGetImage(ObitInfoList *myInput, ObitErr *err)
   /* File type - could be either AIPS or FITS */
   ObitInfoListGet (myInput, "DataType", &type, dim, tname, err);
   if (err->error) Obit_traceback_msg (err, routine, routine);
+  /* output File type - could be either AIPS or FITS */
+  ObitInfoListGetP (myInput, "outDType", &type, dim, (gpointer)&outType);
+  /* Defaults to DataType */
+  if ((outType==NULL) || (!strncmp(outType,"    ",4)))
+    ObitInfoListGetP (myInput, "DataType", &type, dim, (gpointer)&outType);
+
   if (!strncmp (tname, "AIPS", 4)) { /* AIPS input */
 
     /* input AIPS disk */
@@ -584,6 +605,38 @@ void convolGetImage(ObitInfoList *myInput, ObitErr *err)
     ObitImageFullInstantiate (inImage, TRUE, err);
     if (err->error) Obit_traceback_msg (err, routine, routine);
     
+  } else if (!strncmp (tname, "FITS", 4)) {  /* FITS input */
+
+    /* input FITS file name */
+    for (j=0; j<128; j++) inFile[j] = 0;
+    ObitInfoListGet(myInput, "inFile", &type, dim, inFile, err);
+    if (err->error) Obit_traceback_msg (err, routine, routine);
+    inFile[128] = 0;
+    ObitTrimTrail(inFile);  /* remove trailing blanks */
+    
+    /* input FITS disk */
+    ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
+    if (err->error) Obit_traceback_msg (err, routine, routine);
+    
+    /*  Object name from FITS name */
+    inImage = newObitImage(inFile);
+    
+    /* define image */
+    ObitImageSetFITS (inImage, OBIT_IO_byPlane, disk, inFile, blc, trc, err);
+    if (err->error) Obit_traceback_msg (err, routine, routine);
+    
+    /* Make sure it's OK */
+    ObitImageFullInstantiate (inImage, TRUE, err);
+    if (err->error) Obit_traceback_msg (err, routine, routine);
+  
+  } else { /* Unknown type - barf and bail */
+    Obit_log_error(err, OBIT_Error, "%s: Unknown Image type %s", 
+                   pgmName, strTemp);
+  }
+  if (err->error) Obit_traceback_msg (err, routine, routine);
+
+  /* Output */
+  if (!strncmp (outType, "AIPS", 4)) { /* AIPS output */
     /* Output image */
     /* AIPS disk */
     ObitInfoListGet(myInput, "outDisk", &type, dim, &disk, err);
@@ -599,7 +652,7 @@ void convolGetImage(ObitInfoList *myInput, ObitErr *err)
     ObitInfoListGet(myInput, "outClass", &type, dim, Aclass, err);
     Aclass[dim[0]] = 0;
     /* Default */
-    if (!strncmp(Aclass,"      ",6)) strcpy (Aclass, iAclass);
+    if (!strncmp(Aclass,"      ",6)) strcpy (Aclass, "Convol");
 
     /* AIPS sequence */
     ObitInfoListGet(myInput, "outSeq", &type, dim, &Aseq, err);
@@ -631,33 +684,15 @@ void convolGetImage(ObitInfoList *myInput, ObitErr *err)
 		      blc, trc, err);
     if (err->error) Obit_traceback_msg (err, routine, routine);
     
-  } else if (!strncmp (tname, "FITS", 4)) {  /* FITS input */
 
-    /* input FITS file name */
-    for (j=0; j<128; j++) inFile[j] = 0;
-    ObitInfoListGet(myInput, "inFile", &type, dim, inFile, err);
-    if (err->error) Obit_traceback_msg (err, routine, routine);
-    
-    /* input FITS disk */
-    ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
-    if (err->error) Obit_traceback_msg (err, routine, routine);
-    
-    /*  Object name from FITS name */
-    inImage = newObitImage(inFile);
-    
-    /* define image */
-    ObitImageSetFITS (inImage, OBIT_IO_byPlane, disk, inFile, blc, trc, err);
-    if (err->error) Obit_traceback_msg (err, routine, routine);
-    
-    /* Make sure it's OK */
-    ObitImageFullInstantiate (inImage, TRUE, err);
-    if (err->error) Obit_traceback_msg (err, routine, routine);
-  
+  } else if (!strncmp (outType, "FITS", 4)) {  /* FITS output */
     /* Output image */ 
     /* FITS file name */
     for (j=0; j<128; j++) inFile[j] = 0;
     ObitInfoListGet(myInput, "outFile", &type, dim, inFile, err);
     if (err->error) Obit_traceback_msg (err, routine, routine);
+    inFile[128] = 0;
+    ObitTrimTrail(inFile);  /* remove trailing blanks */
     
     /*  FITS disk */
     ObitInfoListGet(myInput, "outDisk", &type, dim, &disk, err);
@@ -678,7 +713,7 @@ void convolGetImage(ObitInfoList *myInput, ObitErr *err)
                    pgmName, strTemp);
   }
   if (err->error) Obit_traceback_msg (err, routine, routine);
-
+ 
 } /* end convolGetImage */
 
 /*----------------------------------------------------------------------- */
@@ -699,17 +734,16 @@ ObitFArray* convolGetConvFn(ObitInfoList *myInput, ObitErr *err)
   olong         j, k, Aseq, disk, cno;
   olong        ndim=2, naxis[2];
   ofloat       useBeam[3];
-  gboolean     found;
-  gchar        *strTemp=NULL, Opcode[5], inFile[128];
+  gchar        *strTemp=NULL, Opcode[5], inFile[129];
   gchar        Aname[13], Aclass[7], *Atype = "MA";
   gchar        tname[101];
   gchar *routine = "convolGetConvFn";
 
   if (err->error) return outArray;  /* existing error? */
 
-  /* Which operation wanted? GAUS, IMAG, DCON, DGAU */
+  /* Which operation wanted? GAUS, IMAG, DCON, DGAU, FILT */
   strcpy (Opcode, "    ");
-  found = ObitInfoListGetTest(myInput, "Opcode", &type, dim, Opcode);
+  ObitInfoListGetTest(myInput, "Opcode", &type, dim, Opcode);
   if (!strcmp (Opcode, "    ")) strcpy (Opcode, "GAUS");
   dim[0] = 4; dim[1] = 1;
   ObitInfoListAlwaysPut(myInput, "Opcode", OBIT_string, dim, Opcode);
@@ -729,6 +763,16 @@ ObitFArray* convolGetConvFn(ObitInfoList *myInput, ObitErr *err)
     outArray = ObitConvUtilGaus (inImage, useBeam);
     /* DEBUG 
     ObitImageUtilArray2Image ("ConvolDebug1.fits",1,outArray, err);*/
+  } else if (!strcmp (Opcode, "FILT")) {  /* Deconvolve from Gaussian */
+    /* Use Gaussian */
+    useBeam[0] = useBeam[1] = fabs(inImage->myDesc->cdelt[0]); 
+    useBeam[2] = 0.0;
+    ObitInfoListGetTest (myInput, "useBeam", &type, dim, useBeam);
+
+    /* Create convolving Gaussian */
+    outArray = ObitConvUtilGaus (inImage, useBeam);
+    /* DEBUG 
+    ObitImageUtilArray2Image ("ConvolDebug1.fits",0,outArray, err);*/
   } else if (!strcmp (Opcode, "IMAG")) {
     /* Convolve with an image */
     /* File type - could be either AIPS or FITS */
@@ -831,8 +875,8 @@ void doConvol (ObitInfoList *myInput, ObitImage *inImage, ObitFArray *convFn,
 {
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitInfoType type;
-  ofloat     rescale, Beam[3], useBeam[3];
-  gboolean doDivide;
+  ofloat     rescale, Beam[3], useBeam[3], addPA=0.0;
+  gboolean doDivide, doSub;
   gchar    Opcode[5];
   gchar *routine = "doConvol";
 
@@ -841,18 +885,31 @@ void doConvol (ObitInfoList *myInput, ObitImage *inImage, ObitFArray *convFn,
   /* Multiply or divide by FT of convolving function */
   ObitInfoListGetTest(myInput, "Opcode", &type, dim, Opcode);
   doDivide = (!strcmp (Opcode, "DCON")) || (!strcmp (Opcode, "DGAU"));
+  doSub = (!strcmp (Opcode, "FILT"));
 
-  /* Unit scaling */
-  rescale = 1.0;
-  ObitInfoListGetTest(myInput, "rescale", &type, dim, &rescale);
-
-  /* Get convolving Gaussian beam */
-  useBeam[0] = useBeam[1] = fabs(inImage->myDesc->cdelt[0]); 
-  useBeam[2] = 0.0;
-  ObitInfoListGetTest (myInput, "useBeam", &type, dim, useBeam);
+  /* Trap "FILT" */
+  if (doSub) {
+    rescale = 1.0;
+    ObitInfoListGetTest (myInput, "useBeam", &type, dim, useBeam);
+    useBeam[0] = useBeam[1] = fabs(inImage->myDesc->cdelt[0]); 
+    useBeam[2] = 0.0;
+    ObitInfoListGetTest (myInput, "Beam", &type, dim, useBeam);
+  } else {
+    /* Unit scaling */
+    rescale = 1.0;
+    ObitInfoListGetTest(myInput, "rescale", &type, dim, &rescale);
+    
+    /* Get convolving Gaussian beam */
+    useBeam[0] = useBeam[1] = fabs(inImage->myDesc->cdelt[0]); 
+    useBeam[2] = 0.0;
+    ObitInfoListGetTest (myInput, "useBeam", &type, dim, useBeam);
+    /* to asec */
+    useBeam[0] *= 3600.0;
+    useBeam[1] *= 3600.0;
+  }
 
   /* Set output image resolution */
-  if (ObitInfoListGetTest (myInput, "Beam", &type, dim, Beam)) {
+  if (!doSub && (ObitInfoListGetTest (myInput, "Beam", &type, dim, Beam))) {
     Beam[0] /= 3600.0;
     Beam[1] /= 3600.0;
   } else {  /* Use what's in input */
@@ -864,13 +921,22 @@ void doConvol (ObitInfoList *myInput, ObitImage *inImage, ObitFArray *convFn,
   outImage->myDesc->beamMin = Beam[1];
   outImage->myDesc->beamPA  = Beam[2];
 
+  /* inImage beam at least zero */
+  if ((inImage->myDesc->beamMaj<0.0) || (inImage->myDesc->beamMin<0.0)) {
+    inImage->myDesc->beamMaj = 0.0;
+    inImage->myDesc->beamMin = 0.0;
+    inImage->myDesc->beamPA  = 0.0;
+  }
+
 
   /* Trap simple Gaussian convolution */
   if (!strcmp (Opcode, "GAUS")) {
-    ObitConvUtilConvGauss (inImage, useBeam[0], useBeam[1], useBeam[2], 
+    /* Seems to need orthogonal beam */
+    addPA=90.;
+    ObitConvUtilConvGauss (inImage, useBeam[0], useBeam[1], useBeam[2]+addPA, 
 			   rescale, outImage, err);
   } else { /* Use convFn */
-    ObitConvUtilConv (inImage, convFn, doDivide, rescale, outImage, err);
+    ObitConvUtilConv (inImage, convFn, doDivide, doSub, rescale, outImage, err);
   }
   if (err->error) Obit_traceback_msg (err, routine, outImage->name);
 
@@ -907,6 +973,7 @@ void doHistory (ObitInfoList *myInput, ObitImage *inImage,
   inHistory  = newObitDataHistory ((ObitData*)inImage, OBIT_IO_ReadOnly, err);
   outHistory = newObitDataHistory ((ObitData*)outImage, OBIT_IO_WriteOnly, err);
   ObitHistoryCopyHeader (inHistory, outHistory, err);
+  ObitHistoryCopy (inHistory, outHistory, err);
   if (err->error) Obit_traceback_msg (err, routine, inImage->name);
   
   /* Add this programs history */

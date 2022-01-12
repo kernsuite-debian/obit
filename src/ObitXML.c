@@ -1,4 +1,4 @@
-/* $Id: ObitXML.c 155 2010-02-04 13:17:17Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2005-2009                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -1117,6 +1117,40 @@ ObitXMLXML2Blob (ObitXML *xml, ObitInfoList **desc, ObitErr *err)
   return out;
 
 } /* end ObitXMLXML2Blob */
+
+/**
+ * Convert markPos data to XML
+ * Intended for RPC function "markPos"
+ * type = OBIT_XML_MarkPos
+ * \param pos     position as "hh mm ss.s dd m ss.s"
+ * \param err     Obit Error message
+ * \return new ObitXML object
+ */
+ObitXML* 
+ObitXMLMarkPos2XML (gchar *pos, ObitErr *err)
+{
+  ObitXML  *out=NULL;
+  gchar *routine = "ObitXMLMarkPos2XML";
+
+  /* error checks */
+  g_assert (ObitErrIsA(err));
+  if (err->error) return out;
+
+  /* initial structure */
+  out = newObitXML(routine);
+  out->type = OBIT_XML_MarkPos;
+  out->func = g_strdup("markPos");
+  
+  out->parmP = xmlrpc_build_value(&out->envP, "s", pos);
+  
+  /* Make sure everything is cool */
+  if (out->envP.fault_occurred) {
+    Obit_log_error(err, OBIT_Error, "%s:XML-RPC Fault: %s (%d)",
+		   routine, out->envP.fault_string, out->envP.fault_code);
+  }
+  
+  return out;
+} /* end ObitXMLMarkPos2XML */
 
 /**
  * Create an ObitXML for the return value from an RPC call

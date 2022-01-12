@@ -3,7 +3,7 @@
 ;! Task to print the contents of various data files
 ;# Task 
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2009-2010
+;;  Copyright (C) 2009-2015
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -47,11 +47,13 @@ Sources                            Source list
 **PARAM** int 1 **DEF** -1
 Qual             -1.0              Source qualifier -1=>all
 **PARAM** str 4
-calCode                            Calibrator code '    '=>all
+souCode                            Calibrator code '    '=>all
 **PARAM** float 2
 timeRange                          Time range to copy
 **PARAM** str 4
 Stokes                             Stokes type to pass.
+**PARAM** float 2
+UVRange         0.                 Min & max baseline (klambda)
 **PARAM** int 1 **DEF** -1
 FreqID                             Freq. ID to select.
 **PARAM** int 1 **DEF** 1
@@ -59,9 +61,9 @@ BIF               0.0      100.0   Lowest IF number 0=>all
 **PARAM** int 1
 EIF               0.0      100.0   Highest IF number 0=>all
 **PARAM** int 1 **DEF** 1
-BChan             0.0     2048.0   Lowest channel number 0=>all
+BChan             0.0    65536.0   Lowest channel number 0=>all
 **PARAM** int 1
-EChan             0.0     2048.0   Highest channel number
+EChan             0.0    65536.0   Highest channel number
 **PARAM** int 50
 Antennas         0.0     1000.0    List of antennas to calibrate
 **PARAM** int 1
@@ -78,6 +80,9 @@ doCalib          -1.0        2.0   If >0 calibrate data
 gainUse                            CL (or SN) table to apply
 **PARAM** boo 1 **DEF** F
 doPol            -1.0       10.0   If >0 correct polarization.
+**PARAM** int 1 **DEF** -1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
 **PARAM** int 1
 flagVer                            Flag table version
 **PARAM** int 1
@@ -92,13 +97,13 @@ Smooth                             Smoothing function.
 inTab                              Table type for GAIN ("AIPS SN")
 **PARAM** int 1
 gainVer                            Table version for "GAIN"
-**PARAM** str 8
+**PARAM** str 8 
 dispType                           Data display type"
                                    "AMP", "PHASE", "WT", "DELAY", "RATE"
-                                   "SNR"
+                                   "SNR", "PA", "ELEV"
 **PARAM** int 1 **DEF** 4
 ndig                               Number of digits in compressed displays
-**PARAM** str 4
+**PARAM** str 4 **DEF** SCAN
 opType                             Print type:
                                    "DATA": Basic UV data listing
                                    "SCAN": Scan listing
@@ -111,11 +116,13 @@ bPrint                             First line to print
 nPrint                             Number of lines to print
 **PARAM** int 1 **DEF** 1
 inc                                increment between entries
-**PARAM** int 1  **DEF** 72
+**PARAM** int 1  **DEF** 132
 doCrt                              If > 0 the size of the 
                                    interactive output line
 **PARAM** str 48 **DEF** print.list
 prtFile                            Print output file
+**PARAM** int 1 **DEF** 1
+nThreads            1               Number of threads to use
 **PARAM** str 128
 taskLog                            Logfile to write task messages to
 ----------------------------------------------------------------
@@ -132,20 +139,20 @@ Adverbs:
               AIPS data: NO default
               FITS data: 0=> current directory
   Sources....Source list.  One output file will be made per source.
-             '*' = all; a "-" before a source name means all except ANY
+             blanks = all; a "-" before a source name means all except ANY
              source named.
   Qual.......Only sources with a source qualifier number in the SU table
              matching Qual will be used if Qual is >= 0.  If Qual < 0,
              all qualifiers will be written.  These qualifiers will be
              written to separate output files.  Note that outSeq must be
              zero in this case.
-  calCode....Sources may be selected on the basis of the calibrator code
+  souCode....Sources may be selected on the basis of the calibrator code
              given in the SU table.
                   '    ' => any calibrator code selected
                   '*   ' => any non blank code (cal. only)
                   '-CAL' => blank codes only (no calibrators)
                   anything else = calibrator code to select.
-             NB: The calCode test is applied in addition to the other
+             NB: The souCode test is applied in addition to the other
              tests, i.e. Sources and Qual, in the selection of sources to
              process.
   timeRange..Time range of the data to be copied. In order:
@@ -154,9 +161,10 @@ Adverbs:
   Stokes.....The desired Stokes type of the output data:
              'I','V','Q','U','IQU','IQUV','IV','RR','LL','RL',
              'LR','HALF' (=RR,LL), 'FULL' (=RR,LL,RL,LR)
+  UVRange....(Minimum,Maximum) baseline (kilo-lambda) to include
   FreqID.....Frequency identifier to select (you may determine which is
-             applicable from the OPTYPE='SCAN' listing produced by
-             AIPS task LISTR). <=0=>any
+             applicable from the opType='SCAN' listing produced by
+             task Lister). <=0=>any
   BIF........First IF to copy. 0=>all.
   EIF........Highest IF to copy. 0=>all higher than BIF
   BChan......First channel to copy. 0=>all.
@@ -187,10 +195,13 @@ Adverbs:
   gainUse....Version number of the CL table to apply to multi-source
              files or the SN table for single-source files.
              0 => highest.
-  doPol......If > 0 then correct data for instrumental polarization as
+  doPol......If True then correct data for instrumental polarization as
              represented in the AN table.  This correction is only
              useful if PCAL has been run or feed polarization parameters
              have been otherwise obtained. 
+  PDVer......AIPS PD table to use for per channel instrumental 
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   flagVer....specifies the version of the flagging table to be applied.
              0 => highest numbered table. <0 => no flagging to be
              applied.
@@ -240,6 +251,8 @@ Adverbs:
              "DELAY" Group Delay (nsec)
              "RATE"  Fringe rate in mHz.
              "SNR"   Signal to noise (weight)
+             "PA"    Parallactic angle (deg)
+             "ELEV"  Source elevation (deg)
   ndig.......Number of digits in compressed displays (4-8)
   opType.....Printing operation desired:
              "DATA" print UV data in a form similar to AIPS/PRTUV
@@ -247,7 +260,7 @@ Adverbs:
                     Dataset must have iNdeX table, 
                     use UV.PUtilIndex to create if needed
              "GAIN" Contents of a gain table
-  doReal.....(opType="DATA") If True, shoe real and imaginary, else
+  doReal.....(opType="DATA") If True, show real and imaginary, else
              Amplitude/phase.
   bPrint.....First selected entry to print
   nPrint.....Number of lines to print
@@ -256,9 +269,14 @@ Adverbs:
              widths of max(72,doCrt).
   prtFile....Name of the disk file to accept output.  Text will be
              appended to the end if it already exists.
+  nThreads...If the Obit libraries are compiled with multiple
+             thread operation enabled, this parameter sets the 
+             number of threads that can be used for parallel 
+             operations. 
+             NB: This only improves performance if there are 
+             multiple processors and/or cores in the host.
   taskLog....Log file to write messages to INSTEAD of the terminal
-             This is useful in long runs or batch files where
-             a bug in the ObitTalk message handling may cause
-             tasks to hang.  Path is absolute or relative to where
-             the task executes.
+             This is useful in long runs or batch files.
+             Path is absolute or relative to where the task 
+             executes.
 ----------------------------------------------------------------

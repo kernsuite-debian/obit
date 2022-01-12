@@ -1,6 +1,6 @@
-/* $Id: ObitFile.h 98 2009-05-06 16:30:15Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2012                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -149,6 +149,11 @@ ObitIOCode
 ObitFileReadLine (ObitFile *in, gchar *line, olong lineMax, ObitErr *err);
 typedef ObitIOCode (*ObitFileReadLineFP) (ObitFile *in, gchar *line, olong lineMax, ObitErr *err);
 
+/** Public:  Read next segment of XML file */
+ObitIOCode 
+ObitFileReadXML (ObitFile *in, gchar *line, olong lineMax, ObitErr *err);
+typedef ObitIOCode (*ObitFileReadXMLFP) (ObitFile *in, gchar *line, olong lineMax, ObitErr *err);
+
 /** Public:  Write */
 ObitIOCode 
 ObitFileWrite (ObitFile *in, ObitFilePos filePos, olong size, gchar *buffer, 
@@ -164,9 +169,9 @@ typedef ObitIOCode (*ObitFileWriteLineFP) (ObitFile *in, gchar *line, ObitErr *e
 
 /** Public: Pad remainder of a block. */
 ObitIOCode 
-ObitFilePad (ObitFile *in, olong padTo, gchar *buffer, olong bsize, 
+ObitFilePad (ObitFile *in, ObitFilePos padTo, gchar *buffer, olong bsize, 
 	     ObitErr *err);
-typedef ObitIOCode (*ObitFilePadFP) (ObitFile *in, olong padTo, 
+typedef ObitIOCode (*ObitFilePadFP) (ObitFile *in, ObitFilePos padTo, 
 				     gchar *buffer, 
 				     olong bsize, ObitErr *err);
 

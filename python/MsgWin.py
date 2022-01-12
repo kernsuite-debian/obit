@@ -2,7 +2,7 @@
 
 a MsgWin executes a task for ObitTalk snd displays any messages.
 """
-# $Id: MsgWin.py 2 2008-06-10 15:32:27Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
 #  Copyright (C) 2006
 #  Associated Universities, Inc. Washington DC, USA.
@@ -30,6 +30,7 @@ a MsgWin executes a task for ObitTalk snd displays any messages.
 #                         Charlottesville, VA 22903-2475 USA
 #-----------------------------------------------------------------------
 
+from __future__ import absolute_import
 import wx
 import TaskWindow, OTWindow
 

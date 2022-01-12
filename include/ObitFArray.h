@@ -1,6 +1,6 @@
-/* $Id: ObitFArray.h 159 2010-02-26 17:54:34Z bill.cotton $   */
+/* $Id$   */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2010                                          */
+/*;  Copyright (C) 2003-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -32,6 +32,9 @@
 #include "ObitErr.h"
 #include "ObitInfoList.h"
 #include "ObitThread.h"
+#if HAVE_GSL==1  /* GSL stuff */
+#include <gsl/gsl_randist.h>
+#endif /* HAVE_GSL */
 
 /*-------- Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -167,6 +170,10 @@ typedef ofloat (*ObitFArrayRawRMSFP) (ObitFArray* in);
 ofloat ObitFArrayRMS0 (ObitFArray* in);
 typedef ofloat (*ObitFArrayRMS0FP) (ObitFArray* in);
 
+/** Public: Function for combining planes of multi frequency images */
+ofloat ObitFArrayRMS0ST (ObitFArray* in);
+typedef ofloat (*ObitFArrayRMS0STFP) (ObitFArray* in);
+
 /** Public: RMS of pixel in potentially quantized image. */
 ofloat ObitFArrayRMSQuant (ObitFArray* in);
 typedef ofloat (*ObitFArrayRMSQuantFP) (ObitFArray* in);
@@ -191,6 +198,10 @@ typedef void (*ObitFArrayFillFP) (ObitFArray* in, ofloat scalar);
 void ObitFArrayNeg (ObitFArray* in);
 typedef void (*ObitFArrayNegFP) (ObitFArray* in);
 
+/** Public: taks absolute value of  elements of an FArray */
+void ObitFArrayAbs (ObitFArray* in);
+typedef void (*ObitFArrayAbsFP) (ObitFArray* in);
+
 /** Public: sine of  elements of an FArray */
 void ObitFArraySin (ObitFArray* in);
 typedef void (*ObitFArraySinFP) (ObitFArray* in);
@@ -198,6 +209,10 @@ typedef void (*ObitFArraySinFP) (ObitFArray* in);
 /** Public: cosine of  elements of an FArray */
 void ObitFArrayCos (ObitFArray* in);
 typedef void (*ObitFArrayCosFP) (ObitFArray* in);
+
+/** Public: sine/cosine of  elements of an FArray */
+void ObitFArraySinCos (ObitFArray* in, ObitFArray* outS, ObitFArray* outC);
+typedef void (*ObitFArraySinCosFP) (ObitFArray* in, ObitFArray* outS, ObitFArray* outC);
 
 /** Public: square root of  elements of an FArray */
 void ObitFArraySqrt (ObitFArray* in);
@@ -268,10 +283,22 @@ void ObitFArrayAdd (ObitFArray* in1, ObitFArray* in2, ObitFArray* out);
 typedef void (*ObitFArrayAddFP) (ObitFArray* in1, ObitFArray* in2, 
 				  ObitFArray* out);
 
+/** Public: Abs Add elements of two FArrays */
+void ObitFArrayAddAbs (ObitFArray* in1, ObitFArray* in2, ObitFArray* out);
+typedef void (*ObitFArrayAddAbsFP) (ObitFArray* in1, ObitFArray* in2, 
+			  	  ObitFArray* out);
+
 /** Public: Subtract elements of two FArrays */
 void ObitFArraySub (ObitFArray* in1, ObitFArray* in2, ObitFArray* out);
 typedef void (*ObitFArraySubFP) (ObitFArray* in1, ObitFArray* in2, 
 				  ObitFArray* out);
+/** Public: copy elements from one FArray to another */
+void ObitFArrayCopyData (ObitFArray* in, ObitFArray* out);
+typedef void (*ObitFArrayCopyDataFP) (ObitFArray* in1, ObitFArray* out);
+
+/** Public: Give the elements of one array the sign of the other */
+void ObitFArraySign (ObitFArray* in1, ObitFArray* in2);
+typedef void (*ObitFArraySignFP) (ObitFArray* in1, ObitFArray* in2);
 
 /** Public: Multiply elements of two FArrays */
 void ObitFArrayMul (ObitFArray* in1, ObitFArray* in2, ObitFArray* out);
@@ -328,6 +355,10 @@ typedef void
 			 ObitFArray* in2, olong *pos2, 
 			 ofloat scalar, ObitFArray* out);
 
+/** Public: Shift and Add scaled array, no threading */
+void ObitFArrayShiftAddNT (ObitFArray* in1, olong *pos1, 
+			   ObitFArray* in2, olong *pos2, 
+			   ofloat scalar, ObitFArray* out);
 /** Public: Zero pad an array */
 void  ObitFArrayPad (ObitFArray* in, ObitFArray* out, ofloat factor);
 typedef void (*ObitFArrayPadFP) (ObitFArray* in, ObitFArray* out, 
@@ -344,6 +375,30 @@ void  ObitFArraySelInc (ObitFArray* in, ObitFArray* out, olong *blc, olong *trc,
 			olong* inc, ObitErr *err);
 typedef void (*ObitFArraySelIncFP) (ObitFArray* in, ObitFArray* out, 
 				    olong *blc, olong *trc, olong* inc, ObitErr *err);
+
+/** Public: return histogram of elements in an FArray */
+ObitFArray*  ObitFArrayHisto (ObitFArray* in, olong n, ofloat min, ofloat max);
+typedef ObitFArray*  (*ObitFArrayHistoFP) (ObitFArray* in, olong n, ofloat min, ofloat max);
+
+/** Public: exponentiate elements in an FArray */
+void ObitFArrayExp (ObitFArray* in, ObitFArray* out);
+typedef void  (*ObitFArrayExpFP) (ObitFArray* in, ObitFArray* out);
+
+/** Public: natural log of elements in an FArray */
+void ObitFArrayLog (ObitFArray* in, ObitFArray* out);
+typedef void  (*ObitFArrayLogFP) (ObitFArray* in, ObitFArray* out);
+
+/** Public: natural log of elements in an FArray */
+void ObitFArrayPow (ObitFArray* in1, ObitFArray* in2, ObitFArray* out);
+typedef void  (*ObitFArrayPowFP) (ObitFArray* in1, ObitFArray* in2, ObitFArray* out);
+
+/** Public: Gaussian distributed random numbers */
+ofloat ObitFArrayRandom (ofloat mean, ofloat sigma);
+typedef ofloat  (*ObitFArrayRandomFP) (ofloat mean, ofloat sigma);
+
+/** Public: Fill with Gaussian distributed random numbers */
+void ObitFArrayRandomFill (ObitFArray* in, ofloat mean, ofloat sigma);
+typedef void  (*ObitFArrayRandomFillFP) (ObitFArray* in, ofloat mean, ofloat sigma);
 
 /*----------- ClassInfo Structure -----------------------------------*/
 /**

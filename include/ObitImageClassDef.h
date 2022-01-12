@@ -1,6 +1,6 @@
-/* $Id: ObitImageClassDef.h 155 2010-02-04 13:17:17Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2010                                          */
+/*;  Copyright (C) 2002-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -51,3 +51,7 @@ ObitImageSetBeamNameFP ObitImageSetBeamName;
 ObitImageGetBeamFP ObitImageGetBeam;
 /** Get beam order */
 ObitImageGetBeamOrderFP ObitImageGetBeamOrder;
+/** Get plane Frequency */
+ObitImageGetPlaneFreqFP ObitImageGetPlaneFreq;
+/** Determine/reset image max/min */
+ObitImageMaxMinFP ObitImageMaxMin;

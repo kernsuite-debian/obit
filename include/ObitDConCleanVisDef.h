@@ -1,6 +1,6 @@
-/* $Id: ObitDConCleanVisDef.h 128 2009-09-23 14:48:29Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005-2009                                          */
+/*;  Copyright (C) 2005-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -55,6 +55,8 @@ ofloat peakFlux;
 ofloat *quality;
 /** Max abs "cleanable" flux density  per field */
 ofloat *cleanable;
+/** Is image fresh? per field */
+gboolean *fresh;
 /** CLEAN component level to reuse, <0 none  */
 ofloat reuseFlux;
 /** autoCenter min flux density   */
@@ -63,3 +65,11 @@ ofloat autoCen;
 ObitDisplay *display;
 /** Copy of calibrated/weighted data if doing SDI clean */
 ObitUV *SDIdata;
+/** Max BeamTaper to consider */
+ofloat maxBeamTaper;
+/** Min BeamTaper to consider */
+ofloat minBeamTaper;
+/** Resolution selection controls */
+ofloat MResKnob[10];
+/** Stopped because it's out of time? */
+gboolean outaTime;

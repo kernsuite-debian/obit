@@ -1,6 +1,6 @@
-/* $Id: ObitTableCCUtil.h 167 2010-03-19 14:33:04Z bill.cotton $     */
+/* $Id$     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2010                                          */
+/*;  Copyright (C) 2004-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -32,8 +32,11 @@
 #include "ObitErr.h"
 #include "ObitTableCC.h"
 #include "ObitImage.h"
+#include "ObitImageMF.h"
+#include "ObitImageWB.h"
 #include "ObitImageDesc.h"
-#include "ObitFArray.h"
+#include "ObitImageDesc.h"
+#include "ObitSkyModel.h"
 #include "ObitData.h"
 
 /*-------- Obit: Merx mollis mortibus nuper ------------------*/
@@ -56,6 +59,8 @@ enum obitCCCompType {
   OBIT_CC_CGaussMod,  
   /** Uniform sphere */
   OBIT_CC_USphereMod, 
+  /** Face-on Exponential disk */
+  OBIT_CC_expDiskMod, 
   /** Unknown */
   OBIT_CC_Unknown, 
   /** Point + spectrum */
@@ -66,14 +71,18 @@ enum obitCCCompType {
   OBIT_CC_CGaussModSpec = OBIT_CC_CGaussMod+10,  
   /** Uniform sphere + spectrum */
   OBIT_CC_USphereModSpec = OBIT_CC_USphereMod+10,
-  /** Point + tabulated spectrum */
+   /** Face-on Exponential disk + spectrum */
+  OBIT_CC_expDiskModSpec = OBIT_CC_expDiskMod+10, 
+ /** Point + tabulated spectrum */
   OBIT_CC_PointModTSpec = OBIT_CC_PointMod+20,
   /** Gaussian on sky + tabulated spectrum */
   OBIT_CC_GaussModTSpec = OBIT_CC_GaussMod+20,  
   /** Convolved Gaussian + tabulated spectrum */
   OBIT_CC_CGaussModTSpec = OBIT_CC_CGaussMod+20,  
   /** Uniform sphere + tabulated spectrum */
-  OBIT_CC_USphereModTSpec = OBIT_CC_USphereMod+20 
+  OBIT_CC_USphereModTSpec = OBIT_CC_USphereMod+20,
+  /** Face-on Exponential disk + Tabulated spectrum */
+  OBIT_CC_expDiskModTSpec = OBIT_CC_expDiskMod+20
 }; /* end enum obitCCCompType */
 /** typedef for enum for ObitCCCompType. */
 typedef enum obitCCCompType ObitCCCompType;
@@ -107,6 +116,12 @@ ObitTableCCUtilCrossListSpec (ObitTableCC *inCC, ObitImageDesc *inDesc,
 			      ObitImageDesc *outDesc, ofloat gparm[3], 
 			      olong *ncomps, olong iterm, ObitErr *err);
 
+/** Public: return Table of CC from one image overlapping another */
+ObitTableCC* 
+ObitTableCCUtilCrossTable (ObitTableCC *inCC, ObitImageDesc *inDesc,  
+			   ObitImage *outIm, olong *ncomps, 
+			   ObitErr *err);
+
 /** Merge elements of an ObitTableCC */
 ObitIOCode ObitTableCCUtilMerge (ObitTableCC *in, ObitTableCC *out, 
 				 ObitErr *err);
@@ -114,6 +129,11 @@ ObitIOCode ObitTableCCUtilMerge (ObitTableCC *in, ObitTableCC *out,
 /** Merge elements of an ObitTableCC with selection */
 ObitFArray* ObitTableCCUtilMergeSel (ObitTableCC *in, olong startComp, 
 				     olong endComp, ofloat *parms,
+				     ObitErr *err);
+
+/** Merge elements of an ObitTableCC with selection and mixed Gaussians */
+ObitFArray* ObitTableCCUtilMergeSel2 (ObitTableCC *in, olong startComp, 
+				     olong endComp, ObitSkyModelCompType *type,
 				     ObitErr *err);
 
 /** Merge spectral elements of an ObitTableCC with selection */
@@ -135,10 +155,30 @@ void ObitTableCCUtilScale (ObitTableCC *in, olong startComp,
 void ObitTableCCUtilAppend  (ObitTableCC *inCC, ObitTableCC *outCC, 
 			     olong startComp, olong endComp, ObitErr *err);
 
+/** Append CLEAN components from one table to another with position shift */
+void ObitTableCCUtilAppendShift (ObitTableCC *inCC, ObitTableCC *outCC, 
+				 ObitUVDesc *uvDesc, ObitImageDesc *imDesc, 
+				 olong startComp, olong endComp, ObitErr *err);
+
 /** Filter weak, isolated components */
 gboolean ObitTableCCUtilFiltCC (ObitTableCC *CCTab, ofloat radius, ofloat minFlux, 
 				ObitErr* err);
 
 /** Get Clean component type */
 ObitCCCompType ObitTableCCUtilGetType (ObitData *data, olong ver, ObitErr* err);
+
+/** Convert TSpec to Spec model type */
+void ObitTableCCUtilT2Spec  (ObitImage *inImage, ObitImageWB *outImage, 
+			     olong nTerm, olong *inCCVer, olong *outCCVer,
+			     olong startComp, olong endComp, ObitErr *err);
+
+/* routine to force average TSpectra to a given spectrum  */
+void ObitTableCCUtilFixTSpec (ObitImage *inImage, olong *inCCVer, 
+			      odouble refFreq, olong nterm, ofloat *terms,
+			      olong startCC, olong endCC, ObitErr *err);
+
+/* routine to combine simple CC Tables into a TSpec table  */
+void ObitTableCCUtilCombTSpec (ObitImage *inImage, olong inCCVer, olong nCCVer,
+			       olong outCCVer, olong *bcopy, olong *bcomp, olong *ecomp, 
+			       gboolean doGaus, ObitErr *err);
 #endif /* OBITTABLECCUTIL_H */ 

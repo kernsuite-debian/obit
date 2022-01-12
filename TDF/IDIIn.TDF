@@ -1,10 +1,10 @@
-; $Id: IDIIn.TDF 199 2010-06-15 11:39:58Z bill.cotton $
+; $Id$
 ; IDIIn 
 ;---------------------------------------------------------------
 ;! Obit Convert IDI data and append to a UV data file.
 ;# Task Obit IDI
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2007-2010
+;;  Copyright (C) 2007-2014
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -47,6 +47,8 @@ outClass                            Output UV file name (class)
 outSeq           -1.0     9999.0    Output UV file name (seq. #)
 **PARAM** int 1
 outDisk                             Output UV file disk unit #.
+**PARAM** float 1 **DEF** 0.95
+minWt                               Min. Weight
 **PARAM** str 128
 taskLog                             Logfile to write task messages to
 ----------------------------------------------------------------
@@ -68,16 +70,18 @@ Adverbs:
   File.......Name of scan or file name 
              (e.g."lwda_uv_2006_10_28_23_59_42")
              This is the input file name minus the postfix
-             '.fits'
+             '.fits' or '.idifits'.  Full name can be used.
   DataRoot...Archive directory for project 
              MUST end in '/'
              Expects full file name to be DataRoot+File+".fits"
+	     or DataRoot+File+".idifits"
   DataType..'FITS' or 'AIPS'  type of output
   outFile....Output UV FITS file name
   outName....Output UV AIPS file name (name).
   outClass...Output UV file name (class).  Standard defaults.
   outSeq.....Output UV file name (seq. #). 0 => highest unique.
   outDisk....Disk drive # of output UV file.  
+  minWt......Minimum "Weight" = fraction of data per integration
   taskLog....Log file to write messages to INSTEAD of the terminal
              This is useful in long runs or batch files where
              a bug in the ObitTalk message handling may cause

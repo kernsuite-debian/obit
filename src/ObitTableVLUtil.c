@@ -1,6 +1,6 @@
-/* $Id: ObitTableVLUtil.c 2 2008-06-10 15:32:27Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2008                                          */
+/*;  Copyright (C) 2006-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -73,6 +73,8 @@ ObitTableVZSelCrowd (olong irow, ofloat crowd, ofloat distAvg,
 /**
  * Print raw contents of VL table
  * \param in        VL table to print
+ *   Control parameters in info:
+ * \li "minSNR"     OBIT_float (1,1,1) Minimum acceptable SNR [def 5]
  * \param prtFile   Where to write
  * \param *err      ObitErr error stack.
  */
@@ -80,11 +82,15 @@ void ObitTableVLPrint (ObitTableVL *in, ObitImage *image, FILE  *prtFile,
 		       ObitErr *err)
 {
   ObitTableVLRow *row = NULL;
-  olong i, irow;
+  olong i, irow, iunit;
   ofloat maj, min, pa;
-  gchar rast[19], decst[19], field[9];
-  ofloat epeak, errra, errdec, errmaj, errmin, errpa;
+  gchar rast[19], decst[19], field[9], pre[2] = "mu";
+  ofloat epeak, errra, errdec, errmaj, errmin, errpa, minSNR;
   ofloat beam[3], beamas[2], xcell, flux, eflux;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitInfoType type;
+  union ObitInfoListEquiv InfoReal; 
+  ofloat scl, scales[2] = {1.0e3,1.0e6};
   gchar *routine = "ObitTableVLPrint";
 
   /* error checks */
@@ -94,8 +100,24 @@ void ObitTableVLPrint (ObitTableVL *in, ObitImage *image, FILE  *prtFile,
   Obit_return_if_fail (ObitImageIsA(image), err, 
 		       "%s image %s not an image", routine, image->name);
 
+  /* Get parameters */
+  minSNR = 5.0;
+  InfoReal.flt = minSNR; type = OBIT_float;
+  ObitInfoListGetTest(in->info, "minSNR",  &type, dim,  &InfoReal);
+  if (type==OBIT_float) minSNR = InfoReal.flt;
+  else if (type==OBIT_double)  minSNR = InfoReal.dbl;
+
   ObitTableVLOpen (in, OBIT_IO_ReadOnly, err);
   if (err->error) Obit_traceback_msg (err, routine, in->name);
+  row  = newObitTableVLRow (in);
+
+    /* Get flux scaling from first row*/
+  irow = 1;
+  ObitTableVLReadRow (in, irow, row, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+  iunit = 0;
+  if ((row->PeakInt<1.0e-3) || (row->IRMS<1.0e-4)) iunit = 1;  /* Use microJy (uJy) */
+  scl = scales[iunit];
 
   /* Image stuff */
   xcell = fabs (image->myDesc->cdelt[0]);
@@ -106,12 +128,11 @@ void ObitTableVLPrint (ObitTableVL *in, ObitImage *image, FILE  *prtFile,
   beamas[1] = image->myDesc->beamMin * 3600.0;
 
   fprintf (prtFile,"\n Listing of fitted VL table values\n");
-  fprintf (prtFile,"Fitted sizes in asec, Peak, Flux, IRMS in mJy, residual values relative to Peak\n");
-  fprintf (prtFile,"Error estimates (asec, mJy, deg) given under value\n");
+  fprintf (prtFile,"Fitted sizes in asec, Peak, Flux, IRMS in %cJy, residual values relative to Peak\n", pre[iunit]);
+  fprintf (prtFile,"Error estimates (asec, %cJy, deg) given under value\n", pre[iunit]);
+  fprintf (prtFile,"minSNR = %f\n", minSNR);
   fprintf (prtFile,
 	   "             RA           Dec          Peak    Flux    IRMS  Fit Maj Fit min   PA    res. RMS res Peak  PixX    PixY   Field\n");
-
-  row  = newObitTableVLRow (in);
 
   /* Loop over table printing */
   for (irow=1; irow<=in->myDesc->nrow; irow++) {
@@ -136,14 +157,17 @@ void ObitTableVLPrint (ObitTableVL *in, ObitImage *image, FILE  *prtFile,
     flux = row->PeakInt*((maj/beamas[0]) * (min/beamas[1]));
     eflux = epeak * ((maj/beamas[0]) * (min/beamas[1]));
 
+    /* minSNR test */
+    if (fabs(flux/eflux)<minSNR) continue;
+
     /* Values */
     fprintf (prtFile," %5d %14s %14s %8.2f %8.2f %7.3f %7.3f %7.3f %6.1f %8.3f %8.3f %7.1f %7.1f %8s\n",
-	     irow, rast, decst, row->PeakInt*1000.0, flux*1000.0, row->IRMS*1000.0, maj, min, pa,
+	     irow, rast, decst, row->PeakInt*scl, flux*scl, row->IRMS*scl, maj, min, pa,
 	     row->ResRMS/row->PeakInt, row->ResPeak/row->PeakInt,
 	     row->CenterX, row->CenterY, field);
     /* errors */
     fprintf (prtFile,"              %6.2f         %6.2f %8.2f %8.2f         %7.3f %7.3f %6.1f \n",
-	     errra*xcell*3600.0, errdec*xcell*3600.0, epeak*1000.0, eflux*1000.0,
+	     errra*xcell*3600.0, errdec*xcell*3600.0, epeak*scl, eflux*scl,
 	     errmaj*xcell*3600.0, errmin*xcell*3600.0, errpa*RAD2DG);
   } /* end loop over table */
   
@@ -199,6 +223,11 @@ void ObitTableVLAppend (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
     ObitTableVLReadRow (in, irow, row, err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
     if (VLdesel(row)) continue;  /* Skip deselected record */
+
+    /* Make sure RA in range */
+    if (row->Ra2000>360.0) row->Ra2000 -= 360.0;
+    if (row->Ra2000<0.0)   row->Ra2000 += 360.0;
+    
     /* Write row */
     orow = -1;
     ObitTableVLWriteRow (out, orow, row, err);
@@ -246,6 +275,7 @@ void ObitTableVLIndex (ObitTableVL *in, ObitErr *err)
 
     /* RA bin */
     ira = row->Ra2000/15.0;
+    ira = MAX(MIN(ira,23), 0);
     indx[ira+1] = irow;
 
   } /* End loop over table */
@@ -1000,9 +1030,10 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
   ofloat l, m, maxDist, rad1, rad2;
   olong centerPix[7], brow, erow;
   olong mxbad, ibad, jbad, maxbad, tnobad, *badrow=NULL;
-  odouble dist2, ramax, dismax;
+  odouble dist2, ramax, dismax, tramax;
   gboolean isbad, toss1, want1;
   olong irow, jrow, orow, nrow, iold, inWant, ocount;
+  gchar Field[9];
   gchar *routine = "ObitTableVLRedun";
   
   /* error checks */
@@ -1044,7 +1075,7 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
   if (nrow<=0) return;  /* Anything selected? */
 
   /* Guess about size of bad row buffer (current list to be dropped) */
-  mxbad = nrow/10;
+  mxbad = MAX(100,nrow/10);
 
   /* Allocate arrays */
   badrow  = g_malloc0(mxbad*sizeof(olong));
@@ -1084,6 +1115,12 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
     ObitTableVLReadRow (in, irow, row, err);
     if (err->error) goto cleanup;
     if (VLdesel(row)) continue;  /* Skip deselected record */
+    /* Have to save Field - pointer in buffer that changes */
+    strncpy (Field, row->Field, 8);
+
+    /* Make sure RA in range */
+    if (row->Ra2000>360.0) row->Ra2000 -= 360.0;
+    if (row->Ra2000<0.0)   row->Ra2000 += 360.0;
 
     /* How far from center */
     rad1 = fieldOff(row, centerPix);
@@ -1093,7 +1130,7 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
 
     /* Search following table entries within RA window */
     for (jrow=irow+1; jrow<=erow; jrow++) {
-      /* know to be bad? */
+      /* known to be bad? */
       isbad = FALSE;
       for (ibad=0; ibad<maxbad; ibad++) {
 	if (jrow==badrow[ibad]) {isbad=TRUE; break;}
@@ -1105,8 +1142,13 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
       if (err->error) goto cleanup;
       if (VLdesel(row)) continue;  /* Skip deselected record */
 
+      /* Make sure RA in range */
+      if (row2->Ra2000>360.0) row2->Ra2000 -= 360.0;
+      if (row2->Ra2000<0.0)   row2->Ra2000 += 360.0;
+      
       /* Is this far enough? */
-      if ((row2->Ra2000-row->Ra2000) > ramax) break;
+      tramax = ramax / cos(row->Dec2000*DG2RAD);
+      if ((row2->Ra2000-row->Ra2000) > tramax) break;
 
       /* Determine separation */
       ObitSkyGeomShiftXY (row->Ra2000, row->Dec2000, 0.0, 
@@ -1115,8 +1157,9 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
       toss1 = dist2<dismax;  /* Does one need to go? */
 
       /* Only if from separate fields or processings */
-      toss1 = toss1 && ((strncmp(row->Field, row2->Field, 8)) ||
-	(row->JDProcess!=row2->JDProcess));
+      toss1 = toss1 && ((strncmp(Field, row2->Field, 8)));
+      /* All may be processed on the same day */
+      /* || (row->JDProcess!=row2->JDProcess)); */
 
       /* Check for complete, exact duplicates */
       toss1 = toss1 || ((row->Ra2000==row2->Ra2000) &&
@@ -1130,11 +1173,14 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
 	/* Decide if this is the correct field for source */
 	want1 = rad2<rad1;
 	/* If all else equal take later processing */
-	want1 = want1 || ((rad2==rad1) && (row2->JDProcess>=row->JDProcess));
+	want1 = want1 || ((rad2==rad1));
+	/* All may be processed on the same day */
+ 	/* && (row2->JDProcess>=row->JDProcess));*/
 
 	/* Use this one? */
 	if (want1) {
-	  inWant = jrow;  /* keep track or desired output row */
+	  inWant = jrow;  /* keep track of desired output row */
+	  strncpy (Field, row2->Field, 8);   /* Save new field */
 
 	  /* flag old best guess */
 	  if (maxbad<mxbad-1) {
@@ -1161,12 +1207,14 @@ void ObitTableVLRedun (ObitTableVL *in, ObitTableVL *out, ObitErr *err)
       } /* end of toss1 */
     } /* End forward search for matches */
 
-    /* Reread entry to copy if needed */
-    if (inWant!=irow) {
-      ObitTableVLReadRow (in, inWant, row, err);
-      if (err->error) goto cleanup;
-      if (VLdesel(row)) continue; 
-    }
+    /* Reread entry to copy */
+    ObitTableVLReadRow (in, inWant, row, err);
+    if (err->error) goto cleanup;
+    if (VLdesel(row)) continue; 
+ 
+    /* Make sure RA in range */
+    if (row->Ra2000>360.0) row->Ra2000 -= 360.0;
+    if (row->Ra2000<0.0)   row->Ra2000 += 360.0;
 
     /* Write output row */
     orow = -1;

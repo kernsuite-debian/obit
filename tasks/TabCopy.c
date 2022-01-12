@@ -1,6 +1,6 @@
-/* $Id: TabCopy.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -476,7 +476,7 @@ ObitData* getInputData (ObitInfoList *myInput, ObitErr *err)
   ObitInfoType type;
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   olong         Aseq, disk, cno;
-  gchar        *Type, *strTemp, inFile[129];
+  gchar        *Type, *strTemp, inFile[150];
   gchar        Aname[13], Aclass[7], *Atype = "  ";
   gchar *routine = "getInputData";
 
@@ -530,7 +530,8 @@ ObitData* getInputData (ObitInfoList *myInput, ObitErr *err)
   } else if (!strncmp (Type, "FITS", 4)) {  /* FITS input */
     /* input FITS file name */
     if (ObitInfoListGetP(myInput, "inFile", &type, dim, (gpointer)&strTemp)) {
-      strncpy (inFile, strTemp, 128);
+      strncpy (inFile, strTemp, 149);
+      ObitTrimTrail(inFile);
     } else { 
       strncpy (inFile, "No_Filename_Given", 128);
     }
@@ -570,7 +571,7 @@ ObitData* getOutputData (ObitInfoList *myInput, ObitErr *err)
   ObitData    *outData = NULL;
   ObitInfoType type;
   olong         Aseq, disk, idisk, cno;
-  gchar        *Type, *strTemp, *strTemp2, outFile[129];
+  gchar        *Type, *strTemp, *strTemp2, outFile[1150];
   gchar        Aname[13], Aclass[7], *Atype = "  ";
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar *routine = "getOutputData";
@@ -584,7 +585,9 @@ ObitData* getOutputData (ObitInfoList *myInput, ObitErr *err)
   outData = newObitData("output Data");
   
   /* File type - could be either AIPS or FITS */
-  ObitInfoListGetP (myInput, "DataType", &type, dim, (gpointer)&Type);
+  ObitInfoListGetP (myInput, "outDType", &type, dim, (gpointer)&Type);
+  if ((Type==NULL) || (!strncmp(Type,"    ",4)))
+    ObitInfoListGetP (myInput, "DataType", &type, dim, (gpointer)&Type);
   if (!strncmp (Type, "AIPS", 4)) { /* AIPS input */
     /* output AIPS disk default = inDisk*/
     ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
@@ -630,20 +633,21 @@ ObitData* getOutputData (ObitInfoList *myInput, ObitErr *err)
     /* output FITS file name */
     ObitInfoListGetP(myInput, "inFile", &type, dim, (gpointer)&strTemp2);
     if (ObitInfoListGetP(myInput, "outFile", &type, dim, (gpointer)&strTemp)) {
-      strncpy (outFile, strTemp, 128);
-    } else { 
-      g_snprintf (outFile, 129, "Squish%s", strTemp2);
+      strncpy (outFile, strTemp, 149);
+      ObitTrimTrail(outFile);
+   } else { 
+      g_snprintf (outFile, 149, "TabCop%s", strTemp2);
     }
-    /* If blank use Squish+inFile */
+    /* If blank use TabCop+inFile */
     if (!strncmp (outFile, "    ", 4)) {
-      g_snprintf (outFile, 129, "Squish%s", strTemp2);
+      g_snprintf (outFile, 149, "TabCop%s", strTemp2);
     }
     
     /* output FITS disk default = inDisk */
     ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
     idisk = disk;
     ObitInfoListGetTest(myInput, "outDisk", &type, dim, &disk);
-    if (disk<=0) disk = idisk;
+    /* NO if (disk<=0) disk = idisk; */
 
     /* Tell about it */
     Obit_log_error(err, OBIT_InfoErr, "Making FITS image %s on disk %d",

@@ -1,4 +1,4 @@
-/* $Id: ObitUVImagerSquint.h 127 2009-09-14 12:08:23Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2006-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

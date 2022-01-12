@@ -1,7 +1,7 @@
-/* $Id:  $  */
+/* $Id$  */
 /* Obit task to Map beam polarization                                 */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2009-2010                                          */
+/*;  Copyright (C) 2009-2015                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -27,6 +27,7 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitUVDesc.h"
 #include "ObitImageUtil.h"
 #include "ObitUVUtil.h"
 #include "ObitSystem.h"
@@ -83,7 +84,7 @@ void MapBeamHistory (gchar *Source, gchar Stok, ObitInfoList* myInput,
 ObitUV* doAvgData (ObitInfoList *myInput, ObitUV* inData, ObitErr *err);
 
 /* Get list of antennas */
-olong* getAntList (ObitInfoList* myInput, ObitErr* err);
+olong* getAntList (ObitInfoList* myInput, ObitUV* inData, ObitErr* err);
 
 /* Accumulate data into lists */
 void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
@@ -100,15 +101,14 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 /* Grid data into cells */
 void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 		olong selem, olong nelem, gboolean doRMS, gboolean doPhase,
-		ofloat *SumIr, ofloat *SumIi, ofloat *SumII, ofloat *SumIWt,
-		ofloat *SumQr, ofloat *SumQi, ofloat *SumQQ, ofloat *SumQWt,
-		ofloat *SumUr, ofloat *SumUi, ofloat *SumUU, ofloat *SumUWt,
-		ofloat *SumVr, ofloat *SumVi, ofloat *SumVV, ofloat *SumVWt,
-		ofloat *SumAzCell, ofloat *SumElCell, ofloat *SumPACell, 
-		olong *CntCell, ObitFArray **grids);
+		ofloat *SumIr, ofloat *SumIi, ofloat *SumII, 
+		ofloat *SumQr, ofloat *SumQi, ofloat *SumQQ, 
+		ofloat *SumUr, ofloat *SumUi, ofloat *SumUU, 
+		ofloat *SumVr, ofloat *SumVi, ofloat *SumVV, 
+		ofloat *SumAzCell, ofloat *SumElCell, ObitFArray **grids);
 
 /* Lagrangian interpolation coefficients */
-void lagrange(ofloat x, ofloat y, olong n, olong hwid, 
+void lagrange(ofloat x, ofloat y, olong n, olong hwid, olong minmax[],
 	      ofloat *xlist, ofloat *ylist, ofloat *coef);
 
 /* Program globals */
@@ -125,6 +125,62 @@ ObitInfoList *myInput  = NULL;   /* Input parameter list */
 ObitInfoList *myOutput = NULL;   /* Output parameter list */
 ofloat avgAz=0.0, avgEl=0.0, avgPA=0.0; /* Average observing Az, El, par Ang (deg) */
 odouble RAMean=0.0, DecMean=0.0; /* Mean position of current source */
+
+/*---------------Private structures----------------*/
+/* Threaded function argument */
+typedef struct {
+  ObitThread *thread;  /* ObitThread to use */
+  olong loy;           /* first (0-rel) y*/
+  olong hiy;           /* laast (0-rel) y*/
+  olong nx;            /* Number of columns */
+  olong ny;            /* Number of rows */
+  olong hwid;          /* Half width of interpolation */
+  olong nchan;         /* Number of channels in output */
+  olong nIF;	       /* Number of IFs in output  */
+  olong npoln;	       /* Number of polarizations in output  */
+  olong selem;         /* Size (floats) of list element */
+  olong nelem; 	       /* Number of list elements  */
+  gboolean doRMS;      /* If TRUE, image is RMS */
+  gboolean doPhase;    /* If TRUE, image is Phase, else Amplitude */
+  ofloat xcen;         /* X center cell */
+  ofloat ycen;         /* Y center cell */
+  ofloat *SumIr;       /* Real Stokes I accumulation list */
+  ofloat *SumIi;       /* Imag Stokes I accumulation list  */
+  ofloat *SumII;       /* Stokes I*I accumulation list  */
+  ofloat *SumQr;       /* Real Stokes Q accumulation list */
+  ofloat *SumQi;       /* Imag Stokes Q accumulation list */
+  ofloat *SumQQ;       /* Stokes Q*Q accumulation list */
+  ofloat *SumUr;       /* Real Stokes U accumulation list */
+  ofloat *SumUi;       /* Imag Stokes U accumulation list */
+  ofloat *SumUU;       /* Stokes U*U accumulation list  */
+  ofloat *SumVr;       /* Real Stokes V accumulation list */
+  ofloat *SumVi;       /* Imag Stokes V accumulation list */
+  ofloat *SumVV;       /* Stokes V*V accumulation list */
+  ofloat *SumAzCell;   /* Azimuth offset accumulation list */
+  ofloat *SumElCell;   /* Elevation offset  accumulation list */
+  ofloat *coef;        /* Work space */
+  ObitFArray **grids;  /* Array of output ObitFArrays
+			  fastest to slowest, channel, IF, Stokes  */
+  olong      ithread;  /* Thread number  */
+} MBFuncArg;
+		     
+/** Private: Make Threaded args */
+static olong MakeMBFuncArgs (ObitThread *thread, 
+			     olong nchan, olong nIF, olong npoln,
+			     olong selem, olong nelem, gboolean doRMS, gboolean doPhase,
+			     olong nx, olong ny, olong hwid, ofloat xcen, ofloat ycen,
+			     ofloat *SumIr, ofloat *SumIi, ofloat *SumII, 
+			     ofloat *SumQr, ofloat *SumQi, ofloat *SumQQ, 
+			     ofloat *SumUr, ofloat *SumUi, ofloat *SumUU, 
+			     ofloat *SumVr, ofloat *SumVi, ofloat *SumVV, 
+			     ofloat *SumAzCell, ofloat *SumElCell, ObitFArray **grids,
+			     MBFuncArg ***ThreadArgs);
+
+/** Private: Delete Threaded args */
+static void KillMBFuncArgs (olong nargs, MBFuncArg **ThreadArgs);
+
+/** Private: Threaded Gridding */
+static gpointer ThreadMBGrid (gpointer arg);
 
 int main ( int argc, char **argv )
 /*----------------------------------------------------------------------- */
@@ -203,6 +259,7 @@ ObitInfoList* MapBeamIn (int argc, char **argv, ObitErr *err)
 
   /* Make default inputs InfoList */
   list = defaultInputs(err);
+  myOutput = defaultOutputs(err);
 
   /* command line arguments */
   /* fprintf (stderr,"DEBUG arg %d %s\n",argc,argv[0]); DEBUG */
@@ -370,7 +427,6 @@ ObitInfoList* MapBeamIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -664,7 +720,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
 {
   ObitUV       *inData = NULL;
   ObitInfoType type;
-  olong         Aseq, disk, cno, nvis, nThreads;
+  olong         Aseq, disk, cno, nvis;
   gchar        *Type, *strTemp, inFile[129];
   oint         doCalib;
   gchar        Aname[13], Aclass[7], *Atype = "UV";
@@ -732,10 +788,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
 
     /* define object */
-    nvis = 1000;
-    nThreads = 1;
-    ObitInfoListGetTest(myInput, "nThreads", &type, dim, &nThreads);
-    nvis *= nThreads;
+    nvis = 1;
     ObitUVSetFITS (inData, nvis, disk, inFile,  err); 
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
@@ -762,6 +815,12 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   /* Ensure inData fully instantiated and OK */
   ObitUVFullInstantiate (inData, TRUE, err);
   if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
+
+  /* Set number of vis per IO */
+  nvis = 1000;  /* How many vis per I/O? */
+  nvis =  ObitUVDescSetNVis (inData->myDesc, myInput, nvis);
+  dim[0] = dim[1] = dim[2] = dim[3] = 1;
+  ObitInfoListAlwaysPut (inData->info, "nVisPIO", OBIT_long, dim,  &nvis);
 
   return inData;
 } /* end getInputData */
@@ -791,17 +850,20 @@ ObitImage* setOutput (gchar *Source, olong iStoke, olong ant,
   ObitImage *outImage=NULL;
   ObitInfoType type;
   ObitIOType IOType;
-  olong      i, n, Aseq, disk, cno, axNum, axFNum, axIFNum, nx=11, ny=11;
-  gchar     *Type, *strTemp, outFile[129], *outName, *outF, stemp[32];;
+  olong     i, n, Aseq, disk, cno, axNum, axFNum, axIFNum, nx=11, ny=11;
+  olong     jStoke;
+  gchar     *Type, *strTemp, outFile[129], *outName, *outF, stemp[32];
   gchar     Aname[13], Aclass[7], *Atype = "MA";
   gchar     *today=NULL;
   gint32    dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   olong     blc[IM_MAXDIM] = {1,1,1,1,1,1,1};
   olong     trc[IM_MAXDIM] = {0,0,0,0,0,0,0};
   gboolean  exist;
-  gchar     tname[129], *chStokes="IQUV";
-  odouble   StokCrval[4] = {1.0,2.0,3.0,4.0};
-  gfloat    xCells = 1.0, yCells=1.0;
+  gboolean trueStokes=FALSE;
+  gchar     tname[129], *chStokes, *chTStokes="IQUV", *chCcor="RLPQ", *chLcor="XYPQ";
+  odouble   *StokCrval, TStokCrval[4] = {1.0,2.0,3.0,4.0};
+  odouble   CFCrval[4] = {-1.0, -2.0,-3.0,-4.0}, LFCrval[4] = {-5.0, -6.0,-7.0,-8.0};
+  gfloat    xCells, yCells;
   gchar     *FITS = "FITS";
   ObitImageDesc *outDesc;
   gchar     *routine = "setOutput";
@@ -810,6 +872,19 @@ ObitImage* setOutput (gchar *Source, olong iStoke, olong ant,
   if (err->error) return outImage;
   g_assert (ObitInfoListIsA(myInput));
   g_assert (ObitUVIsA(inData));
+
+  /* Stokes or correlator values */
+  trueStokes = inData->myDesc->crval[inData->myDesc->jlocs]>0.0;
+  if (trueStokes)                                             chStokes = chTStokes;
+  else if (inData->myDesc->crval[inData->myDesc->jlocs]<-3.0) chStokes = chLcor;
+  else                                                        chStokes = chCcor;
+  if (trueStokes)                                             StokCrval = TStokCrval;
+  else if (inData->myDesc->crval[inData->myDesc->jlocs]<-3.0) StokCrval = LFCrval;
+  else                                                        StokCrval = CFCrval;
+  /* Which poln? */
+  jStoke = iStoke;
+  if (!trueStokes && inData->myDesc->crval[inData->myDesc->jlocs]==-2) jStoke = 1;
+  if (!trueStokes && inData->myDesc->crval[inData->myDesc->jlocs]==-6) jStoke = 1;
 
   /* Notes:
      1) AIPS Name = Source +outName
@@ -820,7 +895,7 @@ ObitImage* setOutput (gchar *Source, olong iStoke, olong ant,
   */
 
   /* Create basic output Image Object */
-  g_snprintf (tname, 100, "output Image %cPol",chStokes[iStoke-1]);
+  g_snprintf (tname, 100, "output Image %cPol",chStokes[jStoke]);
   outImage = newObitImage(tname);
     
   /* File type - could be either AIPS or FITS */
@@ -854,22 +929,22 @@ ObitImage* setOutput (gchar *Source, olong iStoke, olong ant,
     if (doRMS) {  /* RMS */
       /* One or all antennas? */
       if (ant>0) {   /* One */
-	g_snprintf (tname, 100, "%c%3.3dRM", chStokes[iStoke],ant);
+	g_snprintf (tname, 100, "%c%3.3dRM", chStokes[jStoke],ant);
       } else {       /* all */
-	g_snprintf (tname, 100, "%cAllRM", chStokes[iStoke]);
+	g_snprintf (tname, 100, "%cAllRM", chStokes[jStoke]);
       }
     }  else if (doPhase) {  /* Phase */
       /* One or all antennas? */
       if (ant>0) {   /* One */
-	g_snprintf (tname, 100, "%c%3.3dPH", chStokes[iStoke],ant);
+	g_snprintf (tname, 100, "%c%3.3dPH", chStokes[jStoke],ant);
       } else {       /* all */
-	g_snprintf (tname, 100, "%cAllPH", chStokes[iStoke]);
+	g_snprintf (tname, 100, "%cAllPH", chStokes[jStoke]);
       }
     } else {      /* Stokes */
       if (ant>0) {   /* One */
-	g_snprintf (tname, 100, "%c%3.3d  ", chStokes[iStoke],ant);
+	g_snprintf (tname, 100, "%c%3.3d  ", chStokes[jStoke],ant);
       } else {       /* all */
-	g_snprintf (tname, 100, "%cAll  ", chStokes[iStoke]);
+	g_snprintf (tname, 100, "%cAll  ", chStokes[jStoke]);
       }
     } /* end of branch by type */
     strncpy (Aclass, tname, 7); 
@@ -907,7 +982,7 @@ ObitImage* setOutput (gchar *Source, olong iStoke, olong ant,
     /* Something in source name? */
     if ((Source[0]==' ') || (Source[0]==0)) 
       g_snprintf (stemp, 30, "Beam");
-    else g_snprintf (stemp, 30, Source);
+    else g_snprintf (stemp, 30, "%s", Source);
     ObitTrimTrail(stemp);  /* remove trailing blanks */
 	   
     IOType = OBIT_IO_FITS;  /* Save file type */
@@ -917,22 +992,22 @@ ObitImage* setOutput (gchar *Source, olong iStoke, olong ant,
     if (doRMS) {  /* RMS */
       /* One or all antennas? */
       if (ant>0) {   /* One */
-	g_snprintf (outFile, 128, "%s%c%3.3dRMS%s", stemp,chStokes[iStoke],ant,tname);
+	g_snprintf (outFile, 128, "%s%c%3.3dRMS%s", stemp,chStokes[jStoke],ant,tname);
       } else {       /* all */
-	g_snprintf (outFile, 128, "%s%cAllRMS%s", stemp,chStokes[iStoke],tname);
+	g_snprintf (outFile, 128, "%s%cAllRMS%s", stemp,chStokes[jStoke],tname);
       }
      } else if (doPhase) {  /* Phase */
       /* One or all antennas? */
       if (ant>0) {   /* One */
-	g_snprintf (outFile, 128, "%s%c%3.3dPh%s", stemp,chStokes[iStoke],ant,tname);
+	g_snprintf (outFile, 128, "%s%c%3.3dPh%s", stemp,chStokes[jStoke],ant,tname);
       } else {       /* all */
-	g_snprintf (outFile, 128, "%s%cAllPh%s", stemp,chStokes[iStoke],tname);
+	g_snprintf (outFile, 128, "%s%cAllPh%s", stemp,chStokes[jStoke],tname);
       }
     } else {      /* Stokes */
       if (ant>0) {   /* One */
-	g_snprintf (outFile, 128, "%s%c%3.3d%s", stemp,chStokes[iStoke],ant,tname);
+	g_snprintf (outFile, 128, "%s%c%3.3d%s", stemp,chStokes[jStoke],ant,tname);
       } else {       /* all */
-	g_snprintf (outFile, 128, "%s%cAll%s", stemp,chStokes[iStoke],tname);
+	g_snprintf (outFile, 128, "%s%cAll%s", stemp,chStokes[jStoke],tname);
       }
     }  /* end branch by type */
 
@@ -1030,7 +1105,7 @@ ObitImage* setOutput (gchar *Source, olong iStoke, olong ant,
   outImage->myDesc->inaxes[axNum] = 1;
   outImage->myDesc->crpix[axNum]  = 1.0;
   outImage->myDesc->cdelt[axNum]  = 1.0;
-  outImage->myDesc->crval[axNum]  = StokCrval[iStoke];
+  outImage->myDesc->crval[axNum]  = StokCrval[jStoke];
   axNum++;
 
   outImage->myDesc->naxis = axNum;  /* Total number of axes */
@@ -1066,7 +1141,7 @@ void doSources  (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   gboolean     isBad = FALSE;
   gchar        *Fail="Failed  ", *Done="Done    ";
   gchar        *dataParms[] = {  /* Source selection*/
-    "Sources", "souCode", "Qual", "timeRange", "UVRange", "FreqID",
+    "Sources", "souCode", "Qual", "Stokes", "timeRange", "UVRange", "FreqID",
     NULL
   };
   gchar *routine = "doSources";
@@ -1078,13 +1153,14 @@ void doSources  (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   /* Make sure selector set on inData */
   ObitUVOpen (inData, OBIT_IO_ReadCal, err);
   ObitUVClose (inData, err);
+  if (err->error) Obit_traceback_msg (err, routine, inData->name);
   
   /* Get source list to do */
   doList = ObitUVUtilWhichSources (inData, err);
   if (err->error) Obit_traceback_msg (err, routine, inData->name);
 
   /* Get list of antennas */
-  antList = getAntList(myInput, err);
+  antList = getAntList(myInput, inData, err);
   if (err->error) Obit_traceback_msg (err, routine, inData->name);
 
   /* Loop over list of sources */
@@ -1220,6 +1296,10 @@ void doChanPoln (gchar *Source, olong ant, ObitInfoList* myInput,
 	  plane[1] = ichan+1;
 	  for (iIF=0; iIF<nIF; iIF++) {
 	    plane[0] = iIF+1;
+	    /* DEBUG
+	    if ((iIF==11) && (ichan==2)) {
+	      fprintf (stderr,"IF %d ch %d val %f\n",iIF,ichan,imgList[i]->array[51+50*100]);
+	    } */
 	    ObitImagePutPlane (outImage[ipoln], imgList[i++]->array, plane,  err);
 	    if (err->error) goto cleanup;
 	  }
@@ -1229,6 +1309,14 @@ void doChanPoln (gchar *Source, olong ant, ObitInfoList* myInput,
 	  plane[1] = iIF+1;
 	  for (ichan=0; ichan<nchan; ichan++) {
 	    plane[0] = ichan+1;
+	    /* DEBUG 
+	    if ((iIF==11) && (ichan==2)) {
+	      fprintf (stdout,"IF %d ch %d 50,48 val %f\n",iIF,ichan,imgList[i]->array[50+48*100] );
+	      fprintf (stdout,"IF %d ch %d 50,49 val %f\n",iIF,ichan,imgList[i]->array[50+49*100] );
+	      fprintf (stdout,"IF %d ch %d 50,50 val %f\n",iIF,ichan,imgList[i]->array[50+50*100] );
+	      fprintf (stdout,"IF %d ch %d 50,51 val %f\n",iIF,ichan,imgList[i]->array[50+51*100] );
+	      fprintf (stdout,"IF %d ch %d 51,51 val %f\n",iIF,ichan,imgList[i]->array[51+51*100] );
+	    } */
 	    ObitImagePutPlane (outImage[ipoln], imgList[i++]->array, plane,  err);
 	    if (err->error) goto cleanup;
 	  } /* end Channel loop */
@@ -1321,6 +1409,8 @@ ObitFArray** doImage (gboolean doRMS, gboolean doPhase, olong ant,
   ofloat       *SumAzCell=NULL, *SumElCell=NULL, *SumPACell=NULL;
   ofloat       *Center, *ICenter, value;
   olong        *CntCell=NULL;
+  gchar        Stokes[10];
+  gboolean trueStokes=FALSE, doPolStokes=FALSE;
   gchar *routine = "doImage";
 
   /* error checks */
@@ -1336,6 +1426,13 @@ ObitFArray** doImage (gboolean doRMS, gboolean doPhase, olong ant,
   else *nIF = 1;
   /* Number of polarizations */
   *npoln = inData->myDesc->inaxes[inData->myDesc->jlocs];
+  /* Stokes or correlator values */
+  trueStokes = inData->myDesc->crval[inData->myDesc->jlocs]>0.0;
+
+  /* Stokes */
+  Stokes[0] = 'I'; Stokes[1] = 0;
+  ObitInfoListGetTest(myInput, "Stokes", &type, dim, Stokes);
+  doPolStokes = trueStokes && (Stokes[1]=='Q') && (Stokes[2]=='U');
 
   /* How big an image? */
   ObitInfoListGetTest(myInput, "nx", &type, dim, &nx);
@@ -1346,23 +1443,27 @@ ObitFArray** doImage (gboolean doRMS, gboolean doPhase, olong ant,
   selem = (*nIF) * (*nchan); /* size of list element */
   nelem = nx * ny;           /* Number of list elements */
   nelem *= 2;                /* To be sure big enough */
+  /* May need alot bigger if averaging antennas and offsets given */
+  if (ant<=0) nelem *= 100;
   size = selem * nelem;      /* size of list */
   SumIr     = g_malloc0(size*sizeof(ofloat));
   SumIi     = g_malloc0(size*sizeof(ofloat));
   SumII     = g_malloc0(size*sizeof(ofloat));
   SumIWt    = g_malloc0(size*sizeof(ofloat));
-  SumQr     = g_malloc0(size*sizeof(ofloat));
-  SumQi     = g_malloc0(size*sizeof(ofloat));
-  SumQQ     = g_malloc0(size*sizeof(ofloat));
-  SumQWt    = g_malloc0(size*sizeof(ofloat));
-  SumUr     = g_malloc0(size*sizeof(ofloat));
-  SumUi     = g_malloc0(size*sizeof(ofloat));
-  SumUU     = g_malloc0(size*sizeof(ofloat));
-  SumUWt    = g_malloc0(size*sizeof(ofloat));
-  SumVr     = g_malloc0(size*sizeof(ofloat));
-  SumVi     = g_malloc0(size*sizeof(ofloat));
-  SumVWt    = g_malloc0(size*sizeof(ofloat));
-  SumVV     = g_malloc0(size*sizeof(ofloat));
+  if (doPolStokes) {
+    SumQr     = g_malloc0(size*sizeof(ofloat));
+    SumQi     = g_malloc0(size*sizeof(ofloat));
+    SumQQ     = g_malloc0(size*sizeof(ofloat));
+    SumQWt    = g_malloc0(size*sizeof(ofloat));
+    SumUr     = g_malloc0(size*sizeof(ofloat));
+    SumUi     = g_malloc0(size*sizeof(ofloat));
+    SumUU     = g_malloc0(size*sizeof(ofloat));
+    SumUWt    = g_malloc0(size*sizeof(ofloat));
+    SumVr     = g_malloc0(size*sizeof(ofloat));
+    SumVi     = g_malloc0(size*sizeof(ofloat));
+    SumVWt    = g_malloc0(size*sizeof(ofloat));
+    SumVV     = g_malloc0(size*sizeof(ofloat));
+  }
   SumAzCell = g_malloc0(nelem*sizeof(ofloat));  
   SumElCell = g_malloc0(nelem*sizeof(ofloat));
   SumPACell = g_malloc0(nelem*sizeof(ofloat));
@@ -1389,54 +1490,65 @@ ObitFArray** doImage (gboolean doRMS, gboolean doPhase, olong ant,
 
   /* Grid data */
   gridData (myInput, *nchan, *nIF, *npoln, selem, nelem, doRMS, doPhase,
-	    SumIr, SumIi, SumII, SumIWt, SumQr, SumQi, SumQQ, SumQWt,
-	    SumUr, SumUi, SumUU, SumUWt, SumVr, SumVi, SumVV, SumVWt,
-	    SumAzCell, SumElCell, SumPACell, CntCell, 
-	    out);
+	    SumIr, SumIi, SumII, SumQr, SumQi, SumQQ, 
+	    SumUr, SumUi, SumUU, SumVr, SumVi, SumVV, 
+	    SumAzCell, SumElCell, out);
 
   /* No normalization for RMS, phase */
   if (doRMS|| doPhase) goto cleanup;
 
-  /* Subtract center Q, U (source poln) * Ipol beam from rest */
-  fatemp = ObitFArrayCreate (NULL, 2, naxis);  /* Work array */
+  /* DEBUG IF 12, ch 3 
+    indx = 0*selem + 11*(*nchan) + 2;
+    value =  1.0/out[indx]->array[50+50*100];
+    fprintf (stdout,"Grid IF %d ch %d 50,48 val %f\n",11,2,out[indx]->array[50+48*100]*value );
+    fprintf (stdout,"Grid IF %d ch %d 50,49 val %f\n",11,2,out[indx]->array[50+49*100]*value );
+    fprintf (stdout,"Grid IF %d ch %d 50,50 val %f\n",11,2,out[indx]->array[50+50*100]*value );
+    fprintf (stdout,"Grid IF %d ch %d 50,51 val %f\n",11,2,out[indx]->array[50+51*100]*value );
+    fprintf (stdout,"Grid IF %d ch %d 51,51 val %f\n",11,2,out[indx]->array[51+51*100]*value );*/
+
+   /* true Stokes: Subtract center Q, U (source poln) * Ipol beam from rest */
+  if (doPolStokes) {
+    fatemp = ObitFArrayCreate (NULL, 2, naxis);  /* Work array */
+    ipos[0] = nx/2; ipos[1] = ny/2;
+    for (iIF=0; iIF<(*nIF); iIF++) {
+      for (ichan=0; ichan<(*nchan); ichan++) {
+	/* Q */ 
+	indx = 0*selem + iIF*(*nchan) + ichan;
+	qndx = 1*selem + iIF*(*nchan) + ichan;
+	ICenter = ObitFArrayIndex (out[indx],  ipos);
+	Center  = ObitFArrayIndex (out[qndx],  ipos);
+	value = -(*Center) / (*ICenter);  /* Normalize IPol beam */
+	fatemp = ObitFArrayCopy (out[indx], fatemp, err);
+	if (err->error) goto cleanup;
+	ObitFArraySMul (fatemp, value);  /* Q * IPol beam */
+	if ((*npoln>1) && out[qndx]) ObitFArrayAdd (out[qndx], fatemp, out[qndx]);
+	/* U */ 
+	undx = 2*selem + iIF*(*nchan) + ichan;
+	Center = ObitFArrayIndex (out[undx],  ipos);
+	value = -(*Center) / (*ICenter);
+	fatemp = ObitFArrayCopy (out[indx], fatemp, err);
+	if (err->error) goto cleanup;
+	ObitFArraySMul (fatemp, value);  /* U * IPol beam */
+	if ((*npoln>2) && out[undx]) ObitFArrayAdd (out[undx], fatemp, out[undx]);
+      }
+    }
+
+    /* Divide Q,U,V by I  */
+    for (iIF=0; iIF<(*nIF); iIF++) {
+      for (ichan=0; ichan<(*nchan); ichan++) {
+	indx = 0*selem + iIF*(*nchan) + ichan;
+	qndx = 1*selem + iIF*(*nchan) + ichan;
+	if ((*npoln>2) && out[qndx]) ObitFArrayDiv (out[qndx], out[indx], out[qndx]);
+	undx = 2*selem + iIF*(*nchan) + ichan;
+	if ((*npoln>2) && out[undx]) ObitFArrayDiv (out[undx], out[indx], out[undx]);
+	vndx = 3*selem + iIF*(*nchan) + ichan;
+	if ((*npoln>3) && out[vndx]) ObitFArrayDiv (out[vndx], out[indx], out[vndx]);
+      }
+    }
+  } /* end true Stokes */
+
+  /* Normalize I or parallel hand correlations */
   ipos[0] = nx/2; ipos[1] = ny/2;
-  for (iIF=0; iIF<(*nIF); iIF++) {
-    for (ichan=0; ichan<(*nchan); ichan++) {
-      /* Q */ 
-      indx = 0*selem + iIF*(*nchan) + ichan;
-      qndx = 1*selem + iIF*(*nchan) + ichan;
-      ICenter = ObitFArrayIndex (out[indx],  ipos);
-      Center  = ObitFArrayIndex (out[qndx],  ipos);
-      value = -(*Center) / (*ICenter);  /* Normalize IPol beam */
-      fatemp = ObitFArrayCopy (out[indx], fatemp, err);
-      if (err->error) goto cleanup;
-      ObitFArraySMul (fatemp, value);  /* Q * IPol beam */
-      ObitFArrayAdd (out[qndx], fatemp, out[qndx]);
-      /* U */ 
-      undx = 2*selem + iIF*(*nchan) + ichan;
-      Center = ObitFArrayIndex (out[undx],  ipos);
-      value = -(*Center) / (*ICenter);
-      fatemp = ObitFArrayCopy (out[indx], fatemp, err);
-      if (err->error) goto cleanup;
-      ObitFArraySMul (fatemp, value);  /* U * IPol beam */
-      ObitFArrayAdd (out[undx], fatemp, out[undx]);
-    }
-  }
-
-  /* Divide Q,U,V by I  */
-  for (iIF=0; iIF<(*nIF); iIF++) {
-    for (ichan=0; ichan<(*nchan); ichan++) {
-      indx = 0*selem + iIF*(*nchan) + ichan;
-      qndx = 1*selem + iIF*(*nchan) + ichan;
-      ObitFArrayDiv (out[qndx], out[indx], out[qndx]);
-      undx = 2*selem + iIF*(*nchan) + ichan;
-      ObitFArrayDiv (out[undx], out[indx], out[undx]);
-      vndx = 3*selem + iIF*(*nchan) + ichan;
-      ObitFArrayDiv (out[vndx], out[indx], out[vndx]);
-    }
-  }
-
-  /* Normalize I */
   for (iIF=0; iIF<(*nIF); iIF++) {
     for (ichan=0; ichan<(*nchan); ichan++) {
       indx = 0*selem + iIF*(*nchan) + ichan;
@@ -1444,8 +1556,15 @@ ObitFArray** doImage (gboolean doRMS, gboolean doPhase, olong ant,
       value = (*Center);
       if (value!=0.0) value = 1.0 / value;
       ObitFArraySMul (out[indx], value);
+      if (!trueStokes && (*npoln>1)) {
+       indx = 1*selem + iIF*(*nchan) + ichan;
+       Center = ObitFArrayIndex (out[indx],  ipos);
+       value = (*Center);
+       if (value!=0.0) value = 1.0 / value;
+       ObitFArraySMul (out[indx], value);
+      }
     }
-  }
+  } /* end IF Loop */
 
   /* Cleanup */
  cleanup:
@@ -1492,12 +1611,13 @@ void MapBeamHistory (gchar *Source, gchar Stoke, ObitInfoList* myInput,
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq",
-    "Sources", "Qual", "souCode", "timeRange",  
+    "Sources", "Qual", "souCode", "timeRange",  "Stokes",
     "FreqID", "BIF", "EIF", "BChan", "EChan",  
-    "doCalib", "gainUse", "doPol",  "flagVer", "doBand ",  "BPVer", "Smooth",
+    "doCalib", "gainUse", "doPol",  "PDVer", "flagVer", "doBand ",  "BPVer", "Smooth",
     "outDType", "outFile",  "outDisk", "outName", "outSeq",
-    "nx", "ny", "xCells", "yCells",  "avgTime", "avgFreq", "chAvg", "ChanSel",
+    "nx", "ny", "xCells", "yCells", "hwid", "avgTime", "avgFreq", "chAvg", "ChanSel",
     "blnkTime", "avgAnt", "doRMS", "doPhase", "doPolNorm", "Antennas", "RefAnts",
+    "OffAz", "OffEl",
     NULL};
   gchar *routine = "MapBeamHistory";
 
@@ -1573,12 +1693,12 @@ ObitUV* doAvgData (ObitInfoList *myInput, ObitUV* inData, ObitErr *err)
   olong        avgFreq, nchAvg;
   ofloat       timeAvg;
   gboolean     isScratch, doAvgAll;
-  gchar        Stokes[5];
+  /*gchar        Stokes[5];*/
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
     "UVRange", "timeRange", "doCalSelect", 
-    "BIF", "EIF", "BChan", "EChan","subA", "Antennas",
-    "doCalib", "gainUse", "doBand", "BPVer", "Smooth", "flagVer", "doPol",
-    "avgTime", "avgFreq", "ChanSel", 
+    "BIF", "EIF", "BChan", "EChan","subA", "Antennas", "Stokes",
+    "doCalib", "gainUse", "doBand", "BPVer", "Smooth", "flagVer", 
+    "doPol", "PDVer",  "avgTime", "avgFreq", "ChanSel", 
     NULL
   };
   gchar        *routine= "doAvgData";
@@ -1589,10 +1709,10 @@ ObitUV* doAvgData (ObitInfoList *myInput, ObitUV* inData, ObitErr *err)
   ObitInfoListCopyList (myInput, inData->info, dataParms);
   if (err->error) Obit_traceback_val (err, routine, inData->name, avgData);
   
-  /* Convert to IQUV */
+  /* Convert to IQUV 
   strcpy (Stokes, "IQUV");
   dim[0] = strlen(Stokes);
-  ObitInfoListAlwaysPut (inData->info, "Stokes", OBIT_string, dim, Stokes);
+  ObitInfoListAlwaysPut (inData->info, "Stokes", OBIT_string, dim, Stokes);*/
 
   /* Make scratch file, possibly with time and freq averaging */
   avgFreq = 0;
@@ -1601,6 +1721,7 @@ ObitUV* doAvgData (ObitInfoList *myInput, ObitUV* inData, ObitErr *err)
   ObitInfoListGetTest(myInput, "chAvg",  &type, dim, &nchAvg);
   timeAvg = 0.0;
   ObitInfoListGetTest(myInput, "avgTime",  &type, dim, &timeAvg);
+  timeAvg /= 60.0;  /* Convert to min. */
 
   /* Average all channels/IFs? */
   doAvgAll = (avgFreq==3);
@@ -1661,16 +1782,19 @@ ObitUV* doAvgData (ObitInfoList *myInput, ObitUV* inData, ObitErr *err)
 /*   Return:                                                              */
 /*     -1 terminated list, 0=> average antennas, g_free when done         */
 /*----------------------------------------------------------------------- */
-olong* getAntList (ObitInfoList* myInput, ObitErr* err)
+olong* getAntList (ObitInfoList* myInput, ObitUV *inData, ObitErr* err)
 {
   olong        *out=NULL;
   ObitInfoType type;
   gint32       dim[MAXINFOELEMDIM];
-  gboolean     avgAnt=TRUE;
-  olong        i, count, *Antennas;
+  gboolean     avgAnt=TRUE, want;
+  olong        i, j, iout, count, *Antennas, *RefAnts, nant, nref;
   gchar        *routine= "getAntList";
 
   if (err->error) return out;  /* Prior error? */
+  /* reference antennas */
+  ObitInfoListGetP(myInput, "RefAnts",  &type, dim, (gpointer)&RefAnts);
+  nref = dim[0];
 
   ObitInfoListGetTest(myInput, "avgAnt", &type, dim, &avgAnt);
   if (avgAnt) { /* Average all selected */
@@ -1693,13 +1817,26 @@ olong* getAntList (ObitInfoList* myInput, ObitErr* err)
     }
     /* If none selected all wanted */
     if (count<=0) {
-      out = g_malloc0((dim[0]+1)*sizeof(olong));
-      for (i=0; i<dim[0]; i++) out[i] = i+1;
-      out[i] = -1;
+      out  = g_malloc0((dim[0]+1)*sizeof(olong));
+      iout = 0;
+      nant = MIN (dim[0], inData->myDesc->numAnt[0]);
+      for (i=0; i<nant; i++) {
+	/* Want? */
+	want = TRUE;
+	for (j=0; j<nref; j++) if ((i+1)==RefAnts[j]) want = FALSE;
+	if (want) out[iout++] = i+1;
+      }
+      out[iout] = -1;
     } else { /* explicit list */
-      out = g_malloc0((count+1)*sizeof(olong));
-      for (i=0; i<count; i++) out[i] = Antennas[i];
-      out[i] = -1;
+      out  = g_malloc0((count+1)*sizeof(olong));
+      iout = 0;
+      for (i=0; i<count; i++) {
+ 	/* Want? */
+	want = TRUE;
+	for (j=0; j<nref; j++) if (Antennas[i]==RefAnts[j]) want = FALSE;
+	if (want) out[iout++] = Antennas[i];
+     }
+      out[iout] = -1;
     }
   } /* end individual antenna output */
 
@@ -1766,13 +1903,13 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
   ObitInfoType type;
   gint32   dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ofloat   xCells=1.0, yCells=1.0, blnkTime=0.0, tblank=-1.0e20;
-  ofloat   u, v, time, base, ulast, vlast, tol, Az, El, PA;
-  ofloat   ss, cc, xr, xi, fblank =  ObitMagicF();
+  ofloat   u, v, time, ulast, vlast, tol, Az, El, PA, *farr;
+  ofloat   ss, cc, xr, xi, *OffAz=NULL, *OffEl=NULL, fblank =  ObitMagicF();
   odouble  sumAz, sumEl, sumPA;
-  olong    count, maxElem=*nelem, iElem, indx, iant, ant1, ant2, off=0, iver;
+  olong    count, maxElem=*nelem, iElem, indx, iant, ant1, ant2, suba, off=0, iver;
   olong    i, j, jlocs, jlocf, jlocif, incs, incf, incif, doff, ddoff;
   olong    nx, ny, iIF, ichan, *refAnts, nRefAnt, ix, iy, prtLv=0;
-  gboolean OK;
+  gboolean OK1, OK2;
   gchar    *routine = "accumData";
 
   /* error checks */
@@ -1781,6 +1918,7 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
   /* Get control parameters */
   ObitInfoListGetTest(myInput, "xCells", &type,   dim, &xCells);
   ObitInfoListGetTest(myInput, "yCells", &type,   dim, &yCells);
+  if (yCells==0.0) yCells = xCells;
   ObitInfoListGetTest(myInput, "blnkTime", &type, dim, &blnkTime);
   ObitInfoListGetTest(myInput, "prtLv",  &type, dim, &prtLv);
   /* How big an image? */
@@ -1792,6 +1930,16 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
   /* Blanking time to days */
   blnkTime /= 86400.0;
 
+  /* Pointing offsets */
+  if (ObitInfoListGetP(myInput, "OffAz",  &type, dim, (gpointer)&farr)) {
+    OffAz = g_malloc0(dim[0]*sizeof(ofloat));
+    for (i=0; i<dim[0]; i++) OffAz[i] = DG2RAD * farr[i]/60.0;  /* to radians */
+  }
+  if (ObitInfoListGetP(myInput, "OffEl",  &type, dim, (gpointer)&farr)) {
+    OffEl = g_malloc0(dim[0]*sizeof(ofloat));
+    for (i=0; i<dim[0]; i++) OffEl[i] = DG2RAD * farr[i]/60.0;  /* to radians */
+  }
+  
   /* Ref antennas */
   nRefAnt = 0;
   ObitInfoListGetP(myInput, "RefAnts",  &type, dim, (gpointer)&refAnts);
@@ -1817,7 +1965,7 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
   /* Get Antenna List */
   iver = 1;  /* Or Subarray no. */
   ANTable = newObitTableANValue (inData->name, (ObitData*)inData, &iver, 
-				 OBIT_IO_ReadOnly, 0, 0, err);
+				 OBIT_IO_ReadOnly, 0, 0, 0, err);
   AList   = ObitTableANGetList (ANTable, err);
   ANTable = ObitTableANUnref(ANTable);   /* Done with table */
   if (err->error) Obit_traceback_msg (err, routine, ANTable->name);
@@ -1870,12 +2018,37 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
     for (i=0; i<inData->myDesc->numVisBuff; i++) { 
       /* where are we? */
       time =  inData->buffer[indx+inData->myDesc->iloct];
-      /* fix online system bug - flip sign of u */
-      u    = -inData->buffer[indx+inData->myDesc->ilocu];
-      v    =  inData->buffer[indx+inData->myDesc->ilocv];
+      /* Sign of u seems OK */
+      u    = inData->buffer[indx+inData->myDesc->ilocu];
+      v    = inData->buffer[indx+inData->myDesc->ilocv];
 
       /* In blanked time? */
       if (time<tblank) goto next;
+
+      /* Want antennas? */
+      ObitUVDescGetAnts(inData->myDesc, &inData->buffer[indx], &ant1, &ant2, &suba);
+      if (ant>0) {
+	if ((ant1!=ant) && (ant2!=ant)) goto next;
+      }
+      /* One and only one must be a reference antenna */
+      OK1 = FALSE;
+      OK2 = FALSE;
+      for (j=0; j<nRefAnt; j++) {
+	OK1 = OK1 || (ant1==refAnts[j]);
+	OK2 = OK2 || (ant2==refAnts[j]);
+      }
+      if (!(OK1 || OK2)) goto next;
+      if (OK1 && OK2)    goto next;
+
+      /* Add pointing offsets */
+      if (OffAz) {
+	u += OffAz[ant1];
+	u += OffAz[ant2];
+      }
+      if (OffEl) {
+	v += OffEl[ant1];
+	v += OffEl[ant2];
+      }
 
       /* First time in pointing? */
       if (CntCell[iElem]<=0) {
@@ -1894,23 +2067,6 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 			     "%s Too many pointings %d >= %d",  
 			     routine, iElem, maxElem);  
       }
-
-      /* In blanked time? */
-      if (time<tblank) goto next;
-
-      /* Want antennas? */
-      base = inData->buffer[indx+inData->myDesc->ilocb];
-      /* crack Baseline */
-      ant1 = (base / 256.0) + 0.001;
-      ant2 = (base - ant1 * 256) + 0.001;
-      if (ant>0) {
-	if ((ant1!=ant) && (ant2!=ant)) goto next;
-      }
-      /* One must be a reference antenna */
-      OK = FALSE;
-      for (j=0; j<nRefAnt; j++) 
-	OK = OK || (ant1==refAnts[j]) || (ant2==refAnts[j]);
-      if (!OK) goto next;
 
       /* Observing geometry (radians) */
       Az = ObitAntennaListAz (AList, ant1, time, Source);
@@ -1932,8 +2088,14 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 	for (ichan=0; ichan<nchan; ichan++) {
 	  off  = iElem*selem + iIF*nchan + ichan;
 	  doff = indx + inData->myDesc->nrparm + iIF*incif + ichan*incf;
-	  /* I */
 	  ddoff = doff;
+	  /* DEBUG
+	  if ((iIF==11) && (ichan==3) && (fabs((u/xCells)+2.0)<2.1) && (fabs((v/yCells)-2.0)<2.1)) {
+	    fprintf (stderr,"bl %2d - %2d cx %5.0f cy %5.0f sum %f vis %f %f wt %f\n",
+		     ant1, ant2, u/xCells, v/yCells, SumIr[off],
+		     inData->buffer[ddoff],inData->buffer[ddoff+1], inData->buffer[ddoff+2]);
+	  } */
+	  /* I */
 	  if (inData->buffer[ddoff+2]>0.0) {
 	    SumIr[off]  += inData->buffer[ddoff]*inData->buffer[ddoff+2];
 	    SumIi[off]  += inData->buffer[ddoff+1]*inData->buffer[ddoff+2];
@@ -1942,7 +2104,7 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 	  }
 	  /* Q */
 	  ddoff = doff + incs;
-	  if (inData->buffer[ddoff+2]>0.0) {
+	  if (SumQr && inData->buffer[ddoff+2]>0.0) {
 	    SumQr[off]  += inData->buffer[ddoff]*inData->buffer[ddoff+2];
 	    SumQi[off]  += inData->buffer[ddoff+1]*inData->buffer[ddoff+2];
 	    SumQQ[off]  += inData->buffer[ddoff]*inData->buffer[ddoff]*inData->buffer[ddoff+2];
@@ -1950,7 +2112,7 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 	  }
 	  /* U */
 	  ddoff = doff + 2*incs;
-	  if (inData->buffer[ddoff+2]>0.0) {
+	  if (SumUr && inData->buffer[ddoff+2]>0.0) {
 	    SumUr[off]  += inData->buffer[ddoff]*inData->buffer[ddoff+2];
 	    SumUi[off]  += inData->buffer[ddoff+1]*inData->buffer[ddoff+2];
 	    SumUU[off]  += inData->buffer[ddoff]*inData->buffer[ddoff]*inData->buffer[ddoff+2];
@@ -1958,7 +2120,7 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 	  }
 	  /* V */
 	  ddoff = doff + 3*incs;
-	  if (inData->buffer[ddoff+2]>0.0) {
+	  if (SumVr && inData->buffer[ddoff+2]>0.0) {
 	    SumVr[off]   += inData->buffer[ddoff]*inData->buffer[ddoff+2];
 	    SumVi[off]   += inData->buffer[ddoff+1]*inData->buffer[ddoff+2];
 	    SumVV[off]   += inData->buffer[ddoff]*inData->buffer[ddoff]*inData->buffer[ddoff+2];
@@ -1995,6 +2157,10 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
       SumAzCell[i] /= CntCell[i];
       SumElCell[i] /= CntCell[i];
       SumPACell[i] /= CntCell[i];
+    } else {  /* Big value so they will be ignored */
+      SumAzCell[i] = 1.0e10;
+      SumElCell[i] = 1.0e10;
+      SumPACell[i] = 1.0e10;
     }
 
     /* Loop over freq, IF */
@@ -2007,46 +2173,57 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 	  SumII[off] = (((SumII[off]/SumIWt[off]) - SumIr[off]*SumIr[off]))/SumIWt[off];
 	  if (SumII[off]>0.0) SumII[off] = sqrt(SumII[off]);
 	  SumII[off] /= SumIr[off];  /* Normalize variance by I */
+	  /* DEBUG
+	  if ((iIF==11) && (ichan==2) && (fabs((SumAzCell[i])+2.0)<2.1) && (fabs((SumElCell[i])-2.0)<2.1)) {
+	    fprintf (stderr,"%5d cx %5.1f cy %5.1f sum %f \n",
+		     i, SumAzCell[i], SumElCell[i], SumIr[off]/SumIr[1624*selem + iIF*nchan + ichan]);
+	  }  */
 	} else {
 	  SumIr[off] = fblank;
 	  SumIi[off] = fblank;
 	  SumII[off] = fblank;
 	}
-	if (SumQWt[off]>0) {
-	  SumQr[off] /= SumQWt[off];
-	  SumQi[off] /= SumQWt[off];
-	  SumQQ[off] = (((SumQQ[off]/SumQWt[off]) - SumQr[off]*SumQr[off]))/SumQWt[off];
-	  if (SumQQ[off]>0.0) SumQQ[off] = sqrt(SumQQ[off]);
-	  SumQQ[off] /= SumIr[off];  /* Normalize variance by I */
-	} else {
-	  SumQr[off]  = fblank;
-	  SumQi[off]  = fblank;
-	  SumQQ[off] = fblank;
+	if (SumQWt) {
+	  if (SumQWt[off]>0) {
+	    SumQr[off] /= SumQWt[off];
+	    SumQi[off] /= SumQWt[off];
+	    SumQQ[off] = (((SumQQ[off]/SumQWt[off]) - SumQr[off]*SumQr[off]))/SumQWt[off];
+	    if (SumQQ[off]>0.0) SumQQ[off] = sqrt(SumQQ[off]);
+	    SumQQ[off] /= SumIr[off];  /* Normalize variance by I */
+	  } else {
+	    SumQr[off]  = fblank;
+	    SumQi[off]  = fblank;
+	    SumQQ[off] = fblank;
+	  }
 	}
-	if (SumUWt[off]>0) {
-	  SumUr[off] /= SumUWt[off];
-	  SumUi[off] /= SumUWt[off];
-	  SumUU[off] = (((SumUU[off]/SumUWt[off]) - SumUr[off]*SumUr[off]))/SumUWt[off];
-	  if (SumUU[off]>0.0) SumUU[off] = sqrt(SumUU[off]);
-	  SumUU[off] /= SumIr[off];  /* Normalize variance by I */
-	} else {
-	  SumUr[off] = fblank;
-	  SumUi[off] = fblank;
-	  SumUU[off] = fblank;
+	if (SumUWt) {
+	  if (SumUWt[off]>0) {
+	    SumUr[off] /= SumUWt[off];
+	    SumUi[off] /= SumUWt[off];
+	    SumUU[off] = (((SumUU[off]/SumUWt[off]) - SumUr[off]*SumUr[off]))/SumUWt[off];
+	    if (SumUU[off]>0.0) SumUU[off] = sqrt(SumUU[off]);
+	    SumUU[off] /= SumIr[off];  /* Normalize variance by I */
+	  } else {
+	    SumUr[off] = fblank;
+	    SumUi[off] = fblank;
+	    SumUU[off] = fblank;
+	  }
 	}
-	if (SumVWt[off]>0) {
-	  SumVr[off] /= SumVWt[off];
-	  SumVi[off] /= SumVWt[off];
-	  SumVV[off] = (((SumVV[off]/SumVWt[off]) - SumVr[off]*SumVr[off]))/SumVWt[off];
-	  if (SumVV[off]>0.0) SumVV[off] = sqrt(SumVV[off]);
-	  SumVV[off] /= SumIr[off];  /* Normalize variance by I */
-	} else {
-	  SumVr[off] = fblank;
-	  SumVi[off] = fblank;
-	  SumVV[off] = fblank;
+	if (SumVWt) {
+	  if (SumVWt[off]>0) {
+	    SumVr[off] /= SumVWt[off];
+	    SumVi[off] /= SumVWt[off];
+	    SumVV[off] = (((SumVV[off]/SumVWt[off]) - SumVr[off]*SumVr[off]))/SumVWt[off];
+	    if (SumVV[off]>0.0) SumVV[off] = sqrt(SumVV[off]);
+	    SumVV[off] /= SumIr[off];  /* Normalize variance by I */
+	  } else {
+	    SumVr[off] = fblank;
+	    SumVi[off] = fblank;
+	    SumVV[off] = fblank;
+	  }
 	}
 	/* Counter rotate (Q+iU) for parallactic angle */
-	if ((SumQr[off]!=fblank) && (SumUr[off]!=fblank)) {
+	if (SumQr && (SumQr[off]!=fblank) && (SumUr[off]!=fblank)) {
 	  cc =  cos(2.0*SumPACell[i]);
 	  ss = -sin(2.0*SumPACell[i]);
 	  /* Not sure this works */
@@ -2063,17 +2240,35 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
     } /* end IF loop */
 
 
-    /* Add diagnostics */
-    if (prtLv>=2) {
+    /* Add diagnostics IF 12, channel 2*/
+    off  = 11*nchan + 2; 
+    if (prtLv>=2)  { 
       ix = (olong) (SumAzCell[i] + nx/2 + 1.5);
       iy = (olong) (SumElCell[i] + ny/2 + 1.5);
-      Obit_log_error(err, OBIT_InfoErr, 
-		     "Cell %3d %3d Az %8.1f asec, El %8.1f asec, I %6.3f Q %6.3f U %6.3f V %6.3f Jy",
-		     ix,iy, SumAzCell[i]*xCells*206265., 
-		     SumElCell[i]*yCells*206265., SumIr[i*selem], SumQr[i*selem],
-		     SumUr[i*selem], SumVr[i*selem]);
+      if ((SumAzCell[i]>1000.) || (SumElCell[i]>1000.)) continue;
+      if (SumQr) { /* Poln data? */
+	Obit_log_error(err, OBIT_InfoErr, 
+		       "%3.3d Cell %3d %3d Az%8.1f cell, El%8.1f cell, I %6.3f %6.3f Q %6.3f %6.3f U %6.3f %6.3f V %6.3f %6.3f Jy",
+		       i, ix,iy, 
+		       /*SumAzCell[i]*xCells*206265., SumElCell[i]*yCells*206265., offset in asec */
+		       SumAzCell[i], SumElCell[i],   /* offset in cells */
+		       SumIr[off+i*selem],SumIi[off+i*selem], SumQr[off+i*selem],SumQi[off+i*selem],
+		       SumUr[off+i*selem],SumUi[off+i*selem], SumVr[off+i*selem],SumVi[off+i*selem]);
+      } else {
+	Obit_log_error(err, OBIT_InfoErr, 
+		       "%3.3d Cell %3d %3d Az %8.1f cell, El %8.1f cell, I %6.4f %6.4f Jy",
+		       i, ix,iy, 
+		       /*SumAzCell[i]*xCells*206265., SumElCell[i]*yCells*206265., offset in asec */
+		       SumAzCell[i], SumElCell[i],   /* offset in cells */
+		       SumIr[off+i*selem],SumIi[off+i*selem]);
+      }
     }
+    ObitErrLog(err);
   } /* End loop normalizing list */
+
+  /* Cleanup */
+  if (OffAz) g_free(OffAz);
+  if (OffEl) g_free(OffEl);
 
 } /* end accumData  */
 
@@ -2082,11 +2277,13 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 /*  Accumulate real part of correlations for all Stokes/freq/IF           */
 /*  Sums are in a list with each set of entries corresponding to a given  */
 /*  pointing.                                                             */
+/*  May use threading.                                                    */
 /*  Adapted from AIPS/MAPBM.FOR                                           */
 /*   Input:                                                               */
 /*      myInput   Input parameters on InfoList                            */
 /*      nchan     Number of channels in output                            */
 /*      nIF       Number of IFs in output                                 */
+/*      npoln     Number of polarizations in output                       */
 /*      selem     Size (floats) of list element                           */
 /*      nelem     Number of list elements                                 */
 /*      doRMS     If TRUE, image is RMS                                   */
@@ -2094,24 +2291,17 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 /*      SumIr     Real Stokes I accumulation list                         */
 /*      SumIi     Imag Stokes I accumulation list                         */
 /*      SumII     Stokes I*I accumulation list                            */
-/*      SumIWt    I Weight accumulation list                              */
 /*      SumQr     Real Stokes Q accumulation list                         */
 /*      SumQi     Imag Stokes Q accumulation list                         */
 /*      SumQQ     Stokes Q*Q accumulation list                            */
-/*      SumQWt    Q Weight accumulation list                              */
 /*      SumUr     Real Stokes U accumulation list                         */
 /*      SumUi     Imag Stokes U accumulation list                         */
 /*      SumUU     Stokes U*U accumulation list                            */
-/*      SumUWt    U Weight accumulation list                              */
 /*      SumVr     Real Stokes V accumulation list                         */
 /*      SumVi     Imag Stokes V accumulation list                         */
 /*      SumVV     Stokes V*V accumulation list                            */
-/*      SumVWt    V Weight accumulation list                              */
 /*      SumAzCell Azimuth offset accumulation list                        */
 /*      SumElCell Elevation offset  accumulation list                     */
-/*      SumPACell Parallactic angle accumulation list                     */
-/*                Contents destroyed                                      */
-/*      CntCell   Counts in geometry accumulation                         */
 /*   Output:                                                              */
 /*      grids     Array of ObitFArrays                                    */
 /*                fastest to slowest, channel, IF, Stokes                 */
@@ -2119,44 +2309,434 @@ void  accumData (ObitUV* inData, ObitInfoList* myInput, olong ant,
 /*----------------------------------------------------------------------- */
 void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 		olong selem, olong nelem, gboolean doRMS, gboolean doPhase,
-		ofloat *SumIr, ofloat *SumIi, ofloat *SumII, ofloat *SumIWt,
-		ofloat *SumQr, ofloat *SumQi, ofloat *SumQQ, ofloat *SumQWt,
-		ofloat *SumUr, ofloat *SumUi, ofloat *SumUU, ofloat *SumUWt,
-		ofloat *SumVr, ofloat *SumVi, ofloat *SumVV, ofloat *SumVWt,
-		ofloat *SumAzCell, ofloat *SumElCell, ofloat *SumPACell, 
-		olong *CntCell, ObitFArray **grids)
+		ofloat *SumIr, ofloat *SumIi, ofloat *SumII, 
+		ofloat *SumQr, ofloat *SumQi, ofloat *SumQQ, 
+		ofloat *SumUr, ofloat *SumUi, ofloat *SumUU, 
+		ofloat *SumVr, ofloat *SumVi, ofloat *SumVV, 
+		ofloat *SumAzCell, ofloat *SumElCell, ObitFArray **grids)
 {
-  ofloat x, y, xcen, ycen, closest, xCells=1.0, yCells=1.0;
-  ofloat *coef, amp, ph, fblank = ObitMagicF();
-  odouble sumIWt , sumQWt, sumUWt, sumVWt;
-  odouble valIr,  valIi, valII, valQr, valQi, valQQ;
-  odouble valUr,  valUi, valUU, valVr, valVi, valVV;
-  olong   i, iIF, ichan, nx=1, ny=1, ix, iy, indx, jndx, off;
-  ObitFArray *array;
   ObitInfoType type;
   gint32   dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-
-  /* Use SumPACell as work space */
-  coef = SumPACell;
+  olong nThreads, nx, ny, hwid;
+  ofloat xcen, ycen;
+  gboolean OK;
+  ObitThread *thread;
+  MBFuncArg **threadArgs;
 
   /* How big an image? */
   ObitInfoListGetTest(myInput, "nx", &type, dim, &nx);
   ObitInfoListGetTest(myInput, "ny", &type, dim, &ny);
-  ObitInfoListGetTest(myInput, "xCells", &type, dim, &xCells);
-  ObitInfoListGetTest(myInput, "yCells", &type, dim, &yCells);
+  ObitInfoListGetTest(myInput, "hwid",   &type, dim, &hwid);
   xcen = (ofloat)(nx/2);
   ycen = (ofloat)(ny/2);
 
-  /* Loop over y (El) */
-  for (iy=0; iy<ny; iy++) {
-      y = iy - ycen;
+  /* Initialize Threading */
+  thread = newObitThread ();
+  nThreads = 
+    MakeMBFuncArgs (thread, 
+		    nchan, nIF, npoln,selem, nelem, doRMS, doPhase,
+		    nx, ny, hwid, xcen, ycen,
+		    SumIr, SumIi, SumII, SumQr, SumQi, SumQQ,
+		    SumUr, SumUi, SumUU, SumVr, SumVi, SumVV, 
+		    SumAzCell, SumElCell, grids,
+		    &threadArgs);
+  /* Do operation */
+  OK = ObitThreadIterator (thread, nThreads, 
+			   (ObitThreadFunc)ThreadMBGrid,
+			   (gpointer**)threadArgs);
 
+  /* Check for problems */
+  if (!OK) return;
+
+  /* Free local objects */
+  KillMBFuncArgs(nThreads, threadArgs);
+  ObitThreadUnref(thread);
+} /* end gridData */
+
+/*----------------------------------------------------------------------- */
+/*  Lagrangian interpolation coefficients                                 */
+/*  For interpolating in a quasi regular grid represented by lists        */
+/*  Determine coefficients for elements in lists to interpolate to (x,y)  */
+/*   Doesn't seem to shift correctly                                                         */
+/*   Input:                                                               */
+/*      x         Coordinate on first axis                                */
+/*      y         Coordinate on second axis                               */
+/*      n         Length of lists                                         */
+/*      hwid      Halfwidth of interpolation kernal, decreased at edges   */
+/*                0=> closest pixel                                       */
+/*      minmax    max, min, x, y in lists                                 */
+/*      xlist     List of coordinates on  first axis                      */
+/*      ylist     List coordinate on second axis                          */
+/*   Output:                                                              */
+/*      coef      Array of interpolation coefficients for xlist,ylist     */
+/*----------------------------------------------------------------------- */
+void lagrange(ofloat x, ofloat y, olong n, olong hwid, olong minmax[],
+	      ofloat *xlist, ofloat *ylist, ofloat *coef)
+{
+  ofloat xhwid, yhwid, sum;
+  odouble prodx, prodxd, prody, prodyd;
+  olong  i, j, countx, county;
+
+  for (i=0; i<n; i++) coef[i] = 0.0;  /* Init output */
+
+  /* Anything to do? */
+  if ((x<minmax[0]) || (x>minmax[1]) || (y<minmax[2]) || (y>minmax[3])) return;
+
+  sum = 0.0;
+  /* chose type, hwid=0 => closest */
+  if (hwid<=0) {
+    /* Loop over list */
+    for (i=0; i<n; i++) {
+      if ((fabs(x-xlist[i])<0.2) && (fabs(y-ylist[i])<0.2)) {
+	coef[i] = 1.0;
+	sum++;
+      } else coef[i] = 0.0;
+    }
+  } else {  /* Interpolate */
+    /* Trim halfwidth near edges */
+    xhwid = hwid + 0.5;
+    xhwid = MIN (xhwid, (x-minmax[0]+0.5));
+    xhwid = MIN (xhwid, (minmax[1]-x+0.5));
+    yhwid = hwid + 0.5;
+    yhwid = MIN (yhwid, (y-minmax[2]+0.5));
+    yhwid = MIN (yhwid, (minmax[3]-y+0.5));
+    for (j=0; j<n; j++) {
+      prodx =  prody  = 1.0;
+      prodxd = prodyd = 1.0;
+      countx = county = 0;
+      coef[j] = 0.0; 
+      
+      /* Within hwid? and i!=j */
+      if ((fabs(x-xlist[j])<=xhwid) && (fabs(y-ylist[j])<=yhwid)) {
+	coef[j] = 1.0;  /* In case nothing else within hwid */
+	
+	/* Inner loop over list */
+	for (i=0; i<n; i++) {
+	  if (fabs(x-xlist[i])>xhwid) continue;  /* X within halfwidth */
+	  if (fabs(y-ylist[i])>yhwid) continue;  /* Y within halfwidth */
+	  if (i==j) continue;                    /* i!=j */
+	  if (fabs(x-xlist[i])>0.5) {   /*  Not if same X  */
+	    countx++;
+	    prodx  *= (odouble)(x - xlist[i]);}
+	  if (fabs(xlist[j]-xlist[i])>0.5) prodxd *= (odouble)(xlist[j] - xlist[i]);
+	  if (fabs(y-ylist[i])>0.5) {   /*   Not if same Y*/
+	    county++;
+	    prody  *= (odouble)(y - ylist[i]);}
+	  if (fabs(ylist[j]-ylist[i])>0.5) prodyd *= (odouble)(ylist[j] - ylist[i]);
+	} /* end inner loop */
+      } /* end j within half width */
+      
+      /* put it together */
+      if ((countx>=1)  || (county>=1)) {
+	if ((prodxd!=0.0) && (prodyd!=0.0))
+	  coef[j] = (ofloat)(prodx*prody / (prodxd*prodyd));
+	else
+	  coef[j] = 1.0;
+	sum += coef[j];
+      }
+    } /* end loop over list */
+  } /* end if interpolate */
+
+  /* Normalize if anything found */
+  if (sum==0.0) return;
+  prodx = 1.0 / sum;
+  for (j=0; j<n; j++) coef[j] *= prodx;
+
+   /* DEBUG
+  if ((x==0.0) && (y>=-1.0) && (y<=1.0)) {
+    fprintf(stdout,"lagrange x %f, y %f, sum %f\n", x, y, sum);
+     for (i=0; i<n; i++) 
+      if (fabs(coef[i])>0.0001) 
+	fprintf(stdout," final %6d, %8.4f %6.1f %6.1f\n",
+		i, coef[i], xlist[i], ylist[i]);
+  }  end DEBUG */
+} /* end lagrange */
+
+/*----------------------------------------------------------------------- */
+/*  Gaussian weighted interpolation coefficients                          */
+/*  For interpolating in a quasi regular grid represented by lists        */
+/*  Determine coefficients for elements in lists to interpolate to (x,y)  */
+/*   Input:                                                               */
+/*      x         Coordinate on first axis                                */
+/*      y         Coordinate on second axis                               */
+/*      n         Length of lists                                         */
+/*      hwid      Halfwidth of interpolation kernal                       */
+/*      minmax    max, min, x, y in lists                                 */
+/*      xlist     List of coordinates on  first axis                      */
+/*      ylist     List coordinate on second axis                          */
+/*   Output:                                                              */
+/*      coef      Array of interpolation coefficients for xlist,ylist     */
+/*----------------------------------------------------------------------- */
+void gauss(ofloat x, ofloat y, olong n, olong hwid, olong minmax[],
+	   ofloat *xlist, ofloat *ylist, ofloat *coef)
+{
+  ofloat xhwid = (ofloat)hwid, sum, d2;
+  olong  i;
+
+  for (i=0; i<n; i++) coef[i] = 0.0;  /* Init output */
+
+  /* Anything to do? */
+  if ((x<minmax[0]) || (x>minmax[1]) || (y<minmax[2]) || (y>minmax[3])) return;
+
+  sum = 0.0;
+  /* hwid=0 => closest */
+  if (hwid<=0) {
+    for (i=0; i<n; i++) {
+      if ((fabs(x-xlist[i])<0.49) && (fabs(y-ylist[i])<0.49)) {
+	coef[i] = 1.0;
+	sum++;
+      } else coef[i] = 0.0;
+    }
+  } else {  /* Interpolate */
+    /* Loop over list */
+    for (i=0; i<n; i++) {
+      if ((fabs(x-xlist[i])<=xhwid) && (fabs(y-ylist[i])<=xhwid)) {
+	/* distance**2 in pixels */
+	d2 = (x-xlist[i])*(x-xlist[i]) + (y-ylist[i])*(y-ylist[i]);
+	coef[i] = exp(-d2);
+	sum += coef[i];
+      } /* end close enough */
+    } /* end loop */
+  }
+  /* Normalize if anything found */
+  if (fabs(sum)<0.01) return;
+  if (sum==1.0) return;
+  sum = 1.0 / sum;
+  for (i=0; i<n; i++) coef[i] *= sum;
+ } /* end gauss */
+
+/**
+ * Make arguments for a Threaded ThreadMBFunc?
+ * \param thread     ObitThread object to be used
+ * \param  nchan     Number of channels in output
+ * \param  npoln     Number of polarizations in output
+ * \param  nIF       Number of IFs in output
+ * \param  npoln     Number of polarizations in output
+ * \param  selem     Size (floats) of list element
+ * \param  nelem     Number of list elements
+ * \param  doRMS     If TRUE, image is RMS
+ * \param  doPhase   If TRUE, image is Phase, else Amplitude
+ * \param  nx;       Number of columns
+ * \param  ny;       Number of rows
+ * \param  hwid;     Half width of interpolation
+ * \param  xcen;     X center cell
+ * \param  ycen;     Y center cell
+ * \param  SumIr     Real Stokes I accumulation list
+ * \param  SumIi     Imag Stokes I accumulation list
+ * \param  SumII     Stokes I*I accumulation list
+ * \param  SumQr     Real Stokes Q accumulation list
+ * \param  SumQi     Imag Stokes Q accumulation list
+ * \param  SumQQ     Stokes Q*Q accumulation list
+ * \param  SumUr     Real Stokes U accumulation list
+ * \param  SumUi     Imag Stokes U accumulation list
+ * \param  SumUU     Stokes U*U accumulation list
+ * \param  SumVr     Real Stokes V accumulation list
+ * \param  SumVi     Imag Stokes V accumulation list
+ * \param  SumVV     Stokes V*V accumulation list
+ * \param  SumAzCell Azimuth offset accumulation list
+ * \param  SumElCell Elevation offset  accumulation list
+ * \param  grids     [out] Array of ObitFArrays
+ *                   fastest to slowest, channel, IF, Stokes
+ * \param ThreadArgs[out] Created array of MBFuncArg, 
+ *                   delete with KillMBFuncArgs
+ * \return number of elements in args (number of allowed threads).
+ */
+static olong MakeMBFuncArgs (ObitThread *thread, 
+			     olong nchan, olong nIF, olong npoln,
+			     olong selem, olong nelem, gboolean doRMS, gboolean doPhase,
+			     olong nx, olong ny, olong hwid, ofloat xcen, ofloat ycen,
+			     ofloat *SumIr, ofloat *SumIi, ofloat *SumII, 
+			     ofloat *SumQr, ofloat *SumQi, ofloat *SumQQ, 
+			     ofloat *SumUr, ofloat *SumUi, ofloat *SumUU, 
+			     ofloat *SumVr, ofloat *SumVi, ofloat *SumVV, 
+			     ofloat *SumAzCell, ofloat *SumElCell, ObitFArray **grids,
+			     MBFuncArg ***ThreadArgs)
+
+{
+  olong i, iy, nThreads, nrow;
+
+  /* Setup for threading */
+  /* How many threads? */
+  nThreads = MAX (1, ObitThreadNumProc(thread));
+
+  /* How many rows per thread? */
+  nrow = ny/nThreads;
+  iy   = 0;
+
+  /* Initialize threadArg array */
+  *ThreadArgs = g_malloc0(nThreads*sizeof(MBFuncArg*));
+  for (i=0; i<nThreads; i++) 
+    (*ThreadArgs)[i] = g_malloc0(sizeof(MBFuncArg)); 
+  for (i=0; i<nThreads; i++) {
+    (*ThreadArgs)[i]->thread    = ObitThreadRef(thread);
+    (*ThreadArgs)[i]->loy       = iy;     /* Divvy up processing */
+    (*ThreadArgs)[i]->hiy       = MIN (iy+nrow, ny);
+    iy += nrow;
+    (*ThreadArgs)[i]->nchan     = nchan;
+    (*ThreadArgs)[i]->npoln     = npoln;
+    (*ThreadArgs)[i]->nIF       = nIF;
+    (*ThreadArgs)[i]->npoln     = npoln;
+    (*ThreadArgs)[i]->selem     = selem;
+    (*ThreadArgs)[i]->nelem     = nelem;
+    (*ThreadArgs)[i]->doRMS     = doRMS;
+    (*ThreadArgs)[i]->doPhase   = doPhase;
+    (*ThreadArgs)[i]->nx        = nx;
+    (*ThreadArgs)[i]->ny        = ny;
+    (*ThreadArgs)[i]->hwid      = hwid;
+    (*ThreadArgs)[i]->xcen      = xcen;
+    (*ThreadArgs)[i]->ycen      = ycen;
+    (*ThreadArgs)[i]->SumIr     = SumIr;
+    (*ThreadArgs)[i]->SumIi     = SumIi;
+    (*ThreadArgs)[i]->SumII     = SumII;
+    (*ThreadArgs)[i]->SumQr     = SumQr;
+    (*ThreadArgs)[i]->SumQi     = SumQi;
+    (*ThreadArgs)[i]->SumQQ     = SumQQ;
+    (*ThreadArgs)[i]->SumUr     = SumUr;
+    (*ThreadArgs)[i]->SumUi     = SumUi;
+    (*ThreadArgs)[i]->SumUU     = SumUU;
+    (*ThreadArgs)[i]->SumVr     = SumVr;
+    (*ThreadArgs)[i]->SumVi     = SumVi;
+    (*ThreadArgs)[i]->SumVV     = SumVV;
+    (*ThreadArgs)[i]->SumAzCell = SumAzCell;
+    (*ThreadArgs)[i]->SumElCell = SumElCell;
+    (*ThreadArgs)[i]->grids     = grids;
+    (*ThreadArgs)[i]->coef      = g_malloc0(nelem*sizeof(ofloat));
+    (*ThreadArgs)[i]->ithread   = i;
+  }
+
+  return nThreads;
+} /*  end MakeMBFuncArgs */
+
+/**
+ * Delete arguments for ThreadMBFunc
+ * \param nargs      number of elements in ThreadArgs.
+ * \param ThreadArgs Array of MBFuncArg
+ */
+static void KillMBFuncArgs (olong nargs, MBFuncArg **ThreadArgs)
+{
+  olong i;
+
+  if (ThreadArgs==NULL) return;
+  ObitThreadPoolFree (ThreadArgs[0]->thread);  /* Free thread pool */
+  for (i=0; i<nargs; i++) {
+    if (ThreadArgs[i]) {
+      if (ThreadArgs[i]->thread) ObitThreadUnref(ThreadArgs[i]->thread);
+      if (ThreadArgs[i]->coef)   g_free(ThreadArgs[i]->coef);
+      g_free(ThreadArgs[i]);
+    }
+  }
+  g_free(ThreadArgs);
+} /*  end KillMBFuncArgs */
+
+/**
+ * Thread grid a set of rows in the image
+ * Magic value blanking supported.
+ * Callable as thread
+ * \param arg Pointer to MBFuncArg argument with elements:
+ * \li  loy       First row (0-rel) 
+ * \li  hiy       Highest row (0-rel) 
+ * \li  nchan     Number of channels in output
+ * \li  npoln     Number of polarizations in output
+ * \li  nIF       Number of IFs in output
+ * \li  npoln     Number of polarizations in output
+ * \li  selem     Size (floats) of list element
+ * \li  nelem     Number of list elements
+ * \li  doRMS     If TRUE, image is RMS
+ * \li  doPhase   If TRUE, image is Phase, else Amplitude
+ * \li  nx;       Number of columns
+ * \li  ny;       Number of rows
+ * \li  hwid;     Half width of interpolation
+ * \li  xcen;     X center cell
+ * \li  ycen;     Y center cell
+ * \li  SumIr     Real Stokes I accumulation list
+ * \li  SumIi     Imag Stokes I accumulation list
+ * \li  SumII     Stokes I*I accumulation list
+ * \li  SumQr     Real Stokes Q accumulation list
+ * \li  SumQi     Imag Stokes Q accumulation list
+ * \li  SumQQ     Stokes Q*Q accumulation list
+ * \li  SumUr     Real Stokes U accumulation list
+ * \li  SumUi     Imag Stokes U accumulation list
+ * \li  SumUU     Stokes U*U accumulation list
+ * \li  SumVr     Real Stokes V accumulation list
+ * \li  SumVi     Imag Stokes V accumulation list
+ * \li  SumVV     Stokes V*V accumulation list
+ * \li  SumAzCell Azimuth offset accumulation list
+ * \li  SumElCell Elevation offset  accumulation list
+ * \li  grids     [out] Array of ObitFArrays
+ *                   fastest to slowest, channel, IF, Stokes
+ * \li ithread  thread number, <0 -> no threading
+ * \return NULL
+ */
+static gpointer ThreadMBGrid (gpointer arg)
+{
+  /* Get arguments from structure */
+  MBFuncArg *largs = (MBFuncArg*)arg;
+  olong   loy        = largs->loy;
+  olong   hiy        = largs->hiy;
+  olong   nIF        = largs->nIF;
+  olong   nchan      = largs->nchan;
+  olong   npoln      = largs->npoln;
+  olong   selem      = largs->selem;
+  olong   nelem      = largs->nelem;
+  gboolean doRMS     = largs->doRMS;
+  gboolean doPhase   = largs->doPhase;
+  olong  nx          = largs->nx; 
+  /*olong  ny          = largs->ny;*/
+  olong  hwid        = largs->hwid;
+  ofloat xcen        = largs->xcen;  
+  ofloat ycen        = largs->ycen;  
+  ofloat* SumIr      = largs->SumIr;
+  ofloat* SumIi      = largs->SumIi;
+  ofloat* SumII      = largs->SumII;
+  ofloat* SumQr      = largs->SumQr;
+  ofloat* SumQi      = largs->SumQi;
+  ofloat* SumQQ      = largs->SumQQ;
+  ofloat* SumUr      = largs->SumUr;
+  ofloat* SumUi      = largs->SumUi;
+  ofloat* SumUU      = largs->SumUU;
+  ofloat* SumVr      = largs->SumVr;
+  ofloat* SumVi      = largs->SumVi;
+  ofloat* SumVV      = largs->SumVV;
+  ofloat* SumAzCell  = largs->SumAzCell;
+  ofloat* SumElCell  = largs->SumElCell;
+  ofloat* coef       = largs->coef;
+  ObitFArray** grids = largs->grids;
+  
+  /* local */
+  olong i, ix, iy, iIF, ichan, indx, jndx, off;
+  ofloat x, y, closest;
+  ofloat amp, ph, fblank = ObitMagicF();
+  odouble sumIWt , sumQWt, sumUWt, sumVWt;
+  odouble valIr,  valIi, valII, valQr, valQi, valQQ;
+  odouble valUr,  valUi, valUU, valVr, valVi, valVV;
+  ObitFArray *array;
+  olong minmax[] = {1000,-1000,1000,-1000};
+
+  if (hiy<loy) goto finish;
+
+  /* Get min, max x, y from lists */
+  for (i=0; i<nelem; i++ ) {
+    if (SumAzCell[i]>0.0) ix = (olong)(SumAzCell[i]+0.5);
+    else                  ix = (olong)(SumAzCell[i]-0.5);
+    if (SumElCell[i]>0.0) iy = (olong)(SumElCell[i]+0.5);
+    else                  iy = (olong)(SumElCell[i]-0.5);
+    minmax[0] = MIN (minmax[0], ix);
+    minmax[1] = MAX (minmax[1], ix);
+    minmax[2] = MIN (minmax[2], iy);
+    minmax[3] = MAX (minmax[3], iy);
+  }
+  
+  /* Loop over y (El) */
+  for (iy=loy; iy<hiy; iy++) {
+    y = iy - ycen;
+    
     /* Loop over x (Az) */
     for (ix=0; ix<nx; ix++) {
       x = ix - xcen;
       
       /* Get interpolation coefficients */
-      lagrange (x, y, nelem, 1, SumAzCell, SumElCell, coef);
+      lagrange (x, y, nelem, hwid, minmax, SumAzCell, SumElCell, coef);
+	/* gauss (x, y, nelem, hwid, minmax, SumAzCell, SumElCell, coef);*/
 
       /* Loop over IFs */
       for (iIF=0; iIF<nIF; iIF++) {
@@ -2174,22 +2754,29 @@ void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 	      if (SumIr[i*selem+off]!=fblank) {
 		valIr  += coef[i]*SumIr[i*selem+off];
 		valIi  += coef[i]*SumIi[i*selem+off];
-		valII += coef[i]*SumII[i*selem+off];
+		valII  += coef[i]*SumII[i*selem+off];
 		sumIWt += coef[i];
+		/* DEBUG
+		if ((x==0.0) && (y>=-1.0) && (y<=1.0) && (iIF==11) && (ichan==2) && (fabs(coef[i])>0.0001)) {
+		  amp = sqrt (valIr*valIr + valIi*valIi);
+		  fprintf(stdout,"grid %d x %4.1f, y %4.1f, sum I %8.4f sumWt %8.4f I %8.4f, %8.4f coef %8.4f total %4.4f amp %4.4f \n", 
+			    i, x, y, valIr, sumIWt, SumIr[i*selem+off]/SumIr[1624*selem+off], 
+			  SumIi[i*selem+off]/SumIr[1624*selem+off], coef[i], valIr/sumIWt, amp);
+		  }  end DEBUG */
 	      }
-	      if (SumQr[i*selem+off]!=fblank) {
-		valQr += coef[i]*SumQr[i*selem+off];
-		valQi += coef[i]*SumQi[i*selem+off];
-		valQQ += coef[i]*SumQQ[i*selem+off];
+	      if (SumQr && SumQr[i*selem+off]!=fblank) {
+		valQr  += coef[i]*SumQr[i*selem+off];
+		valQi  += coef[i]*SumQi[i*selem+off];
+		valQQ  += coef[i]*SumQQ[i*selem+off];
 		sumQWt += coef[i];
 	      }
-	      if (SumUr[i*selem+off]!=fblank) {
+	      if (SumUr && SumUr[i*selem+off]!=fblank) {
 		valUr += coef[i]*SumUr[i*selem+off];
 		valUi += coef[i]*SumUi[i*selem+off];
 		valUU += coef[i]*SumUU[i*selem+off];
 		sumUWt += coef[i];
 	      }
-	      if (SumVr[i*selem+off]!=fblank) {
+	      if (SumVr && SumVr[i*selem+off]!=fblank) {
 		valVr += coef[i]*SumVr[i*selem+off];
 		valVi += coef[i]*SumVi[i*selem+off];
 		valVV += coef[i]*SumVV[i*selem+off];
@@ -2201,7 +2788,7 @@ void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 	  if (closest>0.5) {
 	    sumIWt = sumQWt = sumUWt = sumVWt = 0.0;
 	  }
-	  if (sumIWt>0.5) {
+	  if (fabs(sumIWt)>0.1) {
 	    valIr /= sumIWt;
 	    valIi /= sumIWt;
 	    valII /= sumIWt;
@@ -2210,7 +2797,7 @@ void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 	    valIi = fblank;
 	    valII = fblank;
 	  }
-	  if (sumQWt>0.5) {
+	  if (fabs(sumQWt)>0.1) {
 	    valQr /= sumQWt;
 	    valQi /= sumQWt;
 	    valQQ /= sumQWt;
@@ -2219,7 +2806,7 @@ void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 	    valQi  = fblank;
 	    valQQ = fblank;
 	  }
-	  if (sumUWt>0.5) {
+	  if (fabs(sumUWt)>0.1) {
 	    valUr /= sumUWt;
 	    valUi /= sumUWt;
 	    valUU /= sumUWt;
@@ -2228,7 +2815,7 @@ void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 	    valUi = fblank;
 	    valUU = fblank;
 	  }
-	  if (sumVWt>0.5) {
+	  if (fabs(sumVWt)>0.1) {
 	    valVr /= sumVWt;
 	    valVi /= sumVWt;
 	    valVV /= sumVWt;
@@ -2243,158 +2830,123 @@ void  gridData (ObitInfoList* myInput, olong nchan, olong nIF, olong npoln,
 	  /* I */
 	  indx  = ichan + iIF*nchan;
 	  array = grids[indx];
-	  if ((valIr==fblank) || (valIr==fblank)) {
-	    amp = ph = fblank;
-	  } else {
-	    /* Amplitude and phase within +/- 90 deg */
-	    amp = sqrt (valIr*valIr + valIi*valIi);
-	    ph  = RAD2DG*atan2(valIi, valIr);
-	    if (ph>90.0) {
-	      amp = -amp;
-	      ph -= 180.0;
-	    } else if (ph<-90.0) {
-	      amp = -amp;
-	      ph += 180.0;
+	  if (array) {   /* Needed? */
+	    if ((valIr==fblank) || (valIi==fblank)) {
+	      amp = ph = fblank;
+	    } else {
+	      /* Amplitude and phase within +/- 90 deg */
+	      amp = sqrt (valIr*valIr + valIi*valIi);
+	      ph  = RAD2DG*atan2(valIi, valIr);
+	      if (ph>90.0) {
+		amp = -amp;
+		ph -= 180.0;
+	      } else if (ph<-90.0) {
+		amp = -amp;
+		ph += 180.0;
+	      }
 	    }
-	  }
-	  if (doRMS) {  /* RMS */
-	    array->array[jndx] = valII;
-	  } else if (doPhase) {  /* phase */
-	    array->array[jndx] = ph;
-	  } else {      /* Stokes ampl */
-	    array->array[jndx] = amp;
-	  }
+	    /* DEBUG 
+	    if ((ix==50) && (iy>=49) && (iy<=51) && (iIF==11) && (ichan==2)) {
+	      fprintf(stdout,"grid %d x %4d, y %4d, amp %8.4f phase %8.4f RMS %8.4f \n", 
+		      i, ix, iy, amp, ph, valII);
+	    }  end DEBUG */
+	    if (doRMS) {  /* RMS */
+	      array->array[jndx] = valII;
+	    } else if (doPhase) {  /* phase */
+	      array->array[jndx] = ph;
+	    } else {      /* Stokes ampl */
+	      array->array[jndx] = amp;
+	    }
+	  } /* end if Stokes needed */
+	  if (npoln<=1) continue;   /* multiple polarizations */
 	  /* Q */
 	  indx  = ichan + iIF*nchan + nchan*nIF;
 	  array = grids[indx];
-	  if ((valQr==fblank) || (valQr==fblank)) {
-	    amp = ph = fblank;
-	  } else {
-	    /* Amplitude and phase within +/- 90 deg */
-	    amp = sqrt (valQr*valQr + valQi*valQi);
-	    ph  = RAD2DG*atan2(valQi, valQr);
-	    if (ph>90.0) {
-	      amp = -amp;
-	      ph -= 180.0;
-	    } else if (ph<-90.0) {
-	      amp = -amp;
-	      ph += 180.0;
+	  if (array && (npoln>=2)) {   /* Needed? */
+	    if ((valQr==fblank) || (valQi==fblank)) {
+	      amp = ph = fblank;
+	    } else {
+	      /* Amplitude and phase within +/- 90 deg */
+	      amp = sqrt (valQr*valQr + valQi*valQi);
+	      ph  = RAD2DG*atan2(valQi, valQr);
+	      if (ph>90.0) {
+		amp = -amp;
+		ph -= 180.0;
+	      } else if (ph<-90.0) {
+		amp = -amp;
+		ph += 180.0;
+	      }
 	    }
-	  }
-	  if (doRMS) {  /* RMS */
-	    array->array[jndx] = valQQ;
-	  } else if (doPhase) {  /* phase */
-	    array->array[jndx] = ph;
-	  } else {      /* Stokes ampl */
-	    array->array[jndx] = amp;
-	  }
+	    if (doRMS) {  /* RMS */
+	      array->array[jndx] = valQQ;
+	    } else if (doPhase) {  /* phase */
+	      array->array[jndx] = ph;
+	    } else {      /* Stokes ampl */
+	      array->array[jndx] = amp;
+	    }
+	  } /* end if Stokes needed */
 	  /* U */
 	  indx  = ichan + iIF*nchan + 2*nchan*nIF;
 	  array = grids[indx];
-	  if ((valUr==fblank) || (valUr==fblank)) {
-	    amp = ph = fblank;
-	  } else {
-	    /* Amplitude and phase within +/- 90 deg */
-	    amp = sqrt (valUr*valUr + valUi*valUi);
-	    ph  = RAD2DG*atan2(valUi, valUr);
-	    if (ph>90.0) {
-	      amp = -amp;
-	      ph -= 180.0;
-	    } else if (ph<-90.0) {
-	      amp = -amp;
-	      ph += 180.0;
+	  if (array && (npoln>=3)) {   /* Needed? */
+	    if ((valUr==fblank) || (valUi==fblank)) {
+	      amp = ph = fblank;
+	    } else {
+	      /* Amplitude and phase within +/- 90 deg */
+	      amp = sqrt (valUr*valUr + valUi*valUi);
+	      ph  = RAD2DG*atan2(valUi, valUr);
+	      if (ph>90.0) {
+		amp = -amp;
+		ph -= 180.0;
+	      } else if (ph<-90.0) {
+		amp = -amp;
+		ph += 180.0;
+	      }
 	    }
-	  }
-	  if (doRMS) {  /* RMS */
-	    array->array[jndx] = valUU;
-	  } else if (doPhase) {  /* phase */
-	    array->array[jndx] = ph;
-	  } else {      /* Stokes ampl */
-	    array->array[jndx] = amp;
-	  }
+	    if (doRMS) {  /* RMS */
+	      array->array[jndx] = valUU;
+	    } else if (doPhase) {  /* phase */
+	      array->array[jndx] = ph;
+	    } else {      /* Stokes ampl */
+	      array->array[jndx] = amp;
+	    }
+	  } /* end if Stokes needed */
 	  /* V */
 	  indx  = ichan + iIF*nchan + 3*nchan*nIF;
 	  array = grids[indx];
-	  if ((valVr==fblank) || (valVr==fblank)) {
-	    amp = ph = fblank;
-	  } else {
-	    /* Amplitude and phase within +/- 90 deg */
-	    amp = sqrt (valVr*valVr + valVi*valVi);
-	    ph  = RAD2DG*atan2(valVi, valVr);
-	    if (ph>90.0) {
-	      amp = -amp;
-	      ph -= 180.0;
-	    } else if (ph<-90.0) {
-	      amp = -amp;
-	      ph += 180.0;
+	  if (array && (npoln>=4)) {   /* Needed? */
+	    if ((valVr==fblank) || (valVi==fblank)) {
+	      amp = ph = fblank;
+	    } else {
+	      /* Amplitude and phase within +/- 90 deg */
+	      amp = sqrt (valVr*valVr + valVi*valVi);
+	      ph  = RAD2DG*atan2(valVi, valVr);
+	      if (ph>90.0) {
+		amp = -amp;
+		ph -= 180.0;
+	      } else if (ph<-90.0) {
+		amp = -amp;
+		ph += 180.0;
+	      }
 	    }
-	  }
-	  if (doRMS) {  /* RMS */
-	    array->array[jndx] = valVV;
-	  } else if (doPhase) {  /* phase */
-	    array->array[jndx] = ph;
-	  } else {      /* Stokes ampl */
-	    array->array[jndx] = amp;
-	  }
+	    if (doRMS) {  /* RMS */
+	      array->array[jndx] = valVV;
+	    } else if (doPhase) {  /* phase */
+	      array->array[jndx] = ph;
+	    } else {      /* Stokes ampl */
+	      array->array[jndx] = amp;
+	    }
+	  } /* end if Stokes */
 	} /* end channel Loop */
       } /* end IF Loop */
     } /* end x loop */
   } /* end y loop */
 
-} /* end gridData */
-
-/*----------------------------------------------------------------------- */
-/*  Lagrangian interpolation coefficients                                 */
-/*  For interpolating in a quasi regular grid represented by lists        */
-/*  Determine coefficients for elements in lists to interpolate to (x,y)  */
-/*   Input:                                                               */
-/*      x         Coordinate on first axis                                */
-/*      y         Coordinate on second axis                               */
-/*      n         Length of lists                                         */
-/*      hwid      Halfwidth of interpolation kernal                       */
-/*      xlist     List of coordinates on  first axis                      */
-/*      ylist     List coordinate on second axis                          */
-/*   Output:                                                              */
-/*      coef      Array of interpolation coefficients for xlist,ylist     */
-/*----------------------------------------------------------------------- */
-void lagrange(ofloat x, ofloat y, olong n, olong hwid, 
-	      ofloat *xlist, ofloat *ylist, ofloat *coef)
-{
-  ofloat xhwid = (ofloat)hwid;
-  odouble prodx, prodxd, prody, prodyd;
-  olong  i, j, countx, county;
-
-  /* Loop over list */
-  for (j=0; j<n; j++) {
-    prodx = prodxd = prody = prodyd = 1.0;
-    countx = county = 0;
-
-    /* Within hwid? and i!=j */
-    if ((fabs(x-xlist[j])<=xhwid) && (fabs(y-ylist[j])<=xhwid)) {
-      
-      /* Inner loop over list */
-      for (i=0; i<n; i++) {
-	/* X Within hwid? and i!=j */
-	if ((fabs(x-xlist[i])<=xhwid) && 
-	    (i!=j) && (fabs(xlist[j]-xlist[i])>0.3)) {
-	  countx++;
-	  prodx  *= (odouble)(x - xlist[i]);
-	  prodxd *= (odouble)(xlist[j] - xlist[i]);
-	}
-	/* Y Within hwid? and i!=j */
-	if ((fabs(y-ylist[i])<=xhwid) &&
-	    (i!=j) &&  (fabs(ylist[j]-ylist[i])>0.3)) {
-	  county++;
-	  prody  *= (odouble)(y - ylist[i]);
-	  prodyd *= (odouble)(ylist[j] - ylist[i]);
-	}
-      }
-    }
-    /* put it together */
-    if ((countx>=1)  || (county>=1))
-      coef[j] = (ofloat)(prodx*prody / (prodxd*prodyd));
-    else coef[j] = 0.0;
-  } /* end loop over list */
+  /* Indicate completion */
+  finish: 
+  if (largs->ithread>=0)
+    ObitThreadPoolDone (largs->thread, (gpointer)&largs->ithread);
   
-} /* end lagrange */
-
+  return NULL;
+  
+} /*  end ThreadMBGrid */

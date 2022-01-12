@@ -1,6 +1,6 @@
-/* $Id: ObitTable.c 61 2008-12-19 18:14:49Z bill.cotton $       */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -266,6 +266,7 @@ ObitTable* ObitTableZap (ObitTable *in, ObitErr *err)
 
   in->myIO = ObitIOUnref(in->myIO);       /*  delete IO */
   in->info = ObitInfoListUnref(in->info);  /* delete infoList */
+  if (in->buffer) ObitIOFreeBuffer(in->buffer); in->buffer = NULL;  /* Delete Buffer*/
 
   /* Get memory resident bits as well - loop until truely deleted
   Bad Idea while (in->ReferenceCount>1) ObitTableUnref(in);*/
@@ -426,8 +427,9 @@ ObitTable* ObitTableClone  (ObitTable *in, ObitTable *out)
   /* Create if it doesn't exist */
   oldExist = out!=NULL;
   if (!oldExist) {
-    /* derive object name */
-    outName = g_strconcat ("Clone: ",in->name,NULL);
+    /* derive object name - don't repeat "Clone" */
+    if (strncmp("Clone", in->name, 5)) outName = g_strconcat ("Clone: ",in->name,NULL);
+    else                               outName = g_strconcat (in->name,NULL);
     out = newObitTable(outName);
     if (outName) g_free(outName); outName = NULL;
   }
@@ -457,7 +459,10 @@ ObitTable* ObitTableClone  (ObitTable *in, ObitTable *out)
    if (out->tabType) g_free(out->tabType); out->tabType = NULL;
    if (in->tabType) out->tabType = g_strdup(in->tabType);
 
-  return out;
+   /* Secret reference to host */
+   out->myHost = in->myHost;
+
+   return out;
 } /* end ObitTableClone */
 
 /**
@@ -883,10 +888,12 @@ ObitIOCode ObitTableRead (ObitTable *in, olong rowno, ofloat *data,
   if (myBuf==NULL) {
     myBuf = in->buffer;
     /* Check that internal buffer (defined in bytes) large enough */
-    need = ObitTableSelBufferSize (in->myDesc, in->mySel);
+    if (in->bufferSize>0) need = in->bufferSize;
+    else need = ObitTableSelBufferSize (in->myDesc, in->mySel);
+    /* need = ObitTableSelBufferSize (in->myDesc, in->mySel);   DEBUG */
     if (need > in->bufferSize) {
       Obit_log_error(err, OBIT_Error, 
-		     "IO buffer ( %d) too small, need %d for %s", 
+		     "IO buffer ( %ld) too small, need %d for %s", 
 		     in->bufferSize, need, in->name);
       return retCode;
     }
@@ -954,7 +961,7 @@ ObitIOCode ObitTableReadSelect (ObitTable *in, olong rowno, ofloat *data,
     need = ObitTableSelBufferSize (in->myDesc, in->mySel);
     if (need > in->bufferSize) {
       Obit_log_error(err, OBIT_Error, 
-		     "IO buffer ( %d) too small, need %d for %s", 
+		     "IO buffer ( %ld) too small, need %d for %s", 
 		     in->bufferSize, need, in->name);
       return retCode;
     }
@@ -1020,7 +1027,7 @@ ObitIOCode ObitTableWrite (ObitTable *in, olong rowno, ofloat *data,
     need = ObitTableSelBufferSize (in->myDesc, in->mySel);
     if (need > in->bufferSize) {
       Obit_log_error(err, OBIT_Error, 
-		     "IO buffer ( %d) too small, need %d for %s", 
+		     "IO buffer ( %ld) too small, need %d for %s", 
 		     in->bufferSize, need, in->name);
       return retCode;
     }

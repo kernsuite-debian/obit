@@ -1,6 +1,6 @@
-/* $Id: ObitFArrayClassDef.h 159 2010-02-26 17:54:34Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2010                                          */
+/*;  Copyright (C) 2002-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -63,10 +63,14 @@ ObitFArrayMeanFP ObitFArrayMean;
 ObitFArrayFillFP ObitFArrayFill;
 /** Function pointer to negate elements of an FArray */
 ObitFArrayNegFP ObitFArrayNeg;
+/** Function pointer to taks abs value of elements of an FArray */
+ObitFArrayAbsFP ObitFArrayAbs;
 /** Function pointer to sine of elements of an FArray */
 ObitFArraySinFP ObitFArraySin;
 /** Function pointer to cosine of elements of an FArray */
 ObitFArrayCosFP ObitFArrayCos;
+/** Function pointer to sine/cosine of elements of an FArray */
+ObitFArraySinCosFP ObitFArraySinCos;
 /** Function pointer to square root of elements of an FArray */
 ObitFArrayCosFP ObitFArraySqrt;
 /** Function pointer to sum elements of an FArray */
@@ -97,8 +101,14 @@ ObitFArraySumArrFP ObitFArraySumArr;
 ObitFArrayAvgArrFP ObitFArrayAvgArr;
 /** Function pointer to Add elements of two FArrays */
 ObitFArrayAddFP ObitFArrayAdd;
+/** Function pointer to Abs Add elements of two FArrays */
+ObitFArrayAddAbsFP ObitFArrayAddAbs;
+/** Function pointer to Copy elements from one FArray to another */
+ObitFArrayCopyDataFP ObitFArrayCopyData;
 /** Function pointer to Subtract elements of two FArrays */
 ObitFArraySubFP ObitFArraySub;
+/** Function pointer to Give the elements of one array the sign of the other  */
+ObitFArraySignFP ObitFArraySign;
 /** Function pointer to Multiply elements of two FArrays */
 ObitFArrayMulFP ObitFArrayMul;
 /** Function pointer to Divide elements of two FArrays */
@@ -129,3 +139,15 @@ ObitFArrayPadFP ObitFArrayPad;
 ObitFArrayConvGausFP ObitFArrayConvGaus;
 /** Function pointer to Select elements in an FArray by increment */
 ObitFArraySelIncFP ObitFArraySelInc;
+/** Function pointer to return histogram of elements in an FArray */
+ObitFArrayHistoFP ObitFArrayHisto;
+/** Function pointer to exponentiate an FArray */
+ObitFArrayExpFP ObitFArrayExp;
+/** Function pointer to natural logrithm of an FArray */
+ObitFArrayLogFP ObitFArrayLog;
+/** Function pointer to x^y of FArrays */
+ObitFArrayPowFP ObitFArrayPow;
+/** Function pointer to Gaussian distributed random number */
+ObitFArrayRandomFP ObitFArrayRandom;
+/** Function pointer to fill with Gaussian distributed random numbers */
+ObitFArrayRandomFillFP ObitFArrayRandomFill;

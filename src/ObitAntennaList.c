@@ -1,6 +1,6 @@
-/* $Id: ObitAntennaList.c 2 2008-06-10 15:32:27Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -241,13 +241,13 @@ ObitUVPolCalType ObitAntennaListGetPolType (gchar* type)
  * \param ant      Antenna number (1-rel)
  * \param time     Time in Days
  * \param Source   Source structure
- * \return elevation in radians
+ * \return elevation in radians (fblank if antenna not present )
  */
 ofloat ObitAntennaListElev (ObitAntennaList *inAList, olong ant, 
 			    ofloat time, ObitSource *Source)
 {
   ofloat elev = 0.0;
-  ofloat decr, gst, lst, ha, along, alat;
+  ofloat decr, gst, lst, ha, along, alat, fblank = ObitMagicF();
   olong i, iant;
   odouble darg;
 
@@ -257,6 +257,9 @@ ofloat ObitAntennaListElev (ObitAntennaList *inAList, olong ant,
     if (inAList->ANlist[i]->AntID==ant) {iant = i; break;}
   }
 
+  /* Valid? */
+  if (inAList->ANlist[iant]->AntID<0) return fblank;
+    
   /* antenna location */
   alat  = inAList->ANlist[iant]->AntLat;
   along = inAList->ANlist[iant]->AntLong;
@@ -286,13 +289,13 @@ ofloat ObitAntennaListElev (ObitAntennaList *inAList, olong ant,
  * \param ant      Antenna number (1-rel)
  * \param time     Time in Days
  * \param Source   Source structure
- * \return azimuth in radians
+ * \return azimuth in radians (fblank if antenna not present )
  */
 ofloat ObitAntennaListAz (ObitAntennaList *inAList, olong ant, 
 			  ofloat time, ObitSource *Source)
 {
   ofloat az = 0.0;
-  ofloat decr, gst, lst, ha, along, alat;
+  ofloat decr, gst, lst, ha, along, alat, fblank = ObitMagicF();
   olong i, iant;
   odouble darg, darg2, daz;
 
@@ -302,6 +305,9 @@ ofloat ObitAntennaListAz (ObitAntennaList *inAList, olong ant,
     if (inAList->ANlist[i]->AntID==ant) {iant = i; break;}
   }
 
+  /* Valid? */
+  if (inAList->ANlist[iant]->AntID<0) return fblank;
+    
   /* antenna location */
   alat  = inAList->ANlist[iant]->AntLat;
   along = inAList->ANlist[iant]->AntLong;
@@ -320,8 +326,8 @@ ofloat ObitAntennaListAz (ObitAntennaList *inAList, olong ant,
 
   /* Compute azimuth */
   darg  = sin(decr)*cos(alat) - cos(decr)*sin(alat)*cos(ha);
-  darg2 = cos(decr) * sin(ha);
-  daz = atan2 (darg, darg2);
+  darg2 = -cos(decr) * sin(ha);
+  daz = atan2 (darg2, darg);
   daz = fmod (daz, (2.0*G_PI));
   if (daz<0.0) daz += 2.0*G_PI;
   az = (ofloat)daz;
@@ -335,24 +341,36 @@ ofloat ObitAntennaListAz (ObitAntennaList *inAList, olong ant,
  * \param ant      Antenna number (1-rel)
  * \param time     Time in Days
  * \param Source   Source structure
- * \return paralactic angle in radians
+ * \return paralactic angle in radians (fblank if antenna not present )
  */
 ofloat ObitAntennaListParAng (ObitAntennaList *inAList, olong ant, 
 			      ofloat time, ObitSource *Source)
 {
   ofloat parAng = 0.0;
-  ofloat decr, gst, lst, ha, along, alat;
+  ofloat decr, gst, lst, ha, along, alat, t1, t2, fblank = ObitMagicF();
   olong i, iant;
 
-  /* Find antenna in list */
-  iant = 0;
-  for (i=0; i<inAList->number; i++) {
-    if (inAList->ANlist[i]->AntID==ant) {iant = i; break;}
-  }
+  /* If EVLA - all should have ~ same PA */
+  if (inAList->isVLA) {
+    alat  =   34.0787492*DG2RAD; /* VLA Latitude */
+    along = -107.618283*DG2RAD;  /* VLA Longitude */
+  } else { /* Not EVLA */
+    /* Find antenna in list */
+    iant = 0;
+    for (i=0; i<inAList->number; i++) {
+      if (inAList->ANlist[i]->AntID==ant) {iant = i; break;}
+    }
 
-  /* antenna location */
-  alat  = inAList->ANlist[iant]->AntLat;
-  along = inAList->ANlist[iant]->AntLong;
+    /* Not az-el mount? */
+    if (inAList->ANlist[iant]->AntMount!=0) return 0.0;
+    
+    /* Valid? */
+    if (inAList->ANlist[iant]->AntID<0) return fblank;
+    
+    /* antenna location */
+    alat  = inAList->ANlist[iant]->AntLat;
+    along = inAList->ANlist[iant]->AntLong;
+  } /* end not EVLA */
 
   /* declination in radians */
   decr = Source->DecApp * DG2RAD;
@@ -366,8 +384,12 @@ ofloat ObitAntennaListParAng (ObitAntennaList *inAList, olong ant,
   /* Hour angle in radians */
   ha = lst - Source->RAApp * DG2RAD;
 
-  parAng = atan2 (cos(alat) * sin(ha), 
-		  (sin(alat)*cos(decr) - cos(alat)*sin(decr)*cos(ha)));
+  t1 = cos(alat) * sin(ha); t2 = (sin(alat)*cos(decr) - cos(alat)*sin(decr)*cos(ha));
+  parAng = fmod((atan2 (t1, t2)),(2*G_PI));
+  /*arg = t1/t2;
+    parAng = atan(arg);
+    if ((decr>alat) && (ha<0.0) && (arg<0.0)) parAng += G_PI;
+    if ((decr>alat) && (ha>0.0) && (arg>0.0)) parAng -= G_PI;*/
   return parAng;
 } /* end ObitAntennaListParAng */
 

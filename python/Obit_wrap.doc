@@ -305,6 +305,9 @@ CleanImageCreate(name,mosaic,err)
 CleanImageDeconvolve(in,err)
         [ returns void  ]
 
+CleanImageRestore(in,err)
+        [ returns void  ]
+
 CleanImageDefWindow(in,err)
         [ returns void  ]
 
@@ -376,6 +379,9 @@ CleanVisCreate(name,uvdata,err)
 CleanVisDeconvolve(in,err)
         [ returns void  ]
 
+CleanVisRestore(in,err)
+        [ returns void  ]
+
 CleanVisDefWindow(in,err)
         [ returns void  ]
 
@@ -409,8 +415,16 @@ ConvUtilConv(inImage,convFn,doDivide,rescale,outImage,err)
         [ returns void  ]
         end ConvUtilConv 
 
+ConvUtilConvGauss(inImage,maj,min,pa,rescale,outImage,err)
+        [ returns void  ]
+        end ConvUtilConvGauss
+
 ConvUtilGaus(inImage,Maj,Min,PA)
         [ returns ObitFArray * ]
+        end ConvUtilGaus
+
+ConvUtilDeconv(fMaj,fMin,fPA,cMaj,cMin,cPA)
+        [ returns PyObject * ]
         end ConvUtilGaus
 
 FArrayCreate(name,ndim,naxis)
@@ -487,6 +501,9 @@ FArraySin(in)
         [ returns void  ]
 
 FArrayCos(in)
+        [ returns void  ]
+
+FArraySqrt(in)
         [ returns void  ]
 
 FArraySum(in)
@@ -619,6 +636,10 @@ FArrayUtilFitCGauss(in,FWHM,center,peak,err)
         end FArrayUtilFitCGauss
 
 FArrayUtilConvolve(in1,in2,err)
+        [ returns ObitFArray * ]
+        end FArrayUtilConvolve
+
+FArrayUtilUVGaus(naxis,cells,maprot,Gaumaj,Gaumin,GauPA)
         [ returns ObitFArray * ]
         end FArrayUtilConvolve
 
@@ -990,7 +1011,60 @@ FITSFileExist(disk,filename,err)
 
 FITSAddDir(dir,err)
         [ returns int  ]
+        end FITSAddDirname 
+
+FITSSetDir(dir,disk,err)
+        [ returns void  ]
         end FITSSetDirname 
+
+newFullBeam(name)
+        [ returns ObitFullBeam * ]
+        end newFullBeam
+
+FullBeamCopy(in,out,err)
+        [ returns ObitFullBeam * ]
+        end FullBeamCopy
+
+FullBeamUnref(in)
+        [ returns ObitFullBeam * ]
+
+FullBeamRef(in)
+        [ returns ObitFullBeam * ]
+
+FullBeamCreate(name,image,err)
+        [ returns ObitFullBeam * ]
+        end FullBeamCreate
+
+FullBeamValue(in,dra,ddec,parAng,plane,err)
+        [ returns float  ]
+        end FullBeamGain
+
+FullBeamFindPlane(in,freq)
+        [ returns long  ]
+        end FullBeamFindPlane
+
+FullBeamGetName(in)
+        [ returns char * ]
+
+FullBeamIsA(in)
+        [ returns int  ]
+
+10.  class FullBeam
+===================
+[ created from struct FullBeam ]
+
+
+FullBeam_me_set(self,me)
+FullBeam_me_get(self)
+        [ Member data: returns ObitFullBeam * ]
+
+new_FullBeam(name,image,err)
+        [ Constructor: returns FullBeam * ]
+
+delete_FullBeam(self)
+        [ Destructor: returns void  ]
+
+----------
 
 HistoryCreate(name)
         [ returns ObitHistory * ]
@@ -1028,6 +1102,9 @@ HistoryReadRec(in,recno,err)
 HistoryWriteRec(in,recno,hiCard,err)
         [ returns int  ]
 
+HistoryEdit(in,startr,endr,err)
+        [ returns int  ]
+
 HistoryTimeStamp(in,label,err)
         [ returns int  ]
 
@@ -1046,7 +1123,7 @@ HistoryIsA(in)
 HistoryGetName(in)
         [ returns char * ]
 
-10.  class History
+11.  class History
 ==================
 [ created from struct History ]
 
@@ -1121,7 +1198,7 @@ ImageDescUnref(in)
 ImageDescIsA(in)
         [ returns int  ]
 
-11.  class ImageDesc
+12.  class ImageDesc
 ====================
 [ created from struct ImageDesc ]
 
@@ -1164,7 +1241,7 @@ ImageFitGetName(in)
 ImageFitIsA(in)
         [ returns int  ]
 
-12.  class ImageFit
+13.  class ImageFit
 ===================
 [ created from struct ImageFit ]
 
@@ -1325,7 +1402,7 @@ ImageIsA(in)
 ImageGetName(in)
         [ returns char * ]
 
-13.  class Image
+14.  class Image
 ================
 [ created from struct Image ]
 
@@ -1338,6 +1415,151 @@ new_Image(name)
         [ Constructor: returns Image * ]
 
 delete_Image(self)
+        [ Destructor: returns void  ]
+
+----------
+
+newImageInterp(name)
+        [ returns ObitImageInterp * ]
+        end newImageInterp
+
+ImageInterpCopy(in,out,err)
+        [ returns ObitImageInterp * ]
+        end ImageInterpCopy
+
+ImageInterpUnref(in)
+        [ returns ObitImageInterp * ]
+
+ImageInterpRef(in)
+        [ returns ObitImageInterp * ]
+
+ImageInterpCreate(name,image,hwidth,err)
+        [ returns ObitImageInterp * ]
+        end ImageInterpCreate
+
+ImageInterpValue(in,ra,dec,parAng,plane,err)
+        [ returns float  ]
+        end ImageInterpValue
+
+ImageInterpFindPlane(in,freq)
+        [ returns long  ]
+        end ImageInterpFindPlane
+
+ImageInterpGetName(in)
+        [ returns char * ]
+
+ImageInterpIsA(in)
+        [ returns int  ]
+
+15.  class ImageInterp
+======================
+[ created from struct ImageInterp ]
+
+
+ImageInterp_me_set(self,me)
+ImageInterp_me_get(self)
+        [ Member data: returns ObitImageInterp * ]
+
+new_ImageInterp(name,image,hwidth,err)
+        [ Constructor: returns ImageInterp * ]
+
+delete_ImageInterp(self)
+        [ Destructor: returns void  ]
+
+----------
+
+ImageMFSetFITS(in,size,disk,file,blc,trc,err)
+        [ returns void  ]
+
+ImageMFSetAIPS(in,size,disk,cno,user,blc,trc,err)
+        [ returns void  ]
+
+ImageMFCastData(inImage)
+        [ returns ObitData * ]
+        end ImageMFCastData
+
+ImageMFCreate(name)
+        [ returns ObitImageMF * ]
+        end ImageMFCreate
+
+ImageMFInfo(in,err)
+        [ returns PyObject * ]
+        end ImageMFInfo
+
+ImageMFZap(in,err)
+        [ returns ObitImageMF * ]
+        end ImageMFZap
+
+ImageMFRename(in,err)
+        [ returns void  ]
+        end ImageMFRename
+
+ImageMFCopy(in,out,err)
+        [ returns ObitImageMF * ]
+        end ImageMFCopy
+
+ImageMFDirty(in)
+        [ returns void  ]
+        end Dirty
+
+ImageMFUnref(in)
+        [ returns ObitImageMF * ]
+
+ImageMFRef(in)
+        [ returns ObitImageMF * ]
+
+ImageMFGetList(in)
+        [ returns ObitInfoList * ]
+
+ImageMFGetTableList(in)
+        [ returns ObitTableList * ]
+
+ImageMFGetDesc(in)
+        [ returns ObitImageDesc * ]
+
+ImageMFSetDesc(in,desc)
+        [ returns void  ]
+
+ImageMFGetFArray(in)
+        [ returns ObitFArray * ]
+
+ImageMFSetFArray(in,image)
+        [ returns void  ]
+
+ImageMFGetBeam(in)
+        [ returns ObitImageMF * ]
+
+ImageMFSetBeam(in,beam)
+        [ returns void  ]
+
+ImageMFGetHighVer(in,tabType)
+        [ returns long  ]
+
+ImageMFisScratch(in)
+        [ returns int  ]
+
+ImageMFIsA(in)
+        [ returns int  ]
+
+ImageMFGetName(in)
+        [ returns char * ]
+
+ImageMFFitSpec(in,antSize,err)
+        [ returns void  ]
+
+16.  class ImageMF
+==================
+[ created from struct ImageMF ]
+
+
+ImageMF_me_set(self,me)
+ImageMF_me_get(self)
+        [ Member data: returns ObitImageMF * ]
+
+new_ImageMF(name)
+        [ Constructor: returns ImageMF * ]
+
+delete_ImageMF(self)
         [ Destructor: returns void  ]
 
 ----------
@@ -1392,7 +1614,7 @@ ImageMosaicGetNumber(in)
 ImageMosaicIsA(in)
         [ returns int  ]
 
-14.  class ImageMosaic
+17.  class ImageMosaic
 ======================
 [ created from struct ImageMosaic ]
 
@@ -1441,7 +1663,11 @@ ImageUtilCCScale(inCCTab,startComp,endComp,scale,err)
         [ returns void  ]
         end ImageUtilCCScale
 
-15.  class InfoListBlob
+ImageUtilUVFilter(inImage,outImage,radius,err)
+        [ returns void  ]
+        end ImageUtilUVFilter
+
+18.  class InfoListBlob
 =======================
 [ created from struct InfoListBlob ]
 
@@ -1581,7 +1807,7 @@ InfoListGetDict(in)
         [ returns PyObject * ]
         end InfoListGetDict
 
-16.  class InfoList
+19.  class InfoList
 ===================
 [ created from struct InfoList ]
 
@@ -1626,6 +1852,9 @@ isError(in)
 SetError(in)
         [ returns void  ]
 
+ErrorInit(in,info)
+        [ returns void  ]
+
 LogError(in,eCode,message)
         [ returns void  ]
         end LogError
@@ -1636,7 +1865,7 @@ OErrMsg(in)
 Bomb()
         [ returns void  ]
 
-17.  class OErr
+20.  class OErr
 ===============
 [ created from struct OErr ]
 
@@ -1697,7 +1926,15 @@ MemPrint()
         [ returns void  ]
         end MemPrint
 
-18.  class OSystem
+SystemAllowThreads(nThreads)
+        [ returns void  ]
+        end SystemAllowThreads
+
+SystemGetNoThreads()
+        [ returns int  ]
+        end SystemGetNoThreads
+
+21.  class OSystem
 ==================
 [ created from struct OSystem ]
 
@@ -1801,7 +2038,7 @@ ODataIsA(in)
 ODataGetName(in)
         [ returns char * ]
 
-19.  class OData
+22.  class OData
 ================
 [ created from struct OData ]
 
@@ -1853,7 +2090,7 @@ ODisplayGetName(in)
         [ returns char * ]
         end ODisplayGetName
 
-20.  class ODisplay
+23.  class ODisplay
 ===================
 [ created from struct ODisplay ]
 
@@ -1901,6 +2138,10 @@ PlotContour(in,label,image,lev,cntfac,err)
         [ returns void  ]
         end PlotContour
 
+PlotGrayScale(in,label,image,err)
+        [ returns void  ]
+        end PlotGrayScale
+
 PlotMarkCross(in,image,n,ra,dec,size,err)
         [ returns void  ]
         end PlotMarkCross
@@ -1924,6 +2165,10 @@ PlotSetCharSize(in,cscale,err)
 PlotSetLineWidth(in,lwidth,err)
         [ returns void  ]
         end PlotSetLineWidth
+
+PlotSetLineStyle(in,lstyle,err)
+        [ returns void  ]
+        end PlotSetLineStyle
 
 PlotSetColor(in,color,err)
         [ returns void  ]
@@ -1972,7 +2217,7 @@ OPlotGetName(in)
 PlotGetList(in)
         [ returns ObitInfoList * ]
 
-21.  class OPlot
+24.  class OPlot
 ================
 [ created from struct OPlot ]
 
@@ -2036,7 +2281,7 @@ OWindowUnref(in)
 OWindowIsA(in)
         [ returns int  ]
 
-22.  class OWindow
+25.  class OWindow
 ==================
 [ created from struct OWindow ]
 
@@ -2159,7 +2404,7 @@ SkyModelGetName(in)
 SkyModelIsA(in)
         [ returns int  ]
 
-23.  class SkyModel
+26.  class SkyModel
 ===================
 [ created from struct SkyModel ]
 
@@ -2172,6 +2417,49 @@ new_SkyModel(name)
         [ Constructor: returns SkyModel * ]
 
 delete_SkyModel(self)
+        [ Destructor: returns void  ]
+
+----------
+
+newSkyModelVMBeam(name)
+        [ returns ObitSkyModelVMBeam * ]
+        end newSkyModelVMBeam
+
+SkyModelVMBeamCopy(in,out,err)
+        [ returns ObitSkyModelVMBeam * ]
+        end SkyModelVMBeamCopy
+
+SkyModelVMBeamUnref(in)
+        [ returns ObitSkyModelVMBeam * ]
+
+SkyModelVMBeamRef(in)
+        [ returns ObitSkyModelVMBeam * ]
+
+SkyModelVMBeamGetList(in)
+        [ returns ObitInfoList * ]
+
+SkyModelVMBeamCreate(name,mosaic,uvData,IBeam,VBeam,QBeam,UBeam,IBeamPh,VBeamPh,QBeamPh,UBeamPh,err)
+        [ returns ObitSkyModelVMBeam * ]
+
+SkyModelVMBeamGetName(in)
+        [ returns char * ]
+
+SkyModelVMBeamIsA(in)
+        [ returns int  ]
+
+27.  class SkyModelVMBeam
+=========================
+[ created from struct SkyModelVMBeam ]
+
+
+SkyModelVMBeam_me_set(self,me)
+SkyModelVMBeam_me_get(self)
+        [ Member data: returns ObitSkyModelVMBeam * ]
+
+new_SkyModelVMBeam(name)
+        [ Constructor: returns SkyModelVMBeam * ]
+
+delete_SkyModelVMBeam(self)
         [ Destructor: returns void  ]
 
 ----------
@@ -2202,7 +2490,7 @@ SkyModelVMIonGetName(in)
 SkyModelVMIonIsA(in)
         [ returns int  ]
 
-24.  class SkyModelVMIon
+28.  class SkyModelVMIon
 ========================
 [ created from struct SkyModelVMIon ]
 
@@ -2246,7 +2534,7 @@ SpectrumFitImArr(in,nimage,imArr,outImage,err)
 SpectrumFitEval(in,inImage,outFreq,outImage,err)
         [ returns void  ]
 
-SpectrumFitSingle(nfreq,nterm,freq,flux,sigma,err)
+SpectrumFitSingle(nfreq,nterm,refFreq,freq,flux,sigma,doBrokePow,err)
         [ returns PyObject * ]
         end SpectrumFitPixel
 
@@ -2259,7 +2547,7 @@ SpectrumFitGetName(in)
 SpectrumFitIsA(in)
         [ returns int  ]
 
-25.  class SpectrumFit
+29.  class SpectrumFit
 ======================
 [ created from struct SpectrumFit ]
 
@@ -2276,7 +2564,7 @@ delete_SpectrumFit(self)
 
 ----------
 
-TableAN(inData,tabVer,access,tabName,numOrb,numPCal,err)
+TableAN(inData,tabVer,access,tabName,numIF,numOrb,numPCal,err)
         [ returns ObitTable * ]
 
 TableANGetHeadKeys(inTab)
@@ -2319,6 +2607,15 @@ TableCCGetHeadKeys(inTab)
         [ returns PyObject * ]
 
 TableCCSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableCD(inData,tabVer,access,tabName,nIF,nPol,err)
+        [ returns ObitTable * ]
+
+TableCDGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableCDSetHeadKeys(inTab,inDict)
         [ returns void  ]
 
 TableCL(inData,tabVer,access,tabName,numPol,numIF,numTerm,err)
@@ -2394,7 +2691,7 @@ TableDescUnref(in)
 TableDescIsA(in)
         [ returns int  ]
 
-26.  class TableDesc
+30.  class TableDesc
 ====================
 [ created from struct TableDesc ]
 
@@ -2465,6 +2762,33 @@ TableIDI_ARRAY_GEOMETRYGetHeadKeys(inTab)
 TableIDI_ARRAY_GEOMETRYSetHeadKeys(inTab,inDict)
         [ returns void  ]
 
+TableIDI_BANDPASS(inData,tabVer,access,tabName,numPol,no_band,numAnt,numBach,strtChn,err)
+        [ returns ObitTable * ]
+
+TableIDI_BANDPASSGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_BANDPASSSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableIDI_CALIBRATION(inData,tabVer,access,tabName,numPol,no_band,numAnt,err)
+        [ returns ObitTable * ]
+
+TableIDI_CALIBRATIONGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_CALIBRATIONSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableIDI_FLAG(inData,tabVer,access,tabName,no_band,err)
+        [ returns ObitTable * ]
+
+TableIDI_FLAGGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_FLAGSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
 TableIDI_FREQUENCY(inData,tabVer,access,tabName,no_band,err)
         [ returns ObitTable * ]
 
@@ -2472,6 +2796,33 @@ TableIDI_FREQUENCYGetHeadKeys(inTab)
         [ returns PyObject * ]
 
 TableIDI_FREQUENCYSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableIDI_GAIN_CURVE(inData,tabVer,access,tabName,numPol,no_band,numTabs,err)
+        [ returns ObitTable * ]
+
+TableIDI_GAIN_CURVEGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_GAIN_CURVESetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableIDI_INTERFEROMETER_MODEL(inData,tabVer,access,tabName,numPol,npoly,no_band,err)
+        [ returns ObitTable * ]
+
+TableIDI_INTERFEROMETER_MODELGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_INTERFEROMETER_MODELSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableIDI_PHASE_CAL(inData,tabVer,access,tabName,numPol,no_band,numTones,err)
+        [ returns ObitTable * ]
+
+TableIDI_PHASE_CALGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_PHASE_CALSetHeadKeys(inTab,inDict)
         [ returns void  ]
 
 TableIDI_SOURCE(inData,tabVer,access,tabName,no_band,err)
@@ -2483,6 +2834,15 @@ TableIDI_SOURCEGetHeadKeys(inTab)
 TableIDI_SOURCESetHeadKeys(inTab,inDict)
         [ returns void  ]
 
+TableIDI_SYSTEM_TEMPERATURE(inData,tabVer,access,tabName,numPol,no_band,err)
+        [ returns ObitTable * ]
+
+TableIDI_SYSTEM_TEMPERATUREGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_SYSTEM_TEMPERATURESetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
 TableIDI_UV_DATA(inData,tabVer,access,tabName,no_band,maxis1,maxis2,maxis3,maxis4,maxis5,err)
         [ returns ObitTable * ]
 
@@ -2492,7 +2852,16 @@ TableIDI_UV_DATAGetHeadKeys(inTab)
 TableIDI_UV_DATASetHeadKeys(inTab,inDict)
         [ returns void  ]
 
-TableIM(inData,tabVer,access,tabName,numBand,numPol,npoly,err)
+TableIDI_WEATHER(inData,tabVer,access,tabName,no_band,err)
+        [ returns ObitTable * ]
+
+TableIDI_WEATHERGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableIDI_WEATHERSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableIM(inData,tabVer,access,tabName,numPol,numBand,npoly,err)
         [ returns ObitTable * ]
 
 TableIMGetHeadKeys(inTab)
@@ -2582,7 +2951,7 @@ TableGetName(in)
 TableUtilSort(in,colName,desc,err)
         [ returns int  ]
 
-27.  class Table
+31.  class Table
 ================
 [ created from struct Table ]
 
@@ -2630,7 +2999,7 @@ TableListUnref(in)
 TableListIsA(in)
         [ returns int  ]
 
-28.  class TableList
+32.  class TableList
 ====================
 [ created from struct TableList ]
 
@@ -2647,7 +3016,7 @@ delete_TableList(self)
 
 ----------
 
-TableMC(inData,tabVer,access,tabName,numBand,numPol,err)
+TableMC(inData,tabVer,access,tabName,numPol,numBand,err)
         [ returns ObitTable * ]
 
 TableMCGetHeadKeys(inTab)
@@ -2701,6 +3070,15 @@ TableOFGetHeadKeys(inTab)
 TableOFSetHeadKeys(inTab,inDict)
         [ returns void  ]
 
+TableOT(inData,tabVer,access,tabName,err)
+        [ returns ObitTable * ]
+
+TableOTGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableOTSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
 TablePC(inData,tabVer,access,tabName,numPol,numBand,numTones,err)
         [ returns ObitTable * ]
 
@@ -2737,7 +3115,16 @@ TableSUGetHeadKeys(inTab)
 TableSUSetHeadKeys(inTab,inDict)
         [ returns void  ]
 
-TableTY(inData,tabVer,access,tabName,numPol,numIF,err)
+TableSY(inData,tabVer,access,tabName,nIF,nPol,err)
+        [ returns ObitTable * ]
+
+TableSYGetHeadKeys(inTab)
+        [ returns PyObject * ]
+
+TableSYSetHeadKeys(inTab,inDict)
+        [ returns void  ]
+
+TableTY(inData,tabVer,access,tabName,numIF,numPol,err)
         [ returns ObitTable * ]
 
 TableTYGetHeadKeys(inTab)
@@ -2840,6 +3227,10 @@ TimeFilterGetFreq(in,seriesNo)
         [ returns PyObject * ]
         end TimeFilterGetFreq
 
+TimeFilterGetPower(in,seriesNo)
+        [ returns PyObject * ]
+        end TimeFilterGetPower
+
 TimeFilterSetTime(in,seriesNo,inDict)
         [ returns void  ]
         end TimeFilterSetTime
@@ -2848,7 +3239,7 @@ TimeFilterSetFreq(in,seriesNo,inDict)
         [ returns void  ]
         end TimeFilterSetFreq
 
-29.  class TimeFilter
+33.  class TimeFilter
 =====================
 [ created from struct TimeFilter ]
 
@@ -2903,7 +3294,7 @@ UVDescUnref(in)
 UVDescIsA(in)
         [ returns int  ]
 
-30.  class UVDesc
+34.  class UVDesc
 =================
 [ created from struct UVDesc ]
 
@@ -2947,7 +3338,7 @@ UVGSolveCal(in,inUV,outUV,sel,err)
         [ returns ObitTable * ]
         end UVGSolveCal
 
-31.  class UVGSolve
+35.  class UVGSolve
 ===================
 [ created from struct UVGSolve ]
 
@@ -3002,7 +3393,7 @@ UVImagerGetName(in)
 UVImagerIsA(in)
         [ returns int  ]
 
-32.  class UVImager
+36.  class UVImager
 ===================
 [ created from struct UVImager ]
 
@@ -3135,6 +3526,9 @@ UVGetHighVer(in,tabType)
 UVGetDesc(in)
         [ returns ObitUVDesc * ]
 
+UVGetIODesc(in)
+        [ returns ObitUVDesc * ]
+
 UVSetDesc(in,desc)
         [ returns void  ]
 
@@ -3171,6 +3565,14 @@ UVUtilIndex(inUV,err)
         [ returns void  ]
         end UVUtilVisIndex
 
+UVUtilQuack(inUV,begDrop,endDrop,Reason,fgver,err)
+        [ returns void  ]
+        end UVUtilQuack
+
+UVUtilHann(in,scratch,out,err)
+        [ returns ObitUV * ]
+        end UVUtilHann
+
 UVUtilAvgF(in,scratch,out,err)
         [ returns ObitUV * ]
         end UVUtilAvgF
@@ -3179,9 +3581,25 @@ UVUtilAvgT(in,scratch,out,err)
         [ returns ObitUV * ]
         end UVUtilAvgT
 
+UVUtilAvgTF(in,scratch,out,err)
+        [ returns ObitUV * ]
+        end UVUtilAvgTF
+
 UVUtilCount(inUV,timeInt,err)
         [ returns ObitInfoList * ]
         end UVUtilCount
+
+UVUtilSplitCh(inUV,nOut,outUV,err)
+        [ returns void  ]
+        end UVUtilSplitCh
+
+UVUtilNoise(inUV,outUV,scale,sigma,err)
+        [ returns void  ]
+        end UVUtilNoise
+
+UVUtilAppend(inUV,outUV,err)
+        [ returns void  ]
+        end UVUtilAppend
 
 UVEditTD(in,out,err)
         [ returns void  ]
@@ -3201,9 +3619,21 @@ UVEditClip(in,scratch,out,err)
 
 UVEditClipStokes(in,scratch,out,err)
         [ returns ObitUV * ]
-        end UVUtilClipStokes
+        end UVEditClipStokes
 
-33.  class UV
+UVUtilFlag(inUV,err)
+        [ returns int  ]
+        end UVUtilFlag
+
+TableCLGetDummy(inUV,outUV,ver,err)
+        [ returns ObitTable * ]
+        end TableCLGetDummy
+
+TableSNGetZeroFR(inUV,outUV,ver,err)
+        [ returns ObitTable * ]
+        end TableCLGetDummy
+
+37.  class UV
 =============
 [ created from struct UV ]
 
@@ -3216,6 +3646,54 @@ new_UV(name)
         [ Constructor: returns UV * ]
 
 delete_UV(self)
+        [ Destructor: returns void  ]
+
+----------
+
+newUVRFIXize(name)
+        [ returns ObitUVRFIXize * ]
+        end newUVRFIXize
+
+UVRFIXizeCreate(name,inUV,residUV,outUV)
+        [ returns ObitUVRFIXize * ]
+
+UVRFIXizeUnref(in)
+        [ returns ObitUVRFIXize * ]
+
+UVRFIXizeRef(in)
+        [ returns ObitUVRFIXize * ]
+
+UVRFIXizeCounterRot(in,err)
+        [ returns void  ]
+
+UVRFIXizeFilter(in,err)
+        [ returns void  ]
+
+UVRFIXizeCorrect(in,err)
+        [ returns void  ]
+
+UVRFIXizeGetList(in)
+        [ returns ObitInfoList * ]
+
+UVRFIXizeGetRFI(in)
+        [ returns ObitSkyModel * ]
+
+UVRFIXizeIsA(in)
+        [ returns int  ]
+
+38.  class UVRFIXize
+====================
+[ created from struct UVRFIXize ]
+
+
+UVRFIXize_me_set(self,me)
+UVRFIXize_me_get(self)
+        [ Member data: returns ObitUVRFIXize * ]
+
+new_UVRFIXize(name)
+        [ Constructor: returns UVRFIXize * ]
+
+delete_UVRFIXize(self)
         [ Destructor: returns void  ]
 
 ----------
@@ -3249,7 +3727,7 @@ UVSelfCalSetSkyModel(in,skyModel,err)
 UVSelfCalIsA(in)
         [ returns int  ]
 
-34.  class UVSelfCal
+39.  class UVSelfCal
 ====================
 [ created from struct UVSelfCal ]
 
@@ -3286,7 +3764,7 @@ UVSolnDeselCL(CLTab,isuba,fqid,nantf,ants,nsou,sources,timerange,err)
         [ returns void  ]
         end UVSolnDeselCL
 
-SNInvert(inSN,outData,tabVer,err)
+SNInvert(inSN,outData,tabVer,doRepl,err)
         [ returns ObitTable * ]
         end SNInvert
 
@@ -3297,6 +3775,9 @@ UVVisGet(inUV,err)
 UVVisSet(vis,outUV,err)
         [ returns void  ]
         end UVVisSet
+
+Version()
+        [ returns char * ]
 
 Zernike(n,x,y)
         [ returns float  ]

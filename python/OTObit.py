@@ -264,9 +264,9 @@ Note: these dict are independent of the underlying data structures.
 
 """
 # Interactive routines to Obit use from ObitTalk
-# $Id: OTObit.py 114 2009-06-29 14:43:41Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2005-2009
+#  Copyright (C) 2005-2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -291,11 +291,16 @@ Note: these dict are independent of the underlying data structures.
 #                         520 Edgemont Road
 #                         Charlottesville, VA 22903-2475 USA
 #-----------------------------------------------------------------------
-import Obit, Table, FArray, OErr, InfoList, History, OSystem
+from __future__ import absolute_import
+from __future__ import print_function
+import Obit, Table, FArray, OErr, InfoList, History, OSystem, ObitTasks
 #import FITSDir, AIPSDir
 import Image, ImageDesc, ImageUtil, TableList, ODisplay, UV, OWindow
+import ImageMF
 import re
 import TaskMsgBuffer
+from six.moves import range
+from six.moves import input
 try:
     import TaskWindow
 except:
@@ -316,26 +321,30 @@ from FITSDir import FITSdisks, nFITS
 from AIPSDir import AIPSdisks, nAIPS
 
 # Init Obit
+global userno, popsno
 userno =  AIPS.AIPS.userno
 popsno = 1
 from ObitInit import *
 
 # Display connection
+err = OErr.OErr()
 disp = ODisplay.ODisplay("ObitView", "ObitView", err)
 
 def ShowErr(err=err):
-    """ Print any errors and clear stack
-    
-    err  = Python Obit Error/message stack, default of OTObit version
+    """
+    Print any errors and clear stack
+
+    * err  = Python Obit Error/message stack, default of OTObit version
     """
     ################################################################
     OErr.printErrMsg(err, "Error")
     # end ShowErr
 
 def ClearErr(err=err):
-    """ Print any errors and clear stack
-    
-    err  = Python Obit Error/message stack, default is OTObit version
+    """
+    Print any errors and clear stack
+
+    * err  = Python Obit Error/message stack, default is OTObit version
     """
     ################################################################
     OErr.printErrMsg(err, "Error")
@@ -343,21 +352,23 @@ def ClearErr(err=err):
 
 def Acat(disk=None, first=1, last=1000, Aname=None, Aclass=None, Aseq=0,
          giveList=False):
-    """ Catalog listing of AIPS files on disk disk
-
+    """
+    Catalog listing of AIPS files on disk disk
+    
     The class remembers the last disk accessed
     Strings use AIPS wild cards:
-        blank => any
+
+        * blank => any
         '?'   => one of any character
         "*"   => arbitrary string
     If giveList then return list of CNOs
-    disk      = AIPS disk number to list
-    first     = lowest slot number to list
-    last      = highest slot number to list
-    Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
-    Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
-    Aseq      = desired AIPS sequence, 0=> any
-    giveList = If true, return list of CNOs matching
+    * disk      = AIPS disk number to list
+    * first     = lowest slot number to list
+    * last      = highest slot number to list
+    * Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
+    * Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
+    * Aseq      = desired AIPS sequence, 0=> any
+    * giveList = If true, return list of CNOs matching
     """
     ################################################################
     global Adisk
@@ -375,11 +386,13 @@ def Acat(disk=None, first=1, last=1000, Aname=None, Aclass=None, Aseq=0,
     # end Acat
 
 def Fdir(disk=None, dir=None):
-    """ Catalog listing of FITS files on disk disk
-
+    """
+    Catalog listing of FITS files on disk disk
+    
     The class remembers the last disk accessed
-    disk      = AIPS disk number to list
-    dir       = relative or abs. path of directory, def. = cwd
+
+    * disk      = AIPS disk number to list
+    * dir       = relative or abs. path of directory, def. = cwd
                 Only used if disk == 0
     """
     ################################################################
@@ -403,20 +416,22 @@ def Fdir(disk=None, dir=None):
 
 def AMcat(disk=None, first=1, last=1000, Aname=None, Aclass=None, Aseq=0,
           giveList=False):
-    """ Catalog listing of AIPS Image files on disk disk
-
+    """
+    Catalog listing of AIPS Image files on disk disk
+    
     Strings use AIPS wild cards:
-        blank => any
+
+        * blank => any
         '?'   => one of any character
         "*"   => arbitrary string
     If giveList then return list of CNOs
-    disk      = AIPS disk number to list
-    first     = lowest slot number to list
-    last      = highest slot number to list
-    Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
-    Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
-    Aseq      = desired AIPS sequence, 0=> any
-    giveList  = If true, return list of CNOs matching
+    * disk      = AIPS disk number to list
+    * first     = lowest slot number to list
+    * last      = highest slot number to list
+    * Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
+    * Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
+    * Aseq      = desired AIPS sequence, 0=> any
+    * giveList  = If true, return list of CNOs matching
     """
     ################################################################
     global Adisk
@@ -435,20 +450,22 @@ def AMcat(disk=None, first=1, last=1000, Aname=None, Aclass=None, Aseq=0,
 
 def AUcat(disk=None, first=1, last=1000, Aname=None, Aclass=None, Aseq=0,
           giveList=False):
-    """ Catalog listing of AIPS UV data files on disk disk
-
+    """
+    Catalog listing of AIPS UV data files on disk disk
+    
     Strings use AIPS wild cards:
-        blank => any
+
+        * blank => any
         '?'   => one of any character
         "*"   => arbitrary string
     If giveList then return list of CNOs
-    disk      = AIPS disk number to list
-    first     = lowest slot number to list
-    last      = highest slot number to list
-    Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
-    Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
-    Aseq      = desired AIPS sequence, 0=> any
-    giveList  = If true, return list of CNOs matching
+    * disk      = AIPS disk number to list
+    * first     = lowest slot number to list
+    * last      = highest slot number to list
+    * Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
+    * Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
+    * Aseq      = desired AIPS sequence, 0=> any
+    * giveList  = If true, return list of CNOs matching
     """
     ################################################################
     global Adisk
@@ -466,17 +483,19 @@ def AUcat(disk=None, first=1, last=1000, Aname=None, Aclass=None, Aseq=0,
     # end AUcat
 
 def AllDest (disk=None, Atype="  ", Aname="            ", Aclass="      ", Aseq=0):
-    """ Delete AIPS files matching a pattern
-
+    """
+    Delete AIPS files matching a pattern
+    
     Strings use AIPS wild cards:
-        blank => any
+
+        * blank => any
         '?'   => one of any character
         "*"   => arbitrary string
-    disk      = AIPS disk number, 0=>all
-    Atype     = AIPS entry type, 'MA' or 'UV'; '  => all
-    Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
-    Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
-    Aseq      = desired AIPS sequence, 0=> any
+    * disk      = AIPS disk number, 0=>all
+    * Atype     = AIPS entry type, 'MA' or 'UV'; '  => all
+    * Aname     = desired AIPS name, using AIPS wildcards, None -> don't check
+    * Aclass    = desired AIPS class, using AIPS wildcards, None -> don't check
+    * Aseq      = desired AIPS sequence, 0=> any
     """
     ################################################################
     global Adisk
@@ -489,20 +508,21 @@ def AllDest (disk=None, Atype="  ", Aname="            ", Aclass="      ", Aseq=
     prompt = "Do you really want to delete all AIPS "+Atype+" files on disk(s) "\
              +str(disk)+"\nwith names matching "+Aname+"."+Aclass+"."+str(Aseq)+ \
              " y/n "
-    ans = raw_input(prompt)
+    ans = input(prompt)
     if ans.startswith('y'):
         AIPSDir.PAllDest (disk, err, Atype=Atype, Aname=Aname, Aclass=Aclass,
                           Aseq=Aseq)
     else:
-        print "Not confirmed"
+        print("Not confirmed")
     OErr.printErrMsg(err, "Error with destroying AIPS enreies")
     # end AllDest
 
 def getname(cno, disk=None):
-    """ Return Obit object for AIPS file in cno on disk
+    """
+    Return Obit object for AIPS file in cno on disk
 
-    cno       = AIPS catalog slot number 
-    disk      = AIPS disk number
+    * cno       = AIPS catalog slot number 
+    * disk      = AIPS disk number
     """
     ################################################################
     global Adisk
@@ -516,7 +536,7 @@ def getname(cno, disk=None):
     cat = AIPSData.AIPSCat(disk)
     s = cat.info(cno)
     if not s:   # Not found
-        raise RuntimeError,"Cannot find slot "+str(cno)+",disk "+str(disk)+",user "+str(user)
+        raise RuntimeError("Cannot find slot "+str(cno)+",disk "+str(disk)+",user "+str(user))
     # parse returned string
     Aname = s[0:12]
     Aclass = s[13:19]
@@ -531,7 +551,7 @@ def getname(cno, disk=None):
         else:
             out = Image.newPAImage("AIPS image", Aname, Aclass, disk, Aseq, True, err, \
                                    verbose=False)
-        print "AIPS Image",Aname, Aclass, disk, Aseq
+        print("AIPS Image",Aname, Aclass, disk, Aseq)
     elif Atype == 'UV':
          # Create AIPSData or ObitTalk if remote/local
         if AIPS.AIPS.disks[disk].url:
@@ -541,7 +561,7 @@ def getname(cno, disk=None):
         else:
             out = UV.newPAUV("AIPS UV data", Aname, Aclass, disk, Aseq, True, err, \
                              verbose=False)
-        print "AIPS UV",Aname, Aclass, disk, Aseq
+        print("AIPS UV",Aname, Aclass, disk, Aseq)
     out.Aname  = Aname
     out.Aclass = Aclass
     out.Aseq   = Aseq 
@@ -552,22 +572,26 @@ def getname(cno, disk=None):
     # end getname
 
 def getFITS(file, disk=None, Ftype='Image'):
-    """ Return Obit object for FITS file in file on disk
+    """
+    Return Obit object for FITS file in file on disk
 
-    file      = FITS file name
-    disk      = FITS disk number
-    Ftype     = FITS data type: 'Image', 'UV'
+    * file      = FITS file name
+    * disk      = FITS disk number
+    * Ftype     = FITS data type: 'Image', 'UV'
     """
     ################################################################
     global Fdisk
     if disk==None:
         disk = Fdisk
     if Ftype == 'Image':
-        # ObitTalk (local) or AIPSData (remote)?
+        # ObitTalk (local) or FITSData (remote)?
         if (disk>0) and FITS.FITS.disks[disk].url:
             out = FITSData.FITSImage(file, disk)
         else:
-            out = Image.newPFImage("FITS image", file, disk, True, err)
+            try:
+                out = Image.newPFImage("FITS image", file, disk, True, err)
+            except: # Try UV data
+                out = UV.newPFUV("FITS UV data", file, disk, True, err)
     elif Ftype == 'UV':
         if (disk>0) and FITS.FITS.disks[disk].url:
             out = FITSData.FITSUVData(file, disk)
@@ -580,10 +604,11 @@ def getFITS(file, disk=None, Ftype='Image'):
     # end getFITS
 
 def tvlod(image, window=None):
-    """ display image
+    """
+    display image
 
-    image  = Obit Image or AIPSImage, created with getname, getFITS
-    window = Optional window for image to edit
+    * image  = Obit Image or AIPSImage, created with getname, getFITS
+    * window = Optional window for image to edit
     """
     ################################################################
     if image.__class__==AIPSData.AIPSImage:
@@ -606,10 +631,11 @@ def tvlod(image, window=None):
     # end tvlod
 
 def newDisplay(port=8765, URL=None):
-    """ Recreate display to another display server
+    """
+    Recreate display to another display server
 
-    port   = port number on local machine
-    URL    = Full URL (e.g. http://localhost:8765/RPC2)
+    * port   = port number on local machine
+    * URL    = Full URL (e.g. http://localhost:8765/RPC2)
     """
     ################################################################
     global disp
@@ -622,10 +648,12 @@ def newDisplay(port=8765, URL=None):
     # end newDisplay
 
 def window (image):
-    """ Make a window object for an image
-
+    """
+    Make a window object for an image
+    
     Returns OWindow object
-    image  = Obit image object
+
+    * image  = Obit image object
     """
     ################################################################
     if Image.PIsA(image):
@@ -646,19 +674,21 @@ def window (image):
     # end window
 
 def go (TaskObj, MsgBuf=False, URL="http://localhost:8777/RPC2"):
-    """ Execute task or script
-
+    """
+    Execute task or script
+    
     Returns TaskWindow object if run asynchronously (doWait=True)
     or the task message log if run synchronously (doWait=False)
     The wait() function on the TaskWindow or TaskMsgBuffer will hang
     until the task finishes.
     Returns either a TaskWindow or TaskMsgBuffer depending on MsgBuf
-    TaskObj    = Task object to execute
+
+    * TaskObj    = Task object to execute
                  If doWait member is true run synchronously,
                  else run with messages in a separate Message window
-    MsgBuf     = if true and  TaskObj.doWait=False run asynchronously
+    * MsgBuf     = if true and  TaskObj.doWait=False run asynchronously
                  using a TaskMsgBuffer
-    URL        = URL of ObitMess message server if MsgBuf=False
+    * URL        = URL of ObitMess message server if MsgBuf=False
     """
     ################################################################
     import OTWindow
@@ -679,28 +709,32 @@ def go (TaskObj, MsgBuf=False, URL="http://localhost:8777/RPC2"):
             return tw
     # end go
    
-def inputs (TaskObj):
-    """ List task inputs
+def inputs (TaskObj, file=None):
+    """
+    List task inputs
 
-    TaskObj    = Task object whose inputs to list
+    * TaskObj    = Task object whose inputs to list
+    file       = file name to write to
     """
     ################################################################
     TaskObj.inputs()
     # end inputs
    
 def explain (TaskObj):
-    """ Give explanation for a task if available
+    """
+    Give explanation for a task if available
 
-    TaskObj    = Task object whose inputs to list
+    * TaskObj    = Task object whose inputs to list
     """
     ################################################################
     TaskObj.explain()
     # end explain
    
 def AIPSHelp (Task):
-    """ Give Help for AIPS task Task
+    """
+    Give Help for AIPS task Task
 
-    Task    = AIPSTask name to give (e.g. "imean")
+    * Task    = AIPSTask name to give (e.g. "imean")
     """
     ################################################################
     t=AIPSTask(Task)
@@ -708,9 +742,10 @@ def AIPSHelp (Task):
     # end  AIPSHelp
    
 def ObitHelp (Task):
-    """ Give Help for OBIT task Task
+    """
+    Give Help for OBIT task Task
 
-    Task    = ObitTask name to give (e.g. "Feather")
+    * Task    = ObitTask name to give (e.g. "Feather")
     """
     ################################################################
     t=ObitTask(Task)
@@ -718,13 +753,15 @@ def ObitHelp (Task):
     # end  ObitHelp
    
 def copyInputs (inTask, outTask):
-    """ Copy values from one task object to another
-
+    """
+    Copy values from one task object to another
+    
     Copies parameter values from inTask to outTask which are in both the
     inTask and outTask _input_list.
     Need not be the same task.
-    inTask    = Task object to copy from
-    outTask   = Task object to copy to
+
+    * inTask    = Task object to copy from
+    * outTask   = Task object to copy to
     """
     ################################################################
     for x in inTask._input_list:
@@ -734,10 +771,59 @@ def copyInputs (inTask, outTask):
     
     # end copyInputs
 
-def imhead (ObitObj):
-    """ List header
+def addParam (inTask, param,
+              paramVal=[0.0], shortHelp="New Param",
+              longHelp="  New parameter\n    Description",
+              explain = ""):
+    """
+    Add a parameter to a task input
+    
+    * inTask    = Task object to modify
+    * param     = name of new parameter
+    * paramVal  = Parameter default value(s) as list
+    * shortHelp = Description in inputs
+    * longHelp  = Description in help
+    * explain   = test to be added to explanation
+    """
+    ################################################################
+    inTask.__dict__[param]      = paramVal
+    inTask._default_dict[param] = paramVal
+    inTask._input_list.append(param)
+    inTask._hlp_dict[param] = [shortHelp]
+    inTask._help_string     = inTask._help_string + longHelp
+    inTask._explain_string  = inTask._explain_string + explain
+    if type(paramVal)==type(0.0):
+        inTask._type_dict[param] = 'Flt'
+        inTask._dim_dict[param]  = [1]
+    elif type(paramVal)==type(1):
+        inTask._type_dict[param] = 'Int'
+        inTask._dim_dict[param]  = [1]
+    elif type(paramVal)==type(True):
+        inTask._type_dict[param] = 'Boo'
+        inTask._dim_dict[param]  = [1]
+    elif type(paramVal)==type(' '):
+        inTask._type_dict[param] = 'Str'
+        inTask._dim_dict[param]  = [len(paramVal)]
+    elif type(paramVal)==type([]):
+        if type(paramVal[0])==type(0.0):
+            inTask._type_dict[param] = 'Flt'
+            inTask._dim_dict[param]  = [len(paramVal)]
+        elif type(paramVal[0])==type(1):
+            inTask._type_dict[param] = 'Int'
+            inTask._dim_dict[param]  = [len(paramVal)]
+        elif type(paramVal[0])==type(True):
+            inTask._type_dict[param] = 'Boo'
+            inTask._dim_dict[param]  = [len(paramVal)]
+        elif type(paramVal[0])==type(' '):
+            inTask._type_dict[param] = 'Str'
+            inTask._dim_dict[param]  = [len(paramVal[0])]
+   # end addParam
 
-    ObitObj    = Obit or ObitTalk data object
+def imhead (ObitObj):
+    """
+    List header
+
+    * ObitObj    = Obit or ObitTalk data object
     """
     ################################################################
     if ObitObj.__class__==AIPSData.AIPSImage:
@@ -752,18 +838,23 @@ def imhead (ObitObj):
     elif ObitObj.__class__==FITSData.FITSUVData:
         # FITS UVData
         UV.PHeader(ObitObj, err)
+    elif ObitObj.__class__==ImageMF.ImageMF:
+        # ImageMF
+        ImageMF.PHeader(ObitObj, err)
     else:
         # Presume it's an Obit object
         ObitObj.Header(err)
     # end imhead
    
 def setname (inn, out):
-    """ Copy file definition from inn to out as in...
-
+    """
+    Copy file definition from inn to out as in...
+    
     Supports both FITS and AIPS
     Copies Data type and file name, disk, class etc
-    inn  = Obit data object, created with getname, getFITS
-    out  = ObitTask object,
+
+    * inn  = Obit data object, created with getname, getFITS
+    * out  = ObitTask object,
     """
     ################################################################
     # AIPS or Obit?
@@ -784,12 +875,14 @@ def setname (inn, out):
     # end setname
    
 def set2name (in2, out):
-    """ Copy file definition from in2 to out as in2...
-
+    """
+    Copy file definition from in2 to out as in2...
+    
     Supports both FITS and AIPS
     Copies Data type and file name, disk, class etc
-    in2  = Obit data object, created with getname, getFITS
-    out  = ObitTask object,
+
+    * in2  = Obit data object, created with getname, getFITS
+    * out  = ObitTask object,
     """
     ################################################################
     # AIPS or Obit?
@@ -810,12 +903,14 @@ def set2name (in2, out):
     # end set2name
    
 def set3name (in3, out):
-    """ Copy file definition from in3 to out as in3...
-
+    """
+    Copy file definition from in3 to out as in3...
+    
     Supports both FITS and AIPS
     Copies Data type and file name, disk, class etc
-    in3  = Obit data object, created with getname, getFITS
-    out  = ObitTask object,
+
+    * in3  = Obit data object, created with getname, getFITS
+    * out  = ObitTask object,
     """
     ################################################################
     # AIPS or Obit?
@@ -836,12 +931,14 @@ def set3name (in3, out):
     # end set3name
    
 def set4name (in4, out):
-    """ Copy file definition from in4 to out as in4...
-
+    """
+    Copy file definition from in4 to out as in4...
+    
     Supports both FITS and AIPS
     Copies Data type and file name, disk, class etc
-    in4  = Obit data object, created with getname, getFITS
-    out  = ObitTask object,
+
+    * in4  = Obit data object, created with getname, getFITS
+    * out  = ObitTask object,
     """
     ################################################################
     # AIPS or Obit?
@@ -862,12 +959,14 @@ def set4name (in4, out):
     # end set4name
    
 def setoname (inn, out):
-    """ Copy file definition from inn to out as outdisk...
-
+    """
+    Copy file definition from inn to out as outdisk...
+    
     Supports both FITS and AIPS
     Copies Data type and file name, disk, class etc
-    inn  = Obit data object, created with getname, getFITS
-    out  = ObitTask object,
+
+    * inn  = Obit data object, created with getname, getFITS
+    * out  = ObitTask object,
     """
     ################################################################
     # AIPS or Obit?
@@ -888,18 +987,20 @@ def setoname (inn, out):
     # end setoname
    
 def setwindow (w, out):
-    """ Set BLC and TRC members on out from OWindow w
-
+    """
+    Set BLC and TRC members on out from OWindow w
+    
     Uses first window in first field on w which must be a rectangle
     This may be set interactively using tvlod
-    w    = OWindow object
-    out  = ObitTask object, BLC and TRC members [0] and [1] are modified
+
+    * w    = OWindow object
+    * out  = ObitTask object, BLC and TRC members [0] and [1] are modified
     """
     ################################################################
     # Must be rectangle
     l =  OWindow.PGetList(w, 1, err)
     if l[0][1] !=0:
-        raise TypeError,"Window MUST be a rectangle"
+        raise TypeError("Window MUST be a rectangle")
     # AIPS or Obit?
     if out.__class__ == ObitTask:
         out.BLC[0] = l[0][2]+1  # make 1-rel
@@ -915,10 +1016,12 @@ def setwindow (w, out):
     # end setwindow 
    
 def zap (o):
-    """ Zap object o
-
+    """
+    Zap object o
+    
     Removes all external components (files)
-    o    = Obit Data object to delete
+
+    * o    = Obit Data object to delete
     """
     ################################################################
     if o.__class__==AIPSData.AIPSImage:
@@ -934,17 +1037,19 @@ def zap (o):
     # end zap
    
 def clearstat (o, code=4):
-    """ Clear status of AIPS catalog entry
-
+    """
+    Clear status of AIPS catalog entry
+    
     Clears AIPS status of object o,
     Optionally sets status using code parameter
-    o    = Obit AIPS Data object
-    code = status code:
-        0 = Add write status
-        1 = Clear write status
-        2 = Increment Read Status
-        3 = Decrement Read Status
-        4 = Clear All Status
+
+    * o    = Obit AIPS Data object
+    * code = status code:
+        * 0 = Add write status
+        * 1 = Clear write status
+        * 2 = Increment Read Status
+        * 3 = Decrement Read Status
+        * 4 = Clear All Status
         
     """
     ################################################################
@@ -971,17 +1076,19 @@ def clearstat (o, code=4):
     # end clearstat
    
 def alldest(Aname=".*", Aclass=".*", Atype=".?", Adisk=0, Aseq=0, test=False):
-    """ Delete AIPS files matching a pattern
-
+    """
+    Delete AIPS files matching a pattern
+    
     Uses regular expression matching for strings
     Note: "+" values are escaped
     Clears any status before deleting
-    Aname    = AIPS file name , " " => any
-    Aclass   = AIPS class name,  " " => any
-    Atype    = 'MA', 'UV' or any
-    Adisk    = AIPS disk number, 0=> any
-    Aseq     = AIPS sequence number; 0=> any
-    test    = if true only list and not delete
+
+    * Aname    = AIPS file name , " " => any
+    * Aclass   = AIPS class name,  " " => any
+    * Atype    = 'MA', 'UV' or any
+    * Adisk    = AIPS disk number, 0=> any
+    * Aseq     = AIPS sequence number; 0=> any
+    * test    = if true only list and not delete
     """
     ################################################################
     # confirm
@@ -989,9 +1096,9 @@ def alldest(Aname=".*", Aclass=".*", Atype=".?", Adisk=0, Aseq=0, test=False):
              "name:"+Aname+" class:"+Aclass+" disk:"+str(Adisk)+ \
              " seq:"+str(Aseq)+ " ?\n" + \
              "yes/no: "
-    ans = raw_input(prompt)
+    ans = input(prompt)
     if ans != "yes":
-        print "confirmination negative"
+        print("confirmination negative")
         return
     # How many disks
     # "+" is a special symbol in regular expressions, escape any
@@ -1012,8 +1119,8 @@ def alldest(Aname=".*", Aclass=".*", Atype=".?", Adisk=0, Aseq=0, test=False):
                 break
             obj = None
             if (line!=None):
-                tname  = line[0:12]
-                tclass = line[13:19]
+                tname  = line[0:12].strip()
+                tclass = line[13:19].strip()
                 tseq   = int(line[20:25])
                 ttype  = line[26:28]
                 # Check type
@@ -1026,10 +1133,14 @@ def alldest(Aname=".*", Aclass=".*", Atype=".?", Adisk=0, Aseq=0, test=False):
                 # Check Class
                 mat = mat and re.match(Aclass,tclass)
                 if mat:   # Found a match?
-                    print cno,tname, tclass, tseq, ttype # debug
+                    print(cno,tname, tclass, tseq, ttype) 
                     #obj = getname(cno, disk=idisk)
-                    obj = Image.newPAImage("zap", tname, tclass, idisk, tseq,
-                                           True, err, verbose=False)
+                    if ttype=="MA":
+                        obj = Image.newPAImage("zap", tname, tclass, idisk, tseq,
+                                               True, err, verbose=False)
+                    elif ttype=="UV":
+                        obj = UV.newPAUV("zap", tname, tclass, idisk, tseq,
+                                               True, err, verbose=False)
                     if not test:
                         obj.Atype = ttype
                         obj.Aseq  = tseq
@@ -1042,11 +1153,13 @@ def alldest(Aname=".*", Aclass=".*", Atype=".?", Adisk=0, Aseq=0, test=False):
     # end alldest
 
 def tput (to, file=None):
-    """ save task object
-
+    """
+    save task object
+    
     save values in task object
-    to    = task object to save
-    file  = optional file name, the default is <task_name>.pickle
+
+    * to    = task object to save
+    * file  = optional file name, the default is <task_name>.pickle
             in the current working directory
     """
     ################################################################
@@ -1061,18 +1174,20 @@ def tput (to, file=None):
     tfile = file
     if file==None:
         tfile = to._name+".pickle"
-    fd = open(tfile, "w")
+    fd = open(tfile, "wb")
     pickle.dump(saveit, fd)
     fd.close()
     # end tput
    
 def tget (inn, file=None):
-    """ Restore task object from disk
-
+    """
+    Restore task object from disk
+    
     Restore values in task object
-    inn   = task name, or a task object of the desired type
+
+    * inn   = task name, or a task object of the desired type
             in the latter case, the input object will NOT be modified
-    file  = optional file name, the default is <task_name>.pickle
+    * file  = optional file name, the default is <task_name>.pickle
             in the current working directory
     """
     ################################################################
@@ -1087,7 +1202,7 @@ def tget (inn, file=None):
     tfile = file
     if file==None:
         tfile = name+".pickle"
-    fd = open(tfile, "r")
+    fd = open(tfile, "rb")
     saveit = pickle.load(fd)
     fd.close()
 
@@ -1106,19 +1221,21 @@ def tget (inn, file=None):
     # end tget
    
 def saveLog (log, file=None):
-    """ Save AIPS or Obit task log to file
-
+    """
+    Save AIPS or Obit task log to file
+    
     Save log messages
-    log   = log string array returned from the execution of an
+
+    * log   = log string array returned from the execution of an
             Obit or AIPS task.
-    file  = optional file name, the default is "task.log"
+    * file  = optional file name, the default is "task.log"
             in the current working directory.
             New entries are appended.
     """
     ################################################################
     # log must be list
     if type(log) != list:
-        raise TypeError,"log MUST be a list"
+        raise TypeError("log MUST be a list")
     # save
     tfile = file
     if file==None:
@@ -1132,15 +1249,19 @@ def saveLog (log, file=None):
     fd.close()
     # end saveLog
 
-def PrintHistory (ObitObj, hiStart=1, hiEnd=1000000, file=None):
-    """ Display history log or write to file
-
+def PrintHistory (ObitObj, hiStart=1, hiEnd=1000000, task=None, file=None):
+    """
+    Display history log or write to file
+    
     Reads selected history records and displays with "more"
-    ObitObj   = Python Obit object with history
-    err       = Python Obit Error/message stack
-    hiStart   = if given the first (1-rel) history record
-    hiEnd     = if given the highest (1-rel) history record
-    file      = if present, the name of a file into which to write
+
+    * ObitObj   = Python Obit object with history
+    * err       = Python Obit Error/message stack
+    * hiStart   = if given the first (1-rel) history record
+    * hiEnd     = if given the highest (1-rel) history record
+    * task      = If given, only list entries beginning with the string
+                given in task
+    * file      = if present, the name of a file into which to write
                 the history rather than displaying it on the screen
     """
     ################################################################
@@ -1188,7 +1309,11 @@ def PrintHistory (ObitObj, hiStart=1, hiEnd=1000000, file=None):
     hilist = "History for"+label+"\n"
     x = hist.ReadRec(recno,err)
     while (len(x)>0) and (recno<hiEnd):
-        hilist = hilist+string.rjust(str(recno+1),6)+" "+x+"\n"
+        if task:   # Look for task name?
+            if x.startswith(task):
+                hilist = hilist+str(recno+1).rjust(6)+" "+x+"\n"
+        else:
+            hilist = hilist+str(recno+1).rjust(6)+" "+x+"\n"
         recno = recno+1
         x = hist.ReadRec(recno,err)
     #print x
@@ -1206,19 +1331,21 @@ def PrintHistory (ObitObj, hiStart=1, hiEnd=1000000, file=None):
     # end PrintHistory
 
 def tvstat (inImage):
-    """ Set region in an image using the display and tell mean, rms
-
+    """
+    Set region in an image using the display and tell mean, rms
+    
     Returns dictionary with statistics of selected region with entries:
-        Mean    = Mean value
-        RMSHist = RMS value from a histogram analysis
-        RMS     = Simple RMS value
-        Max     = maximum value
-        MaxPos  = pixel of maximum value
-        Min     = minimum value
-        MinPos  = pixel of minimum value
-        Flux    = Flux density if CLEAN beam given, else -1
-        BeamArea= CLEAN Beam area in pixels
-    inImage   = Python Image object, created with getname, getFITS
+
+        * Mean    = Mean value
+        * RMSHist = RMS value from a histogram analysis
+        * RMS     = Simple RMS value
+        * Max     = maximum value
+        * MaxPos  = pixel of maximum value
+        * Min     = minimum value
+        * MinPos  = pixel of minimum value
+        * Flux    = Flux density if CLEAN beam given, else -1
+        * BeamArea= CLEAN Beam area in pixels
+    * inImage   = Python Image object, created with getname, getFITS
     """
     ################################################################
     # Get window
@@ -1228,7 +1355,7 @@ def tvstat (inImage):
     # Must be rectangle
     l =  OWindow.PGetList(w, 1, err)
     if l[0][1] !=0:
-        raise TypeError,"Window MUST be a single rectangle"
+        raise TypeError("Window MUST be a single rectangle")
     blc = [min(l[0][2]+1, l[0][4]+1), min(l[0][3]+1, l[0][5]+1)]
     trc = [max(l[0][2]+1, l[0][4]+1), max(l[0][3]+1, l[0][5]+1)]
     
@@ -1255,10 +1382,13 @@ def tvstat (inImage):
         beamarea = 1.1331*(head["beamMaj"]/abs(head["cdelt"][0])) * \
                    (head["beamMin"]/abs(head["cdelt"][1]))
         Flux = p.Sum/beamarea
-    print "Region Mean %g, RMSHist %g RMS %g" % (Mean, RMS, RawRMS)
-    print "  Max %g @ pixel " % Max, MaxPos
-    print "  Min %g @ pixel " % Min, MinPos
-    print "  Integrated Flux density %g, beam area = %7.1f pixels" % (Flux, beamarea)
+    else:
+        beamarea = None
+    print("Region Mean %g, RMSHist %g RMS %g" % (Mean, RMS, RawRMS))
+    print("  Max %g @ pixel " % Max, MaxPos)
+    print("  Min %g @ pixel " % Min, MinPos)
+    if (beamarea):
+        print("  Integrated Flux density %g, beam area = %7.1f pixels" % (Flux, beamarea))
     
     # Reset BLC, TRC
     blc = [1,1,1,1,1]
@@ -1275,19 +1405,21 @@ def tvstat (inImage):
    
 
 def imstat (inImage, blc=[1,1,1,1,1], trc=[0,0,0,0,0]):
-    """ Get statistics in a specified region of an image plane
-
+    """
+    Get statistics in a specified region of an image plane
+    
     Returns dictionary with statistics of selected region with entries:
-        Mean    = Mean value
-        RMSHist = RMS value from a histogram analysis
-        RMS     = Simple RMS value
-        Max     = maximum value
-        MaxPos  = pixel of maximum value
-        Min     = minimum value
-        MinPos  = pixel of minimum value
-        Flux    = Flux density if CLEAN beam given, else -1
-        BeamArea= CLEAN Beam area in pixels
-    inImage   = Python Image object, created with getname, getFITS
+
+        * Mean    = Mean value
+        * RMSHist = RMS value from a histogram analysis
+        * RMS     = Simple RMS value
+        * Max     = maximum value
+        * MaxPos  = pixel of maximum value
+        * Min     = minimum value
+        * MinPos  = pixel of minimum value
+        * Flux    = Flux density if CLEAN beam given, else -1
+        * BeamArea= CLEAN Beam area in pixels
+    * inImage   = Python Image object, created with getname, getFITS
     """
     ################################################################
     # Read plane
@@ -1301,12 +1433,12 @@ def imstat (inImage, blc=[1,1,1,1,1], trc=[0,0,0,0,0]):
     RawRMS  = p.RawRMS
     MaxPos=[0,0]
     Max = FArray.PMax(p, MaxPos)
-    MaxPos[0] = MaxPos[0]+blc[0]
-    MaxPos[1] = MaxPos[1]+blc[1]
+    MaxPos[0] = int(MaxPos[0]+blc[0])
+    MaxPos[1] = int(MaxPos[1]+blc[1])
     MinPos=[0,0]
     Min = FArray.PMin(p, MinPos)
-    MinPos[0] = MinPos[0]+blc[0]
-    MinPos[1] = MinPos[1]+blc[1]
+    MinPos[0] = int(MinPos[0]+blc[0])
+    MinPos[1] = int(MinPos[1]+blc[1])
     # Integrated flux density
     Flux = -1.0
     beamarea = 1.0
@@ -1314,11 +1446,11 @@ def imstat (inImage, blc=[1,1,1,1,1], trc=[0,0,0,0,0]):
         beamarea = 1.1331*(head["beamMaj"]/abs(head["cdelt"][0])) * \
                    (head["beamMin"]/abs(head["cdelt"][1]))
         Flux = p.Sum/beamarea
-    print "Region Mean %g, RMSHist %g RMS %g" % (Mean, RMS, RawRMS)
-    print "  Max %g @ pixel " % Max, MaxPos
-    print "  Min %g @ pixel " % Min, MinPos
+    print("Region Mean %g, RMSHist %g RMS %g" % (Mean, RMS, RawRMS))
+    print("  Max %g @ pixel " % Max, MaxPos)
+    print("  Min %g @ pixel " % Min, MinPos)
     if (head["beamMaj"]>0.0) :
-        print "  Integrated Flux density %g, beam area = %7.1f pixels" % (Flux, beamarea)
+        print("  Integrated Flux density %g, beam area = %7.1f pixels" % (Flux, beamarea))
    
     # Reset BLC, TRC
     blc = [1,1,1,1,1]
@@ -1335,10 +1467,12 @@ def imstat (inImage, blc=[1,1,1,1,1], trc=[0,0,0,0,0]):
    
 
 def altswitch(inImage):
-    """ Switch frequency and velocity
-
+    """
+    Switch frequency and velocity
+    
     Algorithm lifted from AIPS AU7.FOR
-    inImage   = Python Image object, created with getname, getFITS
+
+    * inImage   = Python Image object, created with getname, getFITS
     """
     ################################################################
     # Get Header dictionary
@@ -1406,22 +1540,24 @@ def altswitch(inImage):
 
 # Functions to copy between AIPS and FITS
 def uvlod(filename, inDisk, Aname, Aclass, Adisk, Aseq, err):
-    """ Load FITS UV data to AIPS
-
+    """
+    Load FITS UV data to AIPS
+    
     Read a UVTAB FITS UV data file and write an AIPS data set
-    filename   = name of FITS file
-    inDisk     = FITS directory number
-    Aname      = AIPS name of file
-    Aclass     = AIPS class of file
-    Aseq       = AIPS sequence number of file, 0=> create new
-    Adisk      = FITS directory number
-    err        = Python Obit Error/message stack
+
+    * filename   = name of FITS file
+    * inDisk     = FITS directory number
+    * Aname      = AIPS name of file
+    * Aclass     = AIPS class of file
+    * Aseq       = AIPS sequence number of file, 0=> create new
+    * Adisk      = FITS directory number
+    * err        = Python Obit Error/message stack
     returns AIPS UV data object
     """
     ################################################################
     # Checks
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Get input
     inUV = UV.newPFUV("FITS UV DATA", filename, inDisk, True, err)
@@ -1436,7 +1572,7 @@ def uvlod(filename, inDisk, Aname, Aclass, Adisk, Aseq, err):
         if AIPSDir.PTestCNO(Adisk,user,Aname,Aclass,"MA",Aseq,err)>0:
             Aseq = Aseq+1
         OErr.PClear(err)     # Clear any message/error
-    print "Creating AIPS UV file",Aname,".",Aclass,".",Aseq,"on disk",Adisk
+    print("Creating AIPS UV file",Aname,".",Aclass,".",Aseq,"on disk",Adisk)
     outUV = UV.newPAUV("AIPS UV DATA", Aname, Aclass, Adisk, Aseq, False, err)
     if err.isErr:
         OErr.printErrMsg(err, "Error creating AIPS data")
@@ -1455,36 +1591,43 @@ def uvlod(filename, inDisk, Aname, Aclass, Adisk, Aseq, err):
     outHistory.Close(err)
    #
     # Copy Tables
+    # Open to be sure to update fragile AIPS header
+    outUV.Open(UV.READWRITE, err)
     exclude=["AIPS HI", "AIPS AN", "AIPS FQ", "AIPS SL", "AIPS PL", "History"]
     include=[]
     UV.PCopyTables (inUV, outUV, exclude, include, err)
+    outUV.Close(err)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error copying Tables")
     return outUV  # return new object
     # end uvlod
 
 def uvtab(inUV, filename, outDisk, err, compress=False, \
           exclude=["AIPS HI", "AIPS AN", "AIPS FQ", "AIPS SL", "AIPS PL"], \
           include=[], headHi=False):
-    """ Write UV data as FITS file
-
+    """
+    Write UV data as FITS file
+    
     Write a UV data set as a FITAB format file
     History written to header
-    inUV       = UV data to copy
-    filename   = name of FITS file
-    inDisk     = FITS directory number
-    err        = Python Obit Error/message stack
-    exclude    = List of table types NOT to copy
+
+    * inUV       = UV data to copy
+    * filename   = name of FITS file
+    * inDisk     = FITS directory number
+    * err        = Python Obit Error/message stack
+    * exclude    = List of table types NOT to copy
                  NB: "AIPS HI" isn't really a table and gets copied anyway
-    include    = List of table types to copy (FQ, AN always done )
+    * include    = List of table types to copy (FQ, AN always done )
                  Exclude has presidence over include
-    headHi     = if True move history to header, else leave in History table
+    * headHi     = if True move history to header, else leave in History table
     returns FITS UV data object
     """
     ################################################################
     # Checks
     if not UV.PIsA(inUV):
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Set output
     outUV = UV.newPFUV("FITS UV DATA", filename, outDisk, False, err)
@@ -1520,25 +1663,27 @@ def uvtab(inUV, filename, outDisk, err, compress=False, \
 
 def uvTabSave(inUV, filename, outDisk, err, \
           exclude=["AIPS HI", "AIPS_AN", "AIPS FQ","AIPS PL", "AIPS SL"], include=[]):
-    """ Write UV data tables (but not data) to a FITS file
-
+    """
+    Write UV data tables (but not data) to a FITS file
+    
     Write tables associated with UV data set as a FITAB format file
     History written to header
-    inUV       = UV data to copy
-    filename   = name of FITS file
-    inDisk     = FITS directory number
-    err        = Python Obit Error/message stack
-    exclude    = List of table types NOT to copy
+
+    * inUV       = UV data to copy
+    * filename   = name of FITS file
+    * inDisk     = FITS directory number
+    * err        = Python Obit Error/message stack
+    * exclude    = List of table types NOT to copy
                  NB: "AIPS HI" isn't really a table and gets copied anyway
-    include    = List of table types to copy (FQ, AN always done )
+    * include    = List of table types to copy (FQ, AN always done )
     returns FITS UV data object
     """
     ################################################################
     # Checks
     if not UV.PIsA(inUV):
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Set output
     outUV = UV.newPFUV("FITS UV DATA", filename, outDisk, False, err)
@@ -1566,22 +1711,24 @@ def uvTabSave(inUV, filename, outDisk, err, \
     # end uvTabSave
 
 def imlod(filename, inDisk, Aname, Aclass, Adisk, Aseq, err):
-    """ Load FITS Image data to AIPS
-
+    """
+    Load FITS Image data to AIPS
+    
     Read a ImageTAB FITS Image data file and write an AIPS data set
-    filename   = name of FITS file
-    inDisk     = FITS directory number
-    Aname      = AIPS name of file
-    Aclass     = AIPS class of file
-    Adisk      = AIPS disk number
-    Aseq       = AIPS sequence number of file, 0=> create new
-    err        = Python Obit Error/message stack
+
+    * filename   = name of FITS file
+    * inDisk     = FITS directory number
+    * Aname      = AIPS name of file
+    * Aclass     = AIPS class of file
+    * Adisk      = AIPS disk number
+    * Aseq       = AIPS sequence number of file, 0=> create new
+    * err        = Python Obit Error/message stack
     returns AIPS Image data object
     """
     ################################################################
     # Checks
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Get input
     inImage = Image.newPFImage("FITS Image DATA", filename, inDisk, True, err)
@@ -1597,14 +1744,14 @@ def imlod(filename, inDisk, Aname, Aclass, Adisk, Aseq, err):
         if AIPSDir.PTestCNO(Adisk,user,Aname,Aclass,"MA",Aseq,err)>0:
             Aseq = Aseq+1
         OErr.PClear(err)     # Clear any message/error
-    print "Creating AIPS MA file",Aname,".",Aclass,".",Aseq,"on disk",Adisk
+    print("Creating AIPS MA file",Aname,".",Aclass,".",Aseq,"on disk",Adisk)
     outImage = Image.newPAImage("AIPS Image DATA", Aname, Aclass, Adisk, Aseq, False, err)
     if err.isErr:
         OErr.printErrMsg(err, "Error creating AIPS data")
     # Copy
     Image.PCopy (inImage, outImage, err)
     if err.isErr:
-        OErr.printErrMsg(err, "Error copying Image data to FITS")
+        OErr.printErrMsg(err, "Error copying Image data from FITS")
     # Copy History
     inHistory  = History.History("inhistory",  inImage.List, err)
     outHistory = History.History("outhistory", outImage.List, err)
@@ -1614,40 +1761,50 @@ def imlod(filename, inDisk, Aname, Aclass, Adisk, Aseq, err):
     outHistory.TimeStamp(" Start Obit uvlod",err)
     outHistory.WriteRec(-1,"imlod   / FITS file "+filename+" disk "+str(inDisk),err)
     outHistory.Close(err)
+    # Open to be sure to update fragile AIPS header
+    outImage.Open(Image.READWRITE, err)
     # Copy Tables
     exclude=["AIPS HI", "AIPS SL", "AIPS PL", "History"]
     include=[]
     Image.PCopyTables (inImage, outImage, exclude, include, err)
+    outImage.Close(err)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error copying Tables")
     return outImage  # return new Object
     # end imlod
 
 def imtab(inImage, filename, outDisk, err, fract=None, quant=None, \
           exclude=["AIPS HI","AIPS PL","AIPS SL"], include=["AIPS CC"],
           headHi=False):
-    """ Write Image data as FITS file
-
+    """
+    Write Image data as FITS file
+    
     Write a Image data set as a integer FITAB format file
     History written to header
-    inImage    = Image data to copy
-    filename   = name of FITS file
-    outDisk     = FITS directory number
-    err        = Python Obit Error/message stack
-    fract      = Fraction of RMS to quantize
-    quant      = quantization level in image units, has precedence over fract
+
+    * inImage    = Image data to copy
+    * filename   = name of FITS file
+    * outDisk     = FITS directory number
+    * err        = Python Obit Error/message stack
+    * fract      = Fraction of RMS to quantize
+    * quant      = quantization level in image units, has precedence over fract
                  None or <= 0 => use fract.
-    exclude    = List of table types NOT to copy
+    * exclude    = List of table types NOT to copy
                  NB: "AIPS HI" isn't really a table and gets copied anyway
-    include    = List of table types to copy
-    headHi     = if True move history to header, else leave in History table
+    * include    = List of table types to copy
+    * headHi     = if True move history to header, else leave in History table
     returns FITS Image data object
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
+    # Open/close fo fully instantiate
+    inImage.Open(Image.READONLY,err)
+    inImage.Close(err)
     # Set output
     outImage = Image.newPFImage("FITS Image DATA", filename, outDisk, False, err)
     if err.isErr:
@@ -1687,21 +1844,24 @@ def imtab(inImage, filename, outDisk, err, fract=None, quant=None, \
     # end imtab
 
 def tabdest (ObitObj, tabType, tabVer):
-    """ Delete a table
-
+    """
+    Delete a table
+    
     Deletes associated tables
-    ObitObj   = Python Obit object with tables
-    tabType   = Table type,  NB AIPS tables names start with "AIPS "
+
+    * ObitObj   = Python Obit object with tables
+    * tabType   = Table type,  NB AIPS tables names start with "AIPS "
                 e.g. "AIPS CC"
-    tabVer    = table version, 0=> highest, <0 => all
+    * tabVer    = table version, 0=> highest, <0 => all
     """
     ################################################################
     ObitObj.ZapTable (tabType, tabVer, err)
     # end tabdest
 
 def dhms2day(st):
-    """ convert a time string in d/hh:mm:ss.s to days
-
+    """
+    convert a time string in d/hh:mm:ss.s to days
+    
     Returns time in days
     st        time string as "d/hh:mm:ss.s"
     """
@@ -1731,8 +1891,9 @@ def dhms2day(st):
     # end dhms2day
 
 def day2dhms(tim):
-    """ convert a time in days to a string as d/hh:mm:ss.s
-
+    """
+    convert a time in days to a string as d/hh:mm:ss.s
+    
     Returns time as string:  "d/hh:mm:ss.s"
     tim       time in days
     """
@@ -1747,3 +1908,20 @@ def day2dhms(tim):
            ":"+str(ssec)
     # end day2dhms
 
+def ObitTaskList():
+    ObitTasks.obitTaskList()
+
+def unpickle(pfile):
+    """
+    Return object stored in a pickle jar
+
+    * pfile  = name of pickle jar
+    """
+    ################################################################
+    # unpickle file
+    tfile = pfile
+    fd = open(tfile, "r")
+    getit = pickle.load(fd)
+    fd.close()
+    return getit
+# end unpickle

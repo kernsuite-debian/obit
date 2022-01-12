@@ -1,6 +1,6 @@
-/* $Id: ObitImageMF.c 143 2009-11-11 17:31:04Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,15 +26,17 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitFArray.h"
+#include "ObitFArrayUtil.h"
 #include "ObitImageDesc.h"
 #include "ObitImageSel.h"
 #include "ObitImageMF.h"
-#include "ObitFArrayUtil.h"
 #include "ObitFFT.h"
 #include "ObitMem.h"
 #include "ObitSystem.h"
 #include "ObitBeamShape.h"
 #include "ObitSpectrumFit.h"
+#include "ObitImageUtil.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -53,6 +55,9 @@ static gchar *myClassName = "ObitImageMF";
 /** Function to obtain parent ClassInfo */
 static ObitGetClassFP ObitParentGetClass = ObitImageGetClass;
 
+/** Flag to limit frequency division messages */
+static gboolean doFreqDivMess = TRUE;
+
 /*--------------- File Global Variables  ----------------*/
 /**
  * ClassInfo structure ObitImageMFClassInfo.
@@ -65,10 +70,14 @@ static ObitImageMFClassInfo myClassInfo = {FALSE};
 typedef struct {
   /* Number of spectral channels  */
   olong   nSpec;
-  /* Array (nSpec) channel frequencies (hz) */
+  /* Array (nSpec) channel frequencies (Hz) */
   odouble *Freq;
-  /* Spectral index correction previousls applied to data */
+  /* Reference Frequency */
+  odouble refFreq;
+  /* Spectral index correction previously applied to data */
   ofloat alpha;
+  /* Spectral index correction to be applied to data */
+  ofloat corAlpha;
   /* Array of sigma for each channel */
   ofloat *sigma;
   /** BeamShape object */
@@ -114,9 +123,13 @@ void  ObitImageMFClear (gpointer in);
 /** Private: Set Class function pointers. */
 static void ObitImageMFClassInfoDefFn (gpointer inClass);
 
+/* Private: Instantiate */
+void ObitImageMFFullInstantiate (ObitImageMF *in, gboolean exist, ObitErr *err);
+
 /** Private: Make arguments for Threaded CLEAN */
 static olong MakeFitSpecArgs (ObitImageMF *in, olong maxThread,
-			      ofloat antSize, FitSpecFuncArg ***args, 
+			      ofloat antSize, olong nOrder,
+			      FitSpecFuncArg ***args, 
 			      ObitErr *err);
 
 /** Private: Delete arguments for Threaded CLEAN */
@@ -156,6 +169,120 @@ ObitImageMF* newObitImageMF (gchar* name)
 } /* end newObitImageMF */
 
 /**
+ * Create a scratch file suitable for accepting the data to be read from in.
+ * A scratch ImageMF is more or less the same as a normal ImageMF except that it is
+ * automatically deleted on the final unreference.
+ * The output will have the underlying files of the same type as in already 
+ * allocated.
+ * \param in  The object to copy (ObitImageMF), info may have 
+ * \li ScrSize OBIT_int (?,1,1) Dimension of the desired scratch Image
+ * \param err Error stack, returns if not empty.
+ * \return pointer to the new object.
+ */
+ObitImage* newObitImageMFScratch (ObitImage *in, ObitErr *err)
+{
+  /*const ObitClassInfo *ParentClass;*/
+  ObitImage   *out=NULL;
+  ObitImageMF *inMF=NULL, *outMF=NULL;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  olong i, size[IM_MAXDIM] = {0,0,0,0,0,0,0};
+  gchar *outName;
+  gchar *routine = "newObitImageMFScratch";
+
+  /* error checks */
+  g_assert(ObitErrIsA(err));
+  if (err->error) return NULL;
+  g_assert (ObitIsA(in, &myClassInfo));
+
+  /* Make sure input ObitImageMF */
+  Obit_retval_if_fail((ObitImageMFIsA(in)), err, NULL,
+  		      "%s: Input image, %s NOT ImageMF", 
+		      routine, in->name);
+
+  /* Create - derive object name */
+  outName = g_strconcat ("Scratch Copy: ",in->name,NULL);
+  out = (ObitImage*)newObitImageMF(outName);
+  g_free(outName);
+
+  /* Mark as scratch */
+  out->isScratch = TRUE;
+
+  /* deep copy any base class members - NO fails 
+     ParentClass = myClassInfo.ParentClass;
+     g_assert ((ParentClass!=NULL) && (ParentClass->ObitCopy!=NULL));
+     ParentClass->ObitCopy (in, out, err);*/
+
+  /* Copy descriptor */
+  out->myDesc = (gpointer)ObitImageDescCopy(in->myDesc, out->myDesc, err);
+
+  /* Check if different size needed */
+  if (ObitInfoListGetTest(in->info, "ScrSize", &type, dim, size)) {
+    for (i=0; i<MIN (dim[0], IM_MAXDIM); i++) 
+      if (size[i]>0) out->myDesc->inaxes[i] = size[i];
+  }
+ 
+  /* Force to float pixels */
+  out->myDesc->bitpix=-32;
+
+  /* Allocate underlying file */
+  ObitSystemGetScratch (in->mySel->FileType, "MA", out->info, err);
+  if (err->error) Obit_traceback_val (err, routine, in->name, out);
+  
+  /* Register in the scratch file list */
+  ObitSystemAddScratch ((Obit*)out, err);
+  
+  /* same size IO as input */
+  dim[0] = 1;
+  ObitInfoListPut (out->info, "IOBy", OBIT_long, dim, &in->myDesc->IOsize, err);
+  if (err->error) Obit_traceback_val (err, routine, in->name, out);
+
+  inMF  = (ObitImageMF*)in;
+  outMF = (ObitImageMF*)out;
+  /* Ensure in fully instantiated -assume OK if myIO exists */
+  if (!in->myIO) ObitImageMFFullInstantiate (inMF, TRUE, err);
+  if (err->error)Obit_traceback_val (err, routine, inMF->name, out);
+
+   /* Copy MF stuff */
+  ObitImageMFGetSpec (inMF, err);
+  if (err->error) Obit_traceback_val (err, routine, inMF->name, out);
+  outMF->maxOrder = inMF->maxOrder;
+  outMF->curOrder = inMF->curOrder;
+  outMF->refFreq  = inMF->refFreq;
+  outMF->fresh = inMF->fresh;
+  outMF->nSpec = inMF->nSpec;
+  if (outMF->BIFSpec)   g_free(outMF->BIFSpec);
+  if (outMF->EIFSpec)   g_free(outMF->EIFSpec);
+  if (outMF->BChanSpec) g_free(outMF->BChanSpec);
+  if (outMF->EChanSpec) g_free(outMF->EChanSpec);
+  if (outMF->specFreq)  g_free(outMF->specFreq);
+  if (outMF->specFreqLo)  g_free(outMF->specFreqLo);
+  if (outMF->specFreqHi)  g_free(outMF->specFreqHi);
+  outMF->BIFSpec   = g_malloc0(inMF->nSpec*sizeof(olong));
+  outMF->EIFSpec   = g_malloc0(inMF->nSpec*sizeof(olong));
+  outMF->BChanSpec = g_malloc0(inMF->nSpec*sizeof(olong));
+  outMF->EChanSpec = g_malloc0(inMF->nSpec*sizeof(olong));
+  outMF->specFreq  = g_malloc0(inMF->nSpec*sizeof(odouble));
+  outMF->specFreqLo= g_malloc0(inMF->nSpec*sizeof(odouble));
+  outMF->specFreqHi= g_malloc0(inMF->nSpec*sizeof(odouble));
+  for (i=0; i<inMF->nSpec; i++) {
+    if (inMF->BIFSpec) outMF->BIFSpec[i]   = inMF->BIFSpec[i];
+    if (inMF->EIFSpec) outMF->EIFSpec[i]   = inMF->EIFSpec[i];
+    if (inMF->BChanSpec) outMF->BChanSpec[i] = inMF->BChanSpec[i];
+    if (inMF->EChanSpec) outMF->EChanSpec[i] = inMF->EChanSpec[i];
+    if (inMF->specFreq)  outMF->specFreq[i]  = inMF->specFreq[i];
+    if (inMF->specFreqLo) outMF->specFreqLo[i]= inMF->specFreqLo[i];
+    if (inMF->specFreqHi) outMF->specFreqHi[i]= inMF->specFreqHi[i];
+  }
+
+  /* Fully instantiate output */
+  ObitImageFullInstantiate (out, FALSE, err);
+  if (err->error)Obit_traceback_val (err, routine, out->name, out);
+ 
+  return out;
+} /* end newObitImageMFScratch */
+
+/**
  * Constructor from ObitImage.
  * output will have same underlying file definition as in.
  * Adds planes as needed for spectral planes and 
@@ -171,7 +298,8 @@ ObitImageMF* newObitImageMF (gchar* name)
  */
 ObitImageMF* ObitImageMFFromImage (ObitImage* in, ObitUV *inData, 
 				   olong norder, ofloat maxFBW, 
-				   ofloat alpha, ObitErr *err)
+				   ofloat alpha, odouble alphaRefF,
+				   ObitErr *err)
 {
   ObitImageMF* out = NULL;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
@@ -223,7 +351,7 @@ ObitImageMF* ObitImageMFFromImage (ObitImage* in, ObitUV *inData,
   if (err->error) Obit_traceback_val (err, routine, in->name, out);
 
   /* Set coarse channelization */
-  ObitImageMFSetSpec (out, inData, maxFBW, alpha, err);
+  ObitImageMFSetSpec (out, inData, maxFBW, alpha, alphaRefF, err);
   if (err->error) Obit_traceback_val (err, routine, in->name, out);
   return out;
 } /* end ObitImageMFFromImage */
@@ -405,17 +533,23 @@ ObitImageMF* ObitImageMFCopy (ObitImageMF *in, ObitImageMF *out, ObitErr *err)
   if (out->BChanSpec) g_free(out->BChanSpec);
   if (out->EChanSpec) g_free(out->EChanSpec);
   if (out->specFreq)  g_free(out->specFreq);
+  if (out->specFreqLo)  g_free(out->specFreqLo);
+  if (out->specFreqHi)  g_free(out->specFreqHi);
   out->BIFSpec   = g_malloc0(in->nSpec*sizeof(olong));
   out->EIFSpec   = g_malloc0(in->nSpec*sizeof(olong));
   out->BChanSpec = g_malloc0(in->nSpec*sizeof(olong));
   out->EChanSpec = g_malloc0(in->nSpec*sizeof(olong));
   out->specFreq   = g_malloc0(in->nSpec*sizeof(odouble));
+  out->specFreqLo = g_malloc0(in->nSpec*sizeof(odouble));
+  out->specFreqHi = g_malloc0(in->nSpec*sizeof(odouble));
   for (i=0; i<in->nSpec; i++) {
     out->BIFSpec[i]   = in->BIFSpec[i];
     out->EIFSpec[i]   = in->EIFSpec[i];
     out->BChanSpec[i] = in->BChanSpec[i];
     out->EChanSpec[i] = in->EChanSpec[i];
     out->specFreq[i]  = in->specFreq[i];
+    out->specFreqLo[i]= in->specFreqLo[i];
+    out->specFreqHi[i]= in->specFreqHi[i];
   }
 
   /* Creation date today */
@@ -564,17 +698,23 @@ void ObitImageMFClone  (ObitImageMF *in, ObitImageMF *out, ObitErr *err)
   if (out->BChanSpec) g_free(out->BChanSpec);
   if (out->EChanSpec) g_free(out->EChanSpec);
   if (out->specFreq)  g_free(out->specFreq);
+  if (out->specFreqLo)  g_free(out->specFreqLo);
+  if (out->specFreqHi)  g_free(out->specFreqHi);
   out->BIFSpec   = g_malloc0(in->nSpec*sizeof(olong));
   out->EIFSpec   = g_malloc0(in->nSpec*sizeof(olong));
   out->BChanSpec = g_malloc0(in->nSpec*sizeof(olong));
   out->EChanSpec = g_malloc0(in->nSpec*sizeof(olong));
   out->specFreq   = g_malloc0(in->nSpec*sizeof(odouble));
+  out->specFreqLo = g_malloc0(in->nSpec*sizeof(odouble));
+  out->specFreqHi = g_malloc0(in->nSpec*sizeof(odouble));
   for (i=0; i<in->nSpec; i++) {
-    out->BIFSpec[i]   = in->BIFSpec[i];
-    out->EIFSpec[i]   = in->EIFSpec[i];
-    out->BChanSpec[i] = in->BChanSpec[i];
-    out->EChanSpec[i] = in->EChanSpec[i];
-    out->specFreq[i]  = in->specFreq[i];
+    if (in->BIFSpec) out->BIFSpec[i]   = in->BIFSpec[i];
+    if (in->EIFSpec) out->EIFSpec[i]   = in->EIFSpec[i];
+    if (in->BChanSpec) out->BChanSpec[i] = in->BChanSpec[i];
+    if (in->EChanSpec) out->EChanSpec[i] = in->EChanSpec[i];
+    if (in->specFreq)  out->specFreq[i]  = in->specFreq[i];
+    if (in->specFreqLo) out->specFreqLo[i]= in->specFreqLo[i];
+    if (in->specFreqHi) out->specFreqHi[i]= in->specFreqHi[i];
   }
 
   /* Creation date today */
@@ -694,22 +834,27 @@ void ObitImageMFSetOrder (ObitImageMF *in, olong order,
  * Increments the descriptor number of planes by nSpec
  * Frequency information added to image descriptor with keywords
  * NSPEC, FREQ001...
- * The value of the alpha is similarly saved in the HEADER
- * \param in     Pointer to object, should be fully defined
- * \param uvdata UV data to be imaged
- * \param maxFBW Maximum fractional bandwidth at center of each IF
- * \param err    ObitErr for reporting errors.
+ * The low and high frequencies of each bin are FREL0001...,FREH0001...,
+ * The value of the alpha, alphaRefF are similarly saved in the HEADER
+ * \param in        Pointer to object, should be fully defined
+ * \param uvdata    UV data to be imaged
+ * \param maxFBW    Maximum fractional bandwidth at center of each IF
+                    If < 0 then divide data by IF.
+ * \param alpha     Prior spectral index
+ * \param alphaRefF Reference frequency for alpha
+ * \param err       ObitErr for reporting errors.
  */
 void ObitImageMFSetSpec (ObitImageMF *in, ObitUV *inData, ofloat maxFBW,
-			 ofloat alpha, ObitErr *err)
+			 ofloat alpha, odouble alphaRefF, ObitErr *err)
 {
-  olong iif, ichan, nSpec=0, nIF, nChan, incf, incif, maxCh, ndiv;
-  olong fincf, fincif, i, ip, ipo, count, count2;
-  odouble sum, sum2;
-  ofloat maxIF;
+  olong iif, ichan, iclo, ichi, nSpec=0, nIF, nChan;
+  olong fincf, fincif, i, count, count2=0, iCh;
+  odouble sum=0.0, sum2=0.0, mxFreq, freqLo, freqHi;
   ObitUVDesc *uvdesc;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar keyword[12];
+  gboolean done, lsb;
+  olong IFBreak[1001], ChBreak[1001], nBreak=1000;  /* Frequency bin breaks */
   gchar *routine = "ObitImageMFSetSpec";
   
   /* error checks */
@@ -726,29 +871,74 @@ void ObitImageMFSetSpec (ObitImageMF *in, ObitUV *inData, ofloat maxFBW,
   
   uvdesc = inData->myDesc;
   nChan = uvdesc->inaxes[uvdesc->jlocf];
-  incf  = uvdesc->incf;
   nIF   = 1;
-  incif = uvdesc->incs;
   if (uvdesc->jlocif>=0) {
     nIF = uvdesc->inaxes[uvdesc->jlocif];
-    incif = uvdesc->incif;
   }
+  lsb = uvdesc->cdelt[uvdesc->jlocf]<0.0;  /* Lower sideband? */
 
-  /* determine number of coarse channels */
+  /* determine coarse channels, use 0-rel values  */
   nSpec = 0;
   /* Only if in->curOrder>0 */
   if (in->curOrder>0) {
+    nSpec = 1;   /* Number of break points including ends */
+    IFBreak[0] = 0;
+    ChBreak[0] = -1;
+    freqLo = (uvdesc->freqIF[0] + (1.0-uvdesc->crpix[uvdesc->jlocf])*uvdesc->cdelt[uvdesc->jlocf]);
+    if (lsb) mxFreq = (1.0-maxFBW) * freqLo;  /* Lowest frequency in first bin */
+    else     mxFreq = (1.0+maxFBW) * freqLo;  /* Highest frequency in first bin */
     /* Loop over IFs */
     for (iif=0; iif<nIF; iif++) {
-      /* How big at center? */
-      maxIF = maxFBW * uvdesc->freqIF[iif];
-      /* Maximum number of channels */
-      maxCh = (olong)(0.99999 + (ofloat)maxIF/(ofloat)uvdesc->chIncIF[iif]);
-      /* Smallest integral multiple of nChan */
-      ndiv = MAX (1, nChan/maxCh);
-      nSpec += ndiv;
+      /* Is this IF all in current bin? */
+      freqLo = (uvdesc->freqIF[iif] + (1.0-uvdesc->crpix[uvdesc->jlocf])*uvdesc->cdelt[uvdesc->jlocf]);
+      freqHi = (uvdesc->freqIF[iif] + (nChan-uvdesc->crpix[uvdesc->jlocf]+1)*uvdesc->cdelt[uvdesc->jlocf]);
+      if (lsb) done = freqHi>mxFreq;   /* LSB */
+      else     done = freqHi<mxFreq;   /* USB */
+      /* By IF? */
+      if (maxFBW<0.0) {
+	IFBreak[nSpec]   = iif;
+	ChBreak[nSpec++] = nChan;
+      } else {  /* may split IFs */
+	/* A break in this IF? */
+	while (!done) {
+	  /* Gap in frequency? */
+	  if (((freqLo>mxFreq)&&(!lsb)) || ((freqLo<mxFreq)&&(lsb))) {
+	    IFBreak[nSpec]   = iif-1;
+	    ChBreak[nSpec++] = nChan-1;
+	    if (lsb) mxFreq = (1.0-maxFBW) * freqLo;  /* Lowest frequency in next bin */
+	    else     mxFreq = (1.0+maxFBW) * freqLo;  /* Highest frequency in next bin */
+	  } else {  /* no gap */
+	    iCh = (olong)(0.5 + (mxFreq-freqLo) / (uvdesc->cdelt[uvdesc->jlocf])) - 1;
+	    IFBreak[nSpec]   = iif;
+	    ChBreak[nSpec++] = MIN (nChan-1, iCh);
+	    if (lsb) mxFreq -= maxFBW * freqLo;
+	    else     mxFreq += maxFBW * freqLo;
+	  }
+	  /* This bin finished? */
+	  if (lsb) done = freqHi>mxFreq;   /* LSB */
+	  else     done = freqHi<mxFreq;   /* USB */
+	}
+      }
+      /* Check blown array */
+      Obit_return_if_fail((nSpec<=nBreak), err, 
+			  "%s: Too many coarse spectral planes, >%d for %s", 
+			  routine, nBreak-1,in->name);
     } /* end loop over IF */
-   /* End if spectral */
+    
+   /* End */
+    if (maxFBW<0.0) nSpec--;  /* One bin per IF? */
+    /* all done? */
+    if ((IFBreak[nSpec-1]<(nIF-1)) || (ChBreak[nSpec-1]<(nChan-1))) {
+      /* No - add final */
+      IFBreak[nSpec] = nIF-1;
+      ChBreak[nSpec] = nChan-1;
+    } else nSpec--;  /* No more needed */
+    
+    /* Make sure have enough spectra */
+    Obit_return_if_fail((nSpec>in->curOrder), err,
+                        "%s: TOO Few channels %d, for requested order, decrease maxFBW",
+                        routine, nSpec);
+    /* End if spectral */
   } else nSpec = 1;
 
   /* Create arrays */
@@ -758,48 +948,34 @@ void ObitImageMFSetSpec (ObitImageMF *in, ObitUV *inData, ofloat maxFBW,
   in->BChanSpec = g_malloc0(nSpec*sizeof(olong));
   in->EChanSpec = g_malloc0(nSpec*sizeof(olong));
   in->specFreq  = g_malloc0(nSpec*sizeof(odouble));
+  in->specFreqLo= g_malloc0(nSpec*sizeof(odouble));
+  in->specFreqHi= g_malloc0(nSpec*sizeof(odouble));
 
   /* Channel and IF increments in frequency scaling array */
   fincf  = MAX (1, (uvdesc->incf  / 3) / uvdesc->inaxes[uvdesc->jlocs]);
   fincif = MAX (1, (uvdesc->incif / 3) / uvdesc->inaxes[uvdesc->jlocs]);
 
-  /* Another loop filling arrays */
-  /* Loop over IFs */
-  sum2 = 0.0; count2 = 0;
-  ip = 0;
-  /* Only if in->curOrder>0 */
+  /* Loop filling arrays - Only if in->curOrder>0 */
   if (in->curOrder>0) {
-    for (iif=0; iif<nIF; iif++) {
-      /* How big at center? */
-      maxIF = maxFBW * uvdesc->freqIF[iif];
-      /* Maximum number of channels */
-      maxCh = (olong)(0.99999 + (ofloat)maxIF/(ofloat)uvdesc->chIncIF[iif]);
-      /* Smallest integral multiple of nChan */
-      ndiv = MAX(1,nChan/maxCh);
-      ipo = ip;
-      for (ichan=0; ichan<ndiv; ichan++) {
-	in->BIFSpec[ip] = iif;
-	in->EIFSpec[ip] = iif;
-	in->BChanSpec[ip] = ichan*ndiv;
-	in->EChanSpec[ip] = (ichan+1)*ndiv - 1;
-	ip++;
-      } /* end loop over coarse channel */
-      /* Make sure all channels done */
-      in->EChanSpec[ip-1] = MAX(in->EChanSpec[ip-1], (nChan-1));
-      
-      /* average frequency */
-      for (i=ipo; i<ip; i++) {
-	sum = 0.0; count = 0;
-	for (ichan=in->BChanSpec[i]; ichan<=in->EChanSpec[i]; ichan++) {
-	  count++;
-	  sum += uvdesc->freqArr[in->BIFSpec[i]*fincif + ichan*fincf];
-	  count2++;
-	  sum2 += uvdesc->freqArr[in->BIFSpec[i]*fincif + ichan*fincf];
-	}
-	in->specFreq[i] = sum/count;
-     }
-    } /* end loop over IF */
-    /* end multi channel out */
+    for (i=0; i<nSpec; i++) {
+      /* By IF? */
+      if (maxFBW<0.0) {
+	in->BIFSpec[i]   = i;
+	in->EIFSpec[i]   = i;
+	in->BChanSpec[i] = 0;
+	in->EChanSpec[i] = nChan-1;
+      } else {  /* Split across IFs */
+	  in->BIFSpec[i]   = IFBreak[i];
+	  in->BChanSpec[i] = ChBreak[i]+1;
+	  if (in->BChanSpec[i]>=nChan) {  /* Into next IF? */
+	    in->BChanSpec[i]  = 0;
+	    in->BIFSpec[i]   += 1         ;
+	  }
+	  in->EIFSpec[i]     = IFBreak[i+1];
+	  in->EChanSpec[i]   = ChBreak[i+1];
+      }
+    } /* end loop */
+      /* end multi channel out */
   } else {
     in->BIFSpec[0]   = 0;
     in->EIFSpec[0]   = nIF-1;
@@ -808,13 +984,68 @@ void ObitImageMFSetSpec (ObitImageMF *in, ObitUV *inData, ofloat maxFBW,
     in->refFreq = in->myDesc->crval[in->myDesc->jlocf];
   }
 
-  /* Increment number of planes by nSpec (if>1) */
+  /* average frequency */
+  sum2 = 0.0; count2 = 0;
+  for (i=0; i<nSpec; i++) {
+    sum  = 0.0; count = 0;
+    for (iif=in->BIFSpec[i]; iif<=in->EIFSpec[i]; iif++) {
+      if (in->BIFSpec[i]==in->EIFSpec[i]) { /* both ends same IF */
+	iclo = in->BChanSpec[i];
+	ichi = in->EChanSpec[i];
+      } else if (iif==in->BIFSpec[i]) {    /* First */
+ 	iclo = in->BChanSpec[i];
+	ichi = nChan-1;
+      } else if (iif==in->EIFSpec[i]) {    /* Last */
+ 	iclo = 0;
+	ichi = in->EChanSpec[i];
+      } else {                            /* Middle */
+  	iclo = 0;
+	ichi = nChan-1;
+      }
+      for (ichan=iclo; ichan<=ichi; ichan++) {
+	count++;
+	sum += uvdesc->freqArr[iif*fincif + ichan*fincf];
+	count2++;
+	sum2 += uvdesc->freqArr[iif*fincif + ichan*fincf];
+      }
+    } /* end IF loop */
+    if (count>0) in->specFreq[i] = sum/count;
+    else  in->specFreq[i] = -1.0;
+    /* Low end of bin */
+    ichan = in->BChanSpec[i];
+    iif   = in->BIFSpec[i];
+    in->specFreqLo[i] =  uvdesc->freqArr[iif*fincif + ichan*fincf];
+    /* High end of bin */
+    ichan = in->EChanSpec[i];
+    iif   = in->EIFSpec[i];
+    in->specFreqHi[i] =  uvdesc->freqArr[iif*fincif + ichan*fincf];
+  }
+
+  /* increment number of planes by nSpec (if>1) */
   if (nSpec>1) {
     in->myDesc->inaxes[in->myDesc->jlocf] += nSpec;
     
     /* Calculate & save reference frequency */
     in->refFreq = sum2/count2;
     in->myDesc->crval[in->myDesc->jlocf] = in->refFreq;  
+    /* Approximage freq increment */
+    in->myDesc->cdelt[in->myDesc->jlocf] = 
+      (in->specFreq[nSpec-1] - in->specFreq[0]) / (nSpec-1);  
+  }
+  
+  /* Tell channel division if err->prtLv>=2 */
+  if ((err->prtLv>=2) && doFreqDivMess) {
+    doFreqDivMess = FALSE; /* only once */
+    Obit_log_error(err, OBIT_InfoErr, "Frequency division of %d IFs, %d chan",
+		   nIF, nChan);
+    for (i=0; i<nSpec; i++) {
+      Obit_log_error(err, OBIT_InfoErr, 
+		     "%3d Freq %8.4f GHz, IF/ch %3d/%4d to IF/ch %3d/%4d",
+		     i+1, in->specFreq[i]*1.0e-9, 
+		     in->BIFSpec[i]+1, in->BChanSpec[i]+1,
+		     in->EIFSpec[i]+1, in->EChanSpec[i]+1);
+    }
+    ObitErrLog(err); 
   }
 
   /* Add frequency info to descriptor */
@@ -823,13 +1054,95 @@ void ObitImageMFSetSpec (ObitImageMF *in, ObitUV *inData, ofloat maxFBW,
     sprintf (keyword, "FREQ%4.4d",i+1);
     ObitInfoListAlwaysPut (in->myDesc->info, keyword, OBIT_double, 
 			   dim, &in->specFreq[i]);
+    sprintf (keyword, "FREL%4.4d",i+1);
+    ObitInfoListAlwaysPut (in->myDesc->info, keyword, OBIT_double, 
+			   dim, &in->specFreqLo[i]);
+    sprintf (keyword, "FREH%4.4d",i+1);
+    ObitInfoListAlwaysPut (in->myDesc->info, keyword, OBIT_double, 
+			   dim, &in->specFreqHi[i]);
  }
 
   /* Save Alpha */
   ObitInfoListAlwaysPut (in->myDesc->info, "ALPHA", OBIT_float, dim, &alpha);
   in->alpha = alpha;
  
+  /* Save Alpha reference frequency */
+  ObitInfoListAlwaysPut (in->myDesc->info, "RFALPHA", OBIT_double, dim, &alphaRefF);
+  in->alphaRefF = alphaRefF;
+ 
 } /* end  ObitImageMFSetSpec */
+
+/**
+ * Get info from the descriptor for coarse channels:
+ * ALPHA, RFALPHA, NTERM NSPEC, FREQ001...
+ * into alpha, maxOrder-1, nSpec, specFreq
+ * \param in     Pointer to object, should be fully defined
+ * \param alpha  Spectral index applied
+ * \param err    ObitErr for reporting errors.
+ */
+void ObitImageMFGetSpec (ObitImageMF *in, ObitErr *err)
+{
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  union ObitInfoListEquiv InfoReal; 
+  odouble darr[10];
+  gchar keyword[12];
+  olong i, nSpec, nTerm;
+  /*gchar *routine = "ObitImageMFSetSpec";*/
+  
+  /* error checks */
+  if (err->error) return;
+  g_assert (ObitIsA(in, &myClassInfo));
+
+  /* Number of spectral channels */
+  nSpec = 0;
+  ObitInfoListGetTest (in->myDesc->info, "NSPEC", &type, dim, &nSpec);
+  in->nSpec     = nSpec;
+  if (nSpec<=0) return;
+
+  /* Number of spectral terms */
+  nTerm = 0;
+  ObitInfoListGetTest (in->myDesc->info, "NTERM", &type, dim, &nTerm);
+  in->maxOrder = nTerm - 1;
+
+  /* Alpha */
+  InfoReal.flt = 0.0;   type = OBIT_float;
+  ObitInfoListGetTest(in->myDesc->info, "ALPHA", &type, dim, &InfoReal);
+  if (type==OBIT_double) in->alpha = (ofloat)InfoReal.dbl;
+  if (type==OBIT_float)  in->alpha = (ofloat)InfoReal.flt;
+
+  /* Reference frequency if not set */
+  if (in->refFreq<1.0) in->refFreq = in->myDesc->crval[in->myDesc->jlocf];
+
+  /* Alpha reference frequency - default to reference frequency */
+  darr[0] = in->refFreq;
+  ObitInfoListGetTest (in->myDesc->info, "RFALPHA", &type, dim, darr);
+  in->alphaRefF = darr[0];
+  if (in->alphaRefF<=0.0) in->alphaRefF = in->refFreq;
+
+  /* Create array */
+  if (in->specFreq) g_free(in->specFreq);
+  in->specFreq  = g_malloc0(nSpec*sizeof(odouble));
+  in->specFreqLo= g_malloc0(nSpec*sizeof(odouble));
+  in->specFreqHi= g_malloc0(nSpec*sizeof(odouble));
+
+  /* Fetch frequencies */
+  for (i=0; i<nSpec; i++) {
+    in->specFreq[i] = 1.0;
+    sprintf (keyword, "FREQ%4.4d",i+1);
+    ObitInfoListGetTest (in->myDesc->info, keyword, &type, 
+			 dim, &in->specFreq[i]);
+    in->specFreqLo[i] = 1.0;
+    sprintf (keyword, "FREL%4.4d",i+1);
+    ObitInfoListGetTest (in->myDesc->info, keyword, &type, 
+			 dim, &in->specFreqLo[i]);
+    in->specFreqHi[i] = 1.0;
+    sprintf (keyword, "FREH%4.4d",i+1);
+    ObitInfoListGetTest (in->myDesc->info, keyword, &type, 
+			 dim, &in->specFreqHi[i]);
+  }
+ 
+} /* end  ObitImageMFGetSpec */
 
 /**
  * Zero blank combined image and higher order planes
@@ -863,7 +1176,12 @@ void ObitImageMFBlank (ObitImageMF *in, ObitErr *err)
 
 /**
  * Make image or beam from combined spectral channels
- * Use average + 0.1 times most extreme channel value > 5 sigma.
+ * Average using weighting by 1/sigma of plane
+ * If the peak in the combined image is less than 10 times the 
+ * RMS in the best channel image then a correction is made:
+ * use average + 0.1 times most extreme channel value > 5 sigma.
+ * Note: values of lambda>0.1 may lead to instabilities causing 
+ * CLEAN not to converge.
  * The extrema array is then apodized using the FT of the CLEAN beam 
  * to remove out of band noise that can drive CLEAN into oscillations.
  * Extrema are the most discrepent points from the average.
@@ -876,15 +1194,28 @@ void ObitImageMFBlank (ObitImageMF *in, ObitErr *err)
 void ObitImageMFCombine (ObitImageMF *in, gboolean addExt, ObitErr *err)
 {
   ObitFArray *imPix=NULL, *extPix=NULL, *extConvl=NULL;
-  olong i, plane[5] = {1,1,1,1,1};
-  ofloat norm, sigma, sigClip = 5.0, lambda = 0.1, beamArea, cells;
+  olong i, plane[5] = {1,1,1,1,1}, pos[2];
+  ofloat norm, sigma, sigClip=5.0, lambda=0.1, testSigma=10.0, beamArea, cells;
+  ofloat wt, sumWt, p1, p2, minSigma, fblank = ObitMagicF();
+  gboolean *bad=NULL, linPol=FALSE, doExt=FALSE;
   gchar *routine = "ObitImageMFCombine";
 
   /* error checks */
   if (err->error) return;
   g_assert (ObitImageMFIsA(in));
 
+  /* Linear poln? - More aggressive extrema suppression */
+  linPol = (in->myDesc->crval[ in->myDesc->jlocs]>=1.9) && 
+           (in->myDesc->crval[ in->myDesc->jlocs]<=3.1);
+  if (linPol) {
+    testSigma = 5.0;  /* How many sigma residual is important */
+    lambda    = 0.25; /* Reduction factor of extrama correction */
+  }
+
   /* Loop accumulating average */
+  sumWt    = 0.0;
+  minSigma = 1.0e20;
+  bad = g_malloc0(in->nSpec*sizeof(gboolean));
   for (i=1+in->maxOrder; i<1+in->maxOrder+in->nSpec; i++) {
     plane[0] = i+1;
     ObitImageGetPlane ((ObitImage*)in, NULL, plane, err);
@@ -895,6 +1226,19 @@ void ObitImageMFCombine (ObitImageMF *in, gboolean addExt, ObitErr *err)
       imPix  = ObitFArrayCreate ("accum", 2, in->myDesc->inaxes);
       if (addExt) extPix = ObitFArrayCreate ("accum", 2, in->myDesc->inaxes);
     }
+    /* Weight by 1/sigma */
+    wt = ObitFArrayRMS(in->image);
+    /* Values? */
+    if ((wt==fblank) || (wt<=0.0)) {
+      bad[i-1-in->maxOrder] = TRUE;
+      continue;
+    } else {
+      bad[i-1-in->maxOrder] = FALSE;
+    }
+    minSigma = MIN (minSigma, wt);  /* Minimum valid sigma */
+    wt = 1.0 / wt;
+    sumWt += wt;
+    ObitFArraySMul (in->image, wt);
 
     /* Accumulate */
     ObitFArrayAdd(imPix, in->image, imPix);
@@ -902,27 +1246,38 @@ void ObitImageMFCombine (ObitImageMF *in, gboolean addExt, ObitErr *err)
   } /* end loop accumulating */
  
   /* Normalize */
-  norm = 1.0 / ((ofloat)in->nSpec);
+  norm = 1.0 / sumWt;
   ObitFArraySMul (imPix, norm);
 
-  /* Add scaled extrema convolved with dirth beam */
+  /* Add scaled extrema convolved with dirty beam 
+   scaling by sigma keeps poor planes from overly affecting 
+   the results */
   if (addExt && in->myBeam) {
     /* Loop accumulating extrema */
     for (i=1+in->maxOrder; i<1+in->maxOrder+in->nSpec; i++) {
-      plane[0] = i+1;
-      ObitImageGetPlane ((ObitImage*)in, NULL, plane, err);
-      if (err->error) Obit_traceback_msg (err, routine, in->name);
-      
-      /* Subtract average */
-      ObitFArraySub(in->image, imPix, in->image);
-      
-      /* Accumulate extrema - first clip below sigClip */
-      sigma = ObitFArrayRMS0(in->image);
-      ObitFArrayInClip (in->image, -sigClip*sigma, sigClip*sigma, 0.0);
-      ObitFArrayExtArr (extPix, in->image, extPix);
+      if (!bad[i-1-in->maxOrder]) {
+	plane[0] = i+1;
+	ObitImageGetPlane ((ObitImage*)in, NULL, plane, err);
+	if (err->error) Obit_traceback_msg (err, routine, in->name);
+	
+	/* Subtract average */
+	ObitFArraySub(in->image, imPix, in->image);
+	
+	/* Accumulate extrema - first clip below sigClip */
+	sigma = ObitFArrayRMS0(in->image);
+	ObitFArrayInClip (in->image, -sigClip*sigma, sigClip*sigma, 0.0);
+	/* Weight by 1/sigma */
+	wt = 1.0 / sigma;
+	ObitFArraySMul (in->image, wt);   /* Scale by weight */
+	/* ObitFArrayAbs (in->image);        Absolute value */
+	ObitFArrayExtArr (extPix, in->image, extPix);
+      } /* end if valid */
     } /* end loop accumulating */
 
-    /* Read dirty beam */
+    /* Normalize extrema image by minimum sigma */
+    ObitFArraySMul (extPix, minSigma);
+
+   /* Read dirty beam */
     plane[0] = 1;
     ObitImageGetPlane ((ObitImage*)in->myBeam, NULL, plane, err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
@@ -931,12 +1286,26 @@ void ObitImageMFCombine (ObitImageMF *in, gboolean addExt, ObitErr *err)
     beamArea = 1.1331*(in->myDesc->beamMaj/cells)*(in->myDesc->beamMin/cells);
     /* If beam not available use 35 pixels */
     if (beamArea<0.1)  beamArea = 35.0;
-    ObitFArraySMul (extPix, lambda/beamArea);
-    /* Convolve extrema with dirty beam */
-    extConvl = ObitFArrayUtilConvolve (extPix, ((ObitImage*)in->myBeam)->image, err);
-    if (err->error) Obit_traceback_msg (err, routine, in->name);
-    /* add */
-    ObitFArrayAdd (imPix, extConvl, imPix);
+    /* add if peak in imPix exceeds that in extPix - something occasionally goes wrong */
+    p1 = ObitFArrayMaxAbs (imPix, pos);
+    p2 = ObitFArrayMaxAbs (extPix, pos);
+    doExt = (p1<p2/sqrt(in->nSpec)) && (p2>testSigma*minSigma);  /* Add extrema? */
+    if (doExt) {
+      ObitFArraySMul (extPix, lambda/beamArea); /* Scale residuals by beam area */
+      /* Adjust signs to match imPix */
+      ObitFArraySign (imPix, extPix);
+      /* Convolve extrema with dirty beam */
+      extConvl = ObitFArrayUtilConvolve (extPix, ((ObitImage*)in->myBeam)->image, err);
+      if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+      /* Add extrema in a way to make CLEANing more likely */
+       ObitFArrayAdd (imPix, extConvl, imPix);
+    }
+    if (err->prtLv>=4) {  /* Diagnostics */
+      Obit_log_error(err, OBIT_InfoErr, "%s: Add extrema=%d pI=%f pRE=%f minSigma=%f",
+		     routine, doExt, p1, p2, minSigma);
+      ObitErrLog(err); 
+    }
     /* Cleanup */
     ((ObitImage*)in->myBeam)->image  = ObitFArrayUnref(((ObitImage*)in->myBeam)->image);
     extConvl = ObitFArrayUnref(extConvl);
@@ -948,6 +1317,7 @@ void ObitImageMFCombine (ObitImageMF *in, gboolean addExt, ObitErr *err)
   if (err->error) Obit_traceback_msg (err, routine, in->name);
 
   /* Cleanup */
+  if (bad) g_free(bad);
   imPix     = ObitFArrayUnref(imPix);
   extPix    = ObitFArrayUnref(extPix);
   in->image = ObitFArrayUnref(in->image);
@@ -956,32 +1326,61 @@ void ObitImageMFCombine (ObitImageMF *in, gboolean addExt, ObitErr *err)
 /**
  * Fit Spectra to coarse spectral planes in an ObitImageMF
  * Possibly uses threads, looping over rows.
- * \param in      Image to fit
- * \param antSize If > 0 make primary beam corrections assuming antenna 
- *                diameter (m) antSize
+ * \param in      Image to fit, info may have
+ * \li nOrder OBIT_int (1,1,1) Maximum order to fit
+ *            If absent use maxOrder
+ * \li corAlpha OBIT_float scalar, if non zero, spectral index 
+ *                   correction to apply, def = 0.0
+ * \li maxSNR     boolean scalar If true maximuze SNR rather than just minimize noise
+ *                   Adjusts weights to account for spectral index corAlpha
+ * \param antsize if > 0 make primary beam corrections assuming antenna 
+ *                diameter antsize (m) 
  * \param err     Obit error stack object.
  */
-void ObitImageMFFitSpec (ObitImageMF *in, ofloat antSize, ObitErr *err)
+void ObitImageMFFitSpec (ObitImageMF *in, ofloat antsize, ObitErr *err)
 {
   olong ithread, maxThread, nThreads=1;
   FitSpecFuncArg **targs=NULL;
   ObitImage **inArray=NULL, **outArray=NULL; 
-  ofloat sigma;
-  olong i, iy, ny, nterm, nTh, plane[5] = {1,1,1,1,1};
+  ObitHistory *inHist=NULL;
+  ofloat sigma, wtfact, corAlpha=0.0;
+  olong i, iy, ny, nterm=1, nOrder, nTh, plane[5] = {1,1,1,1,1};
   olong blc[IM_MAXDIM] = {1,1,1,1,1,1,1};
   olong trc[IM_MAXDIM] = {0,0,0,0,0,0,0};
+  ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitIOSize IOBy = OBIT_IO_byRow;
-  gboolean OK;
+  gboolean OK, maxSNR=FALSE;
+  gchar hiCard[73];
   gchar *routine = "ObitImageMFFitSpec";
 
   /* error checks */
   if (err->error) return;
   g_assert (ObitImageMFIsA(in));
 
+  /* Try reading spectral info if missing */
+  if (in->nSpec<=0) ObitImageMFGetSpec (in, err);
+  if (err->error) goto cleanup;
+
+  /* Make sure have spectra */
+  Obit_return_if_fail((in->nSpec>0), err, 
+  		      "%s: NO spectra in %s", 
+		      routine, in->name);
+
   /* Tell about it */
   Obit_log_error(err, OBIT_InfoErr, "Fitting pixel spectra");
   ObitErrLog(err); 
+
+  nOrder = in->maxOrder;
+  ObitInfoListGetTest (in->info, "nOrder", &type, dim, &nOrder);
+
+  /* Maximize SNR? */
+  ObitInfoListGetTest (in->info, "maxSNR",     &type, dim, &maxSNR);
+
+  ObitInfoListGetTest (in->info, "corAlpha",   &type, dim,   &corAlpha);
+
+  /* Reference frequency if not set */
+  if (in->refFreq<1.0) in->refFreq = in->myDesc->crval[in->myDesc->jlocf];
 
   /* Create arrays of Images to handle input and output I/O */
   nterm = in->maxOrder+1;    /* Number of output spectral terms */
@@ -1026,7 +1425,7 @@ void ObitImageMFFitSpec (ObitImageMF *in, ofloat antSize, ObitErr *err)
   /* Only thread large cases */
   if (in->myDesc->inaxes[0]>200) maxThread = 1000;
   else maxThread = 1;
-  nThreads = MakeFitSpecArgs (in, maxThread, antSize, &targs, err);
+  nThreads = MakeFitSpecArgs (in, maxThread, antsize, nOrder, &targs, err);
   if (err->error) goto cleanup;
 
   /* Read through all input channels getting sigmas - save on thread arguments */
@@ -1034,6 +1433,11 @@ void ObitImageMFFitSpec (ObitImageMF *in, ofloat antSize, ObitErr *err)
     plane[0] = 2+in->maxOrder+i;
     ObitImageGetPlane ((ObitImage*)in, NULL, plane, err);
     sigma = ObitFArrayRMS(in->image);
+    /* if maxSNR, modify sigma by exp(alpha*ln(nu/nu_0)) */
+    if (maxSNR) {
+      wtfact  = (ofloat)exp(corAlpha*log(in->specFreq[i]/in->refFreq));
+      sigma *= wtfact;
+    }  /* end modify SNR */
     if (err->error) goto cleanup;
     /* Save on thread arguments */
     for (ithread=0; ithread<nThreads; ithread++)
@@ -1073,9 +1477,25 @@ void ObitImageMFFitSpec (ObitImageMF *in, ofloat antSize, ObitErr *err)
       }
       if (err->error) goto cleanup;
    }
-
+    
   } /* end loop over list */
-  
+
+  /* History */
+  inHist  = newObitDataHistory((ObitData*)in, OBIT_IO_ReadWrite, err);
+  /* Add parameters */
+  ObitHistoryOpen (inHist, OBIT_IO_ReadWrite, err);
+  ObitHistoryTimeStamp (inHist, "ObitImageMFFitSpec", err);
+  g_snprintf ( hiCard, 72, "FitSpec  nOrder = %d",nOrder);
+  ObitHistoryWriteRec (inHist, -1, hiCard, err);
+  g_snprintf ( hiCard, 72, "FitSpec  corAlpha = %f",corAlpha);
+  ObitHistoryWriteRec (inHist, -1, hiCard, err);
+  g_snprintf ( hiCard, 72, "FitSpec  maxSNR = %d",maxSNR);
+  ObitHistoryWriteRec (inHist, -1, hiCard, err);
+  g_snprintf ( hiCard, 72, "FitSpec  antsize = %f",antsize);
+  ObitHistoryWriteRec (inHist, -1, hiCard, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+  inHist  = ObitHistoryUnref(inHist);
+
   /* Cleanup */
  cleanup:
   KillFitSpecArgs (nThreads, targs);
@@ -1099,6 +1519,457 @@ void ObitImageMFFitSpec (ObitImageMF *in, ofloat antSize, ObitErr *err)
  error:
   if (err->error) Obit_traceback_msg (err, routine, in->name);
 } /* end ObitImageMFFitSpec */
+
+/**
+ * Fit Spectra to coarse spectral planes in an ObitImageMF, writes a separate output image
+ * Possibly uses threads, looping over rows.
+ * \param in      Image to fit, info may have
+ * \li            nterm      int scalar Number of terms in spectral fit, 2=SI, 3=curvature [def 2]
+ * \li            refFreq    double scalar Reference frequency for fit [def ref for in]
+ * \li            maxChi2    float scalar Max. Chi Sq for accepting a partial spectrum [def 2.0]
+ * \li            doError    boolean scalar If true do error analysis [def False]
+ * \li            doBrokePow boolean scalar If true do broken power law (3 terms). [def False]
+ * \li            calFract   float (?,1,1) Calibration error as fraction of flux
+ *                           One per frequency or one for all, def 1.0e-5
+ * \li            doPBCor    boolean scalar If true do primary beam correction. [def False]
+ * \li            doTab      boolean scalar If true and available, use tabulated beam. [def False]
+ * \li            PBmin      float (?,1,1) Minimum beam gain correction, blanked below.
+ *                    One per frequency or one for all, def 1.0e-5,
+ *                    1.0 => no gain corrections
+ * \li            antSize    float (?,1,1) Antenna diameter (m) for gain corr, 
+ *                    One per frequency or one for all, def 25.0
+ * \li            corAlpha OBIT_float scalar, if non zero, spectral index 
+ *                   correction to apply, def = 0.0
+ * \li            maxSNR     boolean scalar If true maximuze SNR rather than just minimize noise
+ *                   Adjusts weights to account for spectral index corAlpha
+ * \li            minWt     Min. fraction of total weight to accept for a pixel
+ * \param out     Output Image into which to write parameters
+ * \param err     Obit error stack object.
+ */
+void ObitImageMFFitSpec2 (ObitImageMF *in, ObitImageMF *out, ObitErr *err)
+{
+  ObitSpectrumFit* fitter=NULL;
+  ObitHistory *inHist=NULL, *outHist=NULL;
+  ofloat antsize, pbmin, wtfact, minWt=0.5, corAlpha=0.0;
+  olong i, plane[5] = {1,1,1,1,1};
+  olong nOut, iplane, naxis[2], nterm=2; 
+  odouble refFreq=-1.0;
+  ofloat maxChi2=2.0, *PBmin=NULL, *antSize=NULL, *calFract=NULL; 
+  gboolean doGain, maxSNR=FALSE, doError=FALSE, doBrokePow=FALSE, doPBCor=FALSE, isMeerKAT=FALSE;
+  union ObitInfoListEquiv InfoReal; 
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1}, PBdim[MAXINFOELEMDIM], ASdim[MAXINFOELEMDIM];
+  gchar *fitParms[] = {"refFreq","maxChi2","doError","doPBCor","doBrokePow","calFract",
+		       "PBmin","antSize","corAlpha","minWt", 
+		       NULL};
+  gchar  *today=NULL, *SPECLOGF = "SPECLOGF";
+  gchar hiCard[73], *TF[2]={"False","True"};
+  gchar *routine = "ObitImageMFFitSpec2";
+
+  /* error checks */
+  if (err->error) return;
+  g_assert (ObitImageMFIsA(in));
+
+  /* Fully instantiate input */
+  ObitImageMFFullInstantiate (in, TRUE, err);
+  if (err->error) goto cleanup;
+
+  /* Try reading spectral info if missing */
+  if (in->nSpec<=0) ObitImageMFGetSpec (in, err);
+  if (err->error) goto cleanup;
+
+  /* Make sure have spectra */
+  Obit_return_if_fail((in->nSpec>0), err, 
+  		      "%s: NO spectra in %s", 
+		      routine, in->name);
+
+  /* Tell about it */
+  Obit_log_error(err, OBIT_InfoErr, "Fitting pixel spectra");
+
+  /* Fitting parameters */
+  ObitInfoListGetTest (in->info, "nterm",      &type, dim, &nterm);
+  /* Get Reference frequency , default input ref. freq. */
+  InfoReal.dbl = in->myDesc->crval[in->myDesc->jlocf]; 
+  type = OBIT_double;  in->refFreq = InfoReal.dbl;
+  ObitInfoListGetTest(in->info, "refFreq", &type, dim, &InfoReal);
+  if (type==OBIT_float)       refFreq = InfoReal.flt;
+  else if (type==OBIT_double) refFreq = (ofloat)InfoReal.dbl;
+  /* Min Chi^2 for fit */
+  InfoReal.flt = maxChi2; type = OBIT_float;
+  ObitInfoListGetTest(in->info, "maxChi2", &type, dim, &InfoReal);
+  if (type==OBIT_float)       maxChi2 = InfoReal.flt;
+  else if (type==OBIT_double) maxChi2 = (ofloat)InfoReal.dbl;
+  /* Want Error analysis? */
+  InfoReal.itg = (olong)doError; type = OBIT_bool;
+  ObitInfoListGetTest(in->info, "doError", &type, dim, &InfoReal);
+  doError = InfoReal.itg;
+   /* Want Broken power law ? */
+  InfoReal.itg = (olong)doBrokePow; type = OBIT_bool;
+  ObitInfoListGetTest(in->info, "doBrokePow", &type, dim, &InfoReal);
+  doBrokePow = InfoReal.itg;
+  ObitInfoListGetTest (in->info, "corAlpha",   &type, dim,   &corAlpha);
+  ObitInfoListGetTest (in->info, "minWt",   &type, dim,   &minWt);
+  /* Want primary beam correction? */
+  InfoReal.itg = (olong)doPBCor; type = OBIT_bool;
+  ObitInfoListGetTest(in->info, "doPBCor", &type, dim, &InfoReal);
+  doPBCor = InfoReal.itg;
+  ObitInfoListGetP (in->info, "antSize",    &type, ASdim, (gpointer)&antSize);
+  ObitInfoListGetP (in->info, "PBmin",      &type, PBdim, (gpointer)&PBmin);
+  /* Maximize SNR? */
+  ObitInfoListGetTest (in->info, "maxSNR",     &type, dim, &maxSNR);
+  
+  /* Create Fitter */
+  fitter = ObitSpectrumFitCreate("Fitter", nterm);
+  fitter->refFreq    = refFreq;
+  fitter->maxChi2    = maxChi2;
+  fitter->doError    = doError;
+  fitter->doBrokePow = doBrokePow;
+  fitter->calFract   = calFract;
+  fitter->corAlpha   = corAlpha;
+  fitter->doPBCorr   = doPBCor;
+  fitter->minWt      = minWt;
+
+  /* Get fitting parameters, copy to fitter */
+  ObitInfoListCopyList (in->info, fitter->info, fitParms);
+
+  /* Determine number of frequency planes and initialize fitter */
+  fitter->nfreq      = in->nSpec;
+  fitter->BeamShapes = g_malloc0(fitter->nfreq*sizeof(ObitBeamShape*));
+  for (i=0; i<fitter->nfreq; i++) fitter->BeamShapes[i] = NULL;
+  fitter->RMS        = g_malloc0(fitter->nfreq*sizeof(ofloat));
+  fitter->calFract   = g_malloc0(fitter->nfreq*sizeof(ofloat));
+  fitter->inFArrays  = g_malloc0(fitter->nfreq*sizeof(ObitFArray*));
+  fitter->freqs      = g_malloc0(fitter->nfreq*sizeof(odouble));
+  fitter->outDesc    = ObitImageDescRef(out->myDesc);  /* Output descriptor */
+  
+  /* How many output planes? */
+  if (fitter->doError) nOut = 1+fitter->nterm*2;
+  else nOut = fitter->nterm;
+  
+  /* Define term arrays */
+  fitter->outFArrays = g_malloc0((nOut)*sizeof(ObitFArray*));
+  for (i=0; i<nOut; i++) fitter->outFArrays[i] = NULL;
+
+  /* Image size */
+  fitter->nx = in->myDesc->inaxes[0];
+  fitter->ny = in->myDesc->inaxes[1];
+  naxis[0] = (olong)fitter->nx;  naxis[1] = (olong)fitter->ny; 
+  for (i=0; i<fitter->nfreq; i++) fitter->inFArrays[i]  = ObitFArrayCreate (NULL, 2, naxis);
+  for (i=0; i<nOut; i++)          fitter->outFArrays[i] = ObitFArrayCreate (NULL, 2, naxis);
+
+  /* Calibration error */
+  for (i=0; i<fitter->nfreq; i++) fitter->calFract[i] = 1.0e-5; /* default */
+  if (ObitInfoListGetP(fitter->info, "calFract", &type, dim, (gpointer)&calFract)) {
+    if (dim[0]>=fitter->nfreq) for (i=0; i<fitter->nfreq; i++) fitter->calFract[i] = calFract[i];
+    else for (i=0; i<fitter->nfreq; i++) fitter->calFract[i] = calFract[0];
+  }
+
+  /* Output Image descriptor */
+  out->myDesc = ObitImageDescCopy (in->myDesc, out->myDesc, err);
+  if (err->error) goto cleanup;
+
+  /* Change third axis to type "SPECLOGF" and leave the reference frequency
+     as the "CRVAL" */
+  out->myDesc->inaxes[out->myDesc->jlocf] =  nOut;
+  out->myDesc->crval[out->myDesc->jlocf]  =  fitter->refFreq;
+  out->myDesc->crpix[out->myDesc->jlocf]  =  1.0;
+  out->myDesc->cdelt[out->myDesc->jlocf]  =  1.0;
+  strncpy (out->myDesc->ctype[out->myDesc->jlocf], SPECLOGF, IMLEN_KEYWORD);
+  out->myDesc->bitpix = -32;  /* Float it */
+
+  /* Creation date today */
+  today = ObitToday();
+  strncpy (out->myDesc->date, today, IMLEN_VALUE);
+  if (today) g_free(today);
+
+  /* Fully instantiate output */
+  ObitImageMFFullInstantiate (out, FALSE, err);
+  if (err->error) goto cleanup;
+
+  /* Loop reading planes */
+  for (iplane=0; iplane<fitter->nfreq; iplane++) {
+    plane[0] = iplane+in->maxOrder+2; 
+    ObitImageGetPlane ((ObitImage*)in, fitter->inFArrays[iplane]->array, plane, err);
+    if (err->error) goto cleanup;
+
+    /* Get BeamShape */
+    antsize = 25.0;
+    if (antSize) antsize = antSize[0];
+    if (antSize && (ASdim[0]>=fitter->nfreq)) antsize = antSize[iplane];
+    pbmin   = 0.05;
+    if (PBmin) pbmin = PBmin[0];
+    if (PBmin && (PBdim[0]>=fitter->nfreq)) pbmin = PBmin[iplane];
+    doGain = pbmin<0.999;
+    fitter->BeamShapes[iplane] = ObitBeamShapeCreate ("BS", (ObitImage*)in, pbmin, antsize, doGain);
+
+    /* Plane RMS */
+    fitter->RMS[iplane] = ObitFArrayRMS(fitter->inFArrays[iplane]);
+    /* Frequency */
+    fitter->freqs[iplane] = in->specFreq[iplane];
+    ObitBeamShapeSetFreq (fitter->BeamShapes[iplane], fitter->freqs[iplane]);
+    /* if maxSNR, modify RMS by exp(-alpha*ln(nu/nu_0)) */
+    if (maxSNR) {
+      wtfact  = (ofloat)exp(-fitter->corAlpha*log(fitter->freqs[iplane]/refFreq));
+      fitter->RMS[iplane] *= wtfact;
+    }  /* end modify SNR */
+    
+  } /* end loop reading planes */
+
+  /* Diagnostics */
+  if (err->prtLv>=2) {
+    if (fitter->BeamShapes[0]->doTab) Obit_log_error(err, OBIT_InfoErr, "Using Tabulated Beam");
+    if (fitter->BeamShapes[0]->doVLITE) Obit_log_error(err, OBIT_InfoErr, "Using VLITE Beam");
+    isMeerKAT = !strncmp(in->myDesc->teles, "MeerKAT",7); /* MeerKAT? */
+    if (isMeerKAT) Obit_log_error(err, OBIT_InfoErr, "Using MeerKAT Beam");
+  }
+  ObitErrLog(err); 
+
+  /* Do actual fitting */
+  ObitSpectrumFitter (fitter, err);
+  if (err->error) goto cleanup;
+
+  /* Update output header to reference Frequency */
+  out->myDesc->crval[out->myDesc->jlocf] = fitter->refFreq;
+  fitter->outDesc = ObitImageDescRef(in->myDesc); /* Desc to fitter */
+
+  /* Write output */
+  ObitSpectrumWriteOutput(fitter, (ObitImage*)out, err);
+  if (err->error) goto cleanup;
+
+  /* History */
+  /* Copy any history  unless Scratch */
+  if (!in->isScratch && !out->isScratch) {
+    inHist  = newObitDataHistory((ObitData*)in, OBIT_IO_ReadOnly, err);
+    outHist = newObitDataHistory((ObitData*)out, OBIT_IO_WriteOnly, err);
+    outHist = ObitHistoryCopy (inHist, outHist, err);
+    /* Add parameters */
+    ObitHistoryOpen (outHist, OBIT_IO_ReadWrite, err);
+    ObitHistoryTimeStamp (outHist, "ObitImageMFFitSpec2", err);
+    g_snprintf ( hiCard, 72, "FitSpec2  nterm = %d",nterm);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    g_snprintf ( hiCard, 72, "FitSpec2  refFreq = %lf",refFreq);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    g_snprintf ( hiCard, 72, "FitSpec2  maxChi2 = %f",maxChi2);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    g_snprintf ( hiCard, 72, "FitSpec2  doError = %s",TF[doError]);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    g_snprintf ( hiCard, 72, "FitSpec2  doBrokePow = %s",TF[doBrokePow]);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    if (calFract) {
+      g_snprintf ( hiCard, 72, "FitSpec2  calFract = %f",calFract[0]);
+      ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    }
+    g_snprintf ( hiCard, 72, "FitSpec2  doPBCor = %s",TF[doPBCor]);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    if (PBmin) {
+      g_snprintf ( hiCard, 72, "FitSpec2  PBmin = %f",PBmin[0]);
+      ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    }
+    if (antSize) {
+      g_snprintf ( hiCard, 72, "FitSpec2  antSize = %f",antSize[0]);
+      ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    }
+    g_snprintf ( hiCard, 72, "FitSpec2  corAlpha = %f",corAlpha);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    g_snprintf ( hiCard, 72, "FitSpec2  maxSNR = %s",TF[maxSNR]);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    g_snprintf ( hiCard, 72, "FitSpec2  minWt = %f",minWt);
+    ObitHistoryWriteRec (outHist, -1, hiCard, err);
+    ObitHistoryClose (inHist, err);
+    if (err->error) Obit_traceback_msg (err, routine, in->name);
+    inHist  = ObitHistoryUnref(inHist);
+    outHist = ObitHistoryUnref(outHist);
+  }
+
+  /* Cleanup */
+ cleanup:
+  fitter = ObitSpectrumFitUnref(fitter);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+} /* end ObitImageMFFitSpec2 */
+
+/**
+ * Correct flux density plane for effective frequency 
+ * Multiply flux density plane by 
+ * exp(alpha*ln(nu/nu_0) where nu is determined for each pixel by a weighted average
+ * weighted by (PB^2)/(RMS^2 +(calFract*image)^2)
+ * Possibly uses threads, looping over rows.
+ * \param in      Image to correct, info may have
+ * \li            doPBCor    boolean scalar If true do primary beam correction. [def False]
+ * \li            doTab      boolean scalar If true and available, use tabulated beam. [def False]
+ * \li            PBmin      float (?,1,1) Minimum beam gain correction
+ *                    One per frequency or one for all, def 0.01,
+ *                    1.0 => no gain corrections
+ * \li            antSize    float (?,1,1) Antenna diameter (m) for gain corr, 
+ *                    One per frequency or one for all, def 25.0
+ * \li            corAlpha OBIT_float scalar, if non zero, spectral index 
+ *                   correction to apply, def = 0.0
+ * \li            calFract   float (?,1,1) Calibration error as fraction of flux
+ *                           One per frequency or one for all, def 1.0e-5,
+ * \param in2     Image with un PBCorred full ImageMF w/ spectral cube
+ * \param err     Obit error stack object.
+ */
+void ObitImageMFEffFqCorr (ObitImageMF *in, ObitImageMF *in2, ObitErr *err)
+{
+  ofloat corAlpha=0.0;
+  olong plane[5] = {1,1,1,1,1};
+  olong nIn, nx, ny, iplane, naxis[2]; 
+  odouble *freqs=NULL, refFreq;
+  ofloat pbmin, antsize, calfract, *PBmin=NULL, *antSize=NULL, *RMS=NULL, *calFract=NULL;
+  ofloat iRefFreq, wt, fblank = ObitMagicF();
+  gboolean doPBCor=FALSE, doTab=FALSE;
+  ObitImage *workIm=NULL;
+  ObitFArray *wtArr=NULL, *accumWt=NULL, *accumWtFq=NULL;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  gint32 PBdim[MAXINFOELEMDIM], ASdim[MAXINFOELEMDIM], CFdim[MAXINFOELEMDIM];
+  gchar *PBParms[] = {"doPBCor","calFract","PBmin","antSize","doTab",
+		       NULL};
+  gchar *routine = "ObitImageMFEffFqCor";
+
+  /* error checks */
+  if (err->error) return;
+  g_assert (ObitImageMFIsA(in));
+
+  /* Fully instantiate input */
+  ObitImageMFFullInstantiate (in, TRUE, err);
+  if (err->error) goto cleanup;
+
+  /* Try reading spectral info if missing */
+  if (in->nSpec<=0) ObitImageMFGetSpec (in, err);
+  if (err->error) goto cleanup;
+  refFreq = in->myDesc->crval[in->myDesc->jlocf]; /* Reference frequency */
+
+  /* Make sure have spectra */
+  Obit_return_if_fail((in->nSpec>0), err, 
+  		      "%s: NO spectra in %s", 
+		      routine, in->name);
+
+  /* Tell about it */
+  Obit_log_error(err, OBIT_InfoErr, "Correcting for effective frequency");
+  ObitErrLog(err); 
+
+  /* Parameters */
+  /* Want primary beam correction? */
+  ObitInfoListGetTest(in->info, "doPBCor",   &type, dim,   &doPBCor);
+  ObitInfoListGetTest(in->info, "doTab",     &type, dim,   &doTab);
+  ObitInfoListGetTest (in->info, "corAlpha", &type, dim,   &corAlpha);
+  ObitInfoListGetP (in->info, "calFract",    &type, CFdim, (gpointer)&calFract);
+  ObitInfoListGetP (in->info, "antSize",     &type, ASdim, (gpointer)&antSize);
+  ObitInfoListGetP (in->info, "PBmin",       &type, PBdim, (gpointer)&PBmin);
+  if (err->prtLv>=2) {
+    Obit_log_error(err, OBIT_InfoErr, "doPBCor=%d",doPBCor);
+    Obit_log_error(err, OBIT_InfoErr, "doTab=%d",doTab);
+    Obit_log_error(err, OBIT_InfoErr, "corAlpha=%f",corAlpha);
+    ObitErrLog(err); 
+  }
+  
+  /* Define plane arrays */
+  nIn = in->nSpec;
+  freqs = g_malloc0((nIn)*sizeof(odouble));
+  RMS   = g_malloc0((nIn)*sizeof(ofloat));
+
+  /* Make scratch work image clone if needed for PB correction */
+  if (doPBCor) {
+    workIm = newObitImageMFScratch ((ObitImage*)in2, err);
+    if (err->error) goto cleanup;
+    /* Get fitting parameters, copy to fitter */
+    ObitInfoListCopyList (in->info, workIm->info, PBParms);
+  }
+
+  /* Image size */
+  nx = in->myDesc->inaxes[0]; naxis[0] = nx; 
+  ny = in->myDesc->inaxes[1]; naxis[1] = ny;
+  wtArr     = ObitFArrayCreate (NULL, 2, naxis);
+  accumWt   = ObitFArrayCreate (NULL, 2, naxis); ObitFArrayFill(accumWt, 0.0);
+  accumWtFq = ObitFArrayCreate (NULL, 2, naxis); ObitFArrayFill(accumWtFq, 0.0);
+
+  /* Loop over planes Get weighted frequency in each pixel */
+  for (iplane=0; iplane<nIn; iplane++) {
+    if (antSize && (ASdim[0]>=iplane+1)) antsize = antSize[iplane];
+    if (antSize && (ASdim[0]==1))        antsize = antSize[0];
+    else                                 antsize = 25.0;
+    if (PBmin && (PBdim[0]>=iplane+1)) pbmin = PBmin[iplane];
+    if (PBmin && (PBdim[0]==1))        pbmin = PBmin[0];
+    else                               pbmin = 0.01;
+    if (calFract && (CFdim[0]>=iplane+1)) calfract = calFract[iplane];
+    if (calFract && (CFdim[0]==1))        calfract = calFract[0];
+    else                                  calfract = 1.0e-5;
+    plane[0] = iplane+in->maxOrder+2; 
+    /* Get PB correction image  if requested */
+    if (doPBCor) {
+      ObitInfoListCopyList (in->info, workIm->info, PBParms); /* Seems to get lost */
+      ObitImageUtilPBImage (workIm, workIm, plane, antsize, pbmin, err);
+      ObitImageGetPlane (workIm, wtArr->array, plane, err);
+      if (err->error) goto cleanup;
+      ObitFArrayDeblank(wtArr, 0.0);       /* Replace blanks with zero */
+      ObitFArrayMul(wtArr, wtArr, wtArr);  /* Square */
+    } else {   /* Fill with 1s */
+      ObitFArrayFill(wtArr, 1.0);
+    }
+    /* Plane RMS */
+    ObitImageGetPlane ((ObitImage*)in2, NULL, plane, err);
+    RMS[iplane] = ObitFArrayRMS(in2->image);
+    /* Multiply image  by calfract, square, add RMS weight, take inverse */
+    ObitFArraySMul(in2->image, calfract);
+    ObitFArrayMul(in2->image, in2->image, in2->image);  /* Square */
+    /* Use as weight - same as in SpectrumFitter */
+    if ((RMS[iplane]>1.0e-10) && (RMS[iplane]!=fblank)) {
+      wt = RMS[iplane]*RMS[iplane];
+      ObitFArraySAdd(in2->image, wt);
+      ObitFArrayDiv(wtArr, in2->image, wtArr);
+    } else {
+      ObitFArrayFill(wtArr, 0.0);
+    }
+	   
+    /* Frequency */
+    freqs[iplane] = in->specFreq[iplane];
+
+    /* Accumulate */
+    ObitFArrayAdd(accumWt, wtArr, accumWt);
+    ObitFArraySMul(wtArr, (ofloat)freqs[iplane]);
+    ObitFArrayAdd(accumWtFq, wtArr, accumWtFq);
+  } /* end loop over planes */
+
+  /* Get effective Frequency image */
+  ObitFArrayDiv(accumWtFq, accumWt, accumWtFq);
+
+  /* DEBUG
+  ObitImageUtilArray2Image ("EffFq.fits",0, accumWtFq, err); */
+  
+  /* divide by reference frequency */
+  iRefFreq = (ofloat)(1.0/refFreq);
+  ObitFArraySMul(accumWtFq, iRefFreq);
+
+  ObitFArrayLog(accumWtFq, wtArr);  /* Natural log */
+  ObitFArraySMul(wtArr, -corAlpha); /* x spectral index - neg for correction */
+  ObitFArrayExp(wtArr, wtArr); /* x spectral index */
+
+  /* Get flux density plane */
+  plane[0] = 1; 
+  ObitImageGetPlane ((ObitImage*)in, NULL, plane, err);
+  if (err->error) goto cleanup;
+
+  /* Do correct */
+  ObitFArrayMul(in->image, wtArr, in->image);
+
+  /* Write output*/
+  plane[0] = 1; 
+  ObitImagePutPlane ((ObitImage*)in, NULL, plane, err);
+  if (err->error) goto cleanup;
+  /* DEBUG 
+  ObitImageUtilArray2Image ("EffFqCorr.fits",0, wtArr,err);*/
+  /* Cleanup */
+ cleanup:
+  g_free(freqs);
+  g_free(RMS);
+  wtArr     = ObitFArrayUnref(wtArr);
+  accumWt   = ObitFArrayUnref(accumWt);
+  accumWtFq = ObitFArrayUnref(accumWtFq);
+  if (workIm) workIm    = ObitImageUnref(workIm);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+} /* end ObitImageMFEffFqCor */
 
 /**
  * Get pointer to wideband image beam
@@ -1143,13 +2014,41 @@ ObitImage* ObitImageMFGetBeam (ObitImage *inn, olong beamNo,
 
 /**
  * Get current highest order of image beam here 0
- * \param inn  Image whose beam name is to be set 
+ * \param inn  Image whose beam order is sought
  * \return order number
  */
 olong ObitImageMFGetBeamOrder (ObitImage *inn) 
 {
   return 0;
 } /* end ObitImageMFGetBeam */
+
+/**
+ * Get Frequency of current image plane, works for either Image or ImageMF
+ * \param image  ImageMF in question
+ * \return Freq Frequency (Hz), 0.0 if none in descriptor or list
+ */
+odouble ObitImageMFGetPlaneFreq (ObitImage *image) 
+{
+  odouble Freq=0.0;
+  olong nterm =0,plane = image->myDesc->plane;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM];
+  gchar keyword[20];
+
+  /* Have ImageMF keywords? */
+  if (!ObitInfoListGetTest(image->myDesc->info, "NTERM", &type, dim, &nterm)) {
+    if (image->myDesc->jlocf>=0) 
+      Freq = image->myDesc->crval[image->myDesc->jlocf];
+    return Freq;
+  }
+  /* Get from header List or header if missing, term planes will get main header freq. */
+  sprintf(keyword,"FREQ%4.4d", plane-nterm);
+  if (!ObitInfoListGetTest(image->myDesc->info, keyword, &type, dim, &Freq)) {
+    if (image->myDesc->jlocf>=0) 
+      Freq = image->myDesc->crval[image->myDesc->jlocf];
+  }
+  return Freq;
+} /* end ObitImageMFGetPlaneFreq */
 
 /*-------Private functions called by ObitData class ------*/
 /** Private: Zap */
@@ -1200,6 +2099,8 @@ static void ObitImageMFClassInfoDefFn ( gpointer inClass)
   theClass->newObit       = (newObitFP)newObitImageMF;
   theClass->ObitClassInfoDefFn = (ObitClassInfoDefFnFP)ObitImageMFClassInfoDefFn;
   theClass->ObitGetClass  = (ObitGetClassFP)ObitImageMFGetClass;
+  theClass->newObitImageScratch  = 
+    (newObitImageScratchFP)newObitImageMFScratch;
   theClass->ObitCopy      = (ObitCopyFP)ObitImageMFCopy;
   theClass->ObitClone     = NULL;
   theClass->ObitClear     = (ObitClearFP)ObitImageMFClear;
@@ -1208,6 +2109,8 @@ static void ObitImageMFClassInfoDefFn ( gpointer inClass)
     (ObitImageGetBeamFP)ObitImageMFGetBeam;
   theClass->ObitImageGetBeamOrder = 
     (ObitImageGetBeamOrderFP)ObitImageMFGetBeamOrder;
+  theClass->ObitImageGetPlaneFreq = 
+    (ObitImageGetPlaneFreqFP)ObitImageMFGetPlaneFreq;
 
   /* Function pointers referenced from ObitData class */
   theClass->ObitDataZap     = (ObitDataZapFP)ObitDataImageMFZap;
@@ -1242,6 +2145,8 @@ void ObitImageMFInit  (gpointer inn)
   in->BChanSpec = NULL;
   in->EChanSpec = NULL;
   in->specFreq  = NULL;
+  in->specFreqLo= NULL;
+  in->specFreqHi= NULL;
 
 } /* end ObitImageMFInit */
 
@@ -1266,6 +2171,8 @@ void ObitImageMFClear (gpointer inn)
   if (in->BChanSpec) g_free(in->BChanSpec);
   if (in->EChanSpec) g_free(in->EChanSpec);
   if (in->specFreq)  g_free(in->specFreq);
+  if (in->specFreqLo)  g_free(in->specFreqLo);
+  if (in->specFreqHi)  g_free(in->specFreqHi);
 
   /* unlink parent class members */
   ParentClass = (ObitClassInfo*)(myClassInfo.ParentClass);
@@ -1277,24 +2184,32 @@ void ObitImageMFClear (gpointer inn)
 
 /**
  * Make arguments for Threaded Spectrum fitting
- * \param in         MF Image to be fitted
+ * \param in         MF Image to be fitted, info may have
+ * \li corAlpha OBIT_float scalar, if non zero, spectral index 
+ *                   correction to apply, def = 0.0
  * \param maxThread  Maximum desirable no. threads
  * \param antSize    if >0 then make primary beam corrections
+ * \param nOrder     Fitting order
  * \param args       [out] Created array of FitSpecFuncArg, 
  *                   delete with KillFitSpecArgs
  * \return number of elements in args.
  */
 static olong MakeFitSpecArgs (ObitImageMF *image, olong maxThread,
-			      ofloat antSize, FitSpecFuncArg ***args, 
+			      ofloat antSize, olong nOrder,
+			      FitSpecFuncArg ***args, 
 			      ObitErr *err)
 {
   olong i, j, nx, nThreads;
-  ofloat pbmin = 0.01;
+  ofloat corAlpha=0.0,  pbmin = 0.01;
   gboolean doPBCor;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar *routine = "MakeFitSpecArgs";
   
-  /* Setup for threading */
-  /* How many threads? */
+  /* Spectral index correction to apply */
+  ObitInfoListGetTest(image->info, "corAlpha", &type, dim, &corAlpha);
+
+  /* Setup for threading -  How many threads? */
   nThreads = MAX (1, ObitThreadNumProc(image->thread));
   nThreads = MIN (nThreads, maxThread);
   nx = image->myDesc->inaxes[0];
@@ -1308,14 +2223,19 @@ static olong MakeFitSpecArgs (ObitImageMF *image, olong maxThread,
   for (i=0; i<nThreads; i++) {
     (*args)[i]->err       = err;
     (*args)[i]->desc      = ObitImageDescRef(image->myDesc);
-    (*args)[i]->ithread   = i;
+    if (nThreads>1)
+      (*args)[i]->ithread   = i;
+    else
+      (*args)[i]->ithread   = -1;
     (*args)[i]->thread    = image->thread;
     (*args)[i]->antSize   = antSize;
     (*args)[i]->doPBCorr  = doPBCor;
     (*args)[i]->BeamShape = ObitBeamShapeCreate ("BS", (ObitImage*)image, pbmin, antSize, doPBCor);
     (*args)[i]->nSpec     = image->nSpec;
-    (*args)[i]->nOrder    = image->maxOrder;
+    (*args)[i]->nOrder    = nOrder;
     (*args)[i]->alpha     = image->alpha;
+    (*args)[i]->corAlpha  = corAlpha;
+    (*args)[i]->refFreq   = image->refFreq;
     (*args)[i]->sigma     = g_malloc0(image->nSpec*sizeof(ofloat));
     (*args)[i]->workFlux  = g_malloc0(image->nSpec*sizeof(ofloat));
     (*args)[i]->workSigma = g_malloc0(image->nSpec*sizeof(ofloat));
@@ -1329,7 +2249,7 @@ static olong MakeFitSpecArgs (ObitImageMF *image, olong maxThread,
     for (j=0; j<(image->maxOrder+1); j++) {
       (*args)[i]->outData[j] = g_malloc0(nx*sizeof(ofloat*));
     }
-    (*args)[i]->fitArg    = ObitSpectrumFitMakeArg (image->nSpec, image->maxOrder+1, 
+    (*args)[i]->fitArg    = ObitSpectrumFitMakeArg (image->nSpec, nOrder+1, 
 						    image->refFreq, image->specFreq,
 						    FALSE, 
 						    &(*args)[i]->fitResult, err);
@@ -1396,7 +2316,7 @@ static void KillFitSpecArgs (olong nargs, FitSpecFuncArg **args)
  * \li outData   (nOrder+1) Arrays of fitted values 
  * \li fitArg    Fitting argument
  * \li fitResult Fitting result array
- * \li ithread   Thread number, >0 -> no threading 
+ * \li ithread   Thread number, <0 -> no threading 
  * \li thread    Obit Thread object 
  * \li err       Obit error stack object
  * \return NULL
@@ -1405,8 +2325,10 @@ gpointer ThreadFitSpec (gpointer args)
 {
   FitSpecFuncArg *largs  = (FitSpecFuncArg*)args;
   ofloat alpha             = largs->alpha;
+  ofloat corAlpha          = largs->corAlpha;
   olong   nSpec            = largs->nSpec;
   odouble *Freq            = largs->Freq;
+  odouble refFreq          = largs->refFreq;
   ofloat *sigma            = largs->sigma;
   ObitBeamShape *BeamShape = largs->BeamShape;
   ofloat **inData          = largs->inData;
@@ -1426,15 +2348,13 @@ gpointer ThreadFitSpec (gpointer args)
 
   /* Local */
   olong ix, i, nterm;
-  ofloat PBCorr = 1.0, pixel[2];
-  gboolean doJinc;
+  ofloat PBCorr = 1.0, pixel[2], spFact;
   ObitBeamShapeClassInfo *BSClass;
   odouble Angle=0.0, pos[2];
   ofloat fblank = ObitMagicF();
   gchar *routine = "ThreadFitSpec";
 
   nterm = nOrder+1;        /* Number of fitted spectral terms */
-  doJinc = Freq[0]>1.0e9;  /* Use polynomial or Jinc for PB corr? */
 
   /* Loop over row */
   for (ix=0; ix<desc->inaxes[0]; ix++) {
@@ -1455,29 +2375,43 @@ gpointer ThreadFitSpec (gpointer args)
       
       /* Load arrays */
       for (i=0; i<nSpec; i++) {
-	BeamShape->refFreq = Freq[i];  /* Set frequency */
+	ObitBeamShapeSetFreq (BeamShape, Freq[i]);  /* Set frequency */
 	PBCorr  = BSClass->ObitBeamShapeGainSym(BeamShape, Angle);
 	if (inData[i][ix]!=fblank) workFlux[i]  = inData[i][ix] / PBCorr;
 	else workFlux[i] = fblank;
-	workSigma[i] = sigma[i] / (PBCorr);
+	if (sigma[i]>1.0e-9) workSigma[i] = sigma[i] / (PBCorr);
+ 	else {workSigma[i] = 1.0e10; workFlux[i] = fblank;}
       }
     } else { /* No PB correction */
       /* Load arrays */
       for (i=0; i<nSpec; i++) {
 	workFlux[i]  = inData[i][ix];
-	workSigma[i] = sigma[i];
+	if (sigma[i]>1.0e-9) workSigma[i] = sigma[i];
+  	else {workSigma[i] = 1.0e10; workFlux[i] = fblank;}
       }
     }
+
+    /* Spectral index correction */
+    if (corAlpha!=0.0) {
+      for (i=0; i<nSpec; i++) {
+	if (workFlux[i]!=fblank) {
+	  spFact = (ofloat)pow(Freq[i]/refFreq, -corAlpha);
+	  workFlux[i]  *= spFact;
+	  workSigma[i] *= spFact;
+	}
+      }
+   }
     
     /* Fit spectrum */
     ObitSpectrumFitSingleArg (fitArg, workFlux, workSigma, fitResult);
 
     /* Spectral index correction */
-    if (nterm>=2) fitResult[1] += alpha;
+    if (nterm>=2) fitResult[1] += alpha + corAlpha;
     
     /* Save values */
     for (i=0; i<nterm; i++) {
       outData[i][ix] = fitResult[i];
+      if (fitResult[0]==fblank)  outData[i][ix] = fblank;
     }
     
   }  /* end loop over row */

@@ -1,10 +1,10 @@
-; $Id: MednFlag.TDF 199 2010-06-15 11:39:58Z bill.cotton $
+; $Id$
 ; MednFlag
 ;---------------------------------------------------------------
 ;! Obit Radio interferometry data editing software
 ;# Task Obit Imaging calibration
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2005-2010
+;;  Copyright (C) 2005-2014
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -45,6 +45,12 @@ inSeq                               Input UV data (seq. #)
 inDisk                              Input UV data disk drive #
 **PARAM** str 16 30
 Sources                             Source (pointings) list
+**PARAM** int 1 **DEF** -1
+Qual             -1.0              Source qualifier -1=>all
+**PARAM** str 4
+souCode                            Calibrator code '    '=>all
+**PARAM** int 1 **DEF** -1
+FreqID                             Freq. ID to select.
 **PARAM** float 2
 timeRange                           Time range to process.
 **PARAM** str 4
@@ -71,6 +77,9 @@ BPVer                               Bandpass table version
 flagVer                             Flag table version
 **PARAM** boo 1 **DEF** F
 doPol                               Apply polarization cal?
+**PARAM** int 1 **DEF** -1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
 **PARAM** str 48
 outFile                             FITS uvdata for output FG table
 **PARAM** str 12
@@ -89,6 +98,8 @@ flagSig                             Flagging level (sigma)
 alpha                               Smoothing parameter.
 **PARAM** float 1
 timeWind                            Sliding window interval (min)
+**PARAM** boo 1 **DEF** F
+killAll                             Flag all poln if any flagged
 **PARAM** float 1
 avgTime                             preaveraging time (min)
 **PARAM** int 1
@@ -146,6 +157,23 @@ Adverbs:
   Sources....List of sources (pointings) to be processed.
              '*' or blank = all; a "-" before a source name
              means all except ANY source named. 
+  Qual.......Only sources with a source qualifier number in the SU table
+             matching Qual will be used if Qual is >= 0.  If Qual < 0,
+             all qualifiers will be written.  These qualifiers will be
+             written to separate output files.  Note that outSeq must be
+             zero in this case.
+  souCode....Sources may be selected on the basis of the calibrator code
+             given in the SU table.
+                  '    ' => any calibrator code selected
+                  '*   ' => any non blank code (cal. only)
+                  '-CAL' => blank codes only (no calibrators)
+                  anything else = calibrator code to select.
+             NB: The souCode test is applied in addition to the other
+             tests, i.e. Sources and Qual, in the selection of sources to
+             process.
+  FreqID.....Frequency identifier to select (you may determine which is
+             applicable from the OPTYPE='SCAN' listing produced by
+             AIPS task LISTR). <=0=>any
   timeRange..Time range of the data to be processed. In order:
              Start and end times in days relative to ref. date.  
              Use  dhms2day to convert from human readable form
@@ -177,6 +205,9 @@ Adverbs:
                <0 => no bandpass correction to be applied.
   flagVer....FG table to apply prior to  editing. 0 => highest.
   doPol......True -> apply polarization calibration
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
 
       Output FG files, may be the same at the input
   outFile....Output FITS uvdata for FG table file name
@@ -197,6 +228,9 @@ Adverbs:
   timeWind...Sliding window width (min) over which each timeFlag
              averaged sample is compared with the window average.
              Must be several times timeAvg.
+  killAll....If True then is any Stokes correlation in a 
+             visibility/channel is flagged then all Stokes 
+             correlations are flagged.
 
       Averaging control
   avgTime....Interval (min) over which data is vector preaveraged
@@ -234,10 +268,9 @@ Adverbs:
              NB: This only improves performance if there are 
              multiple processors and/or cores in the host.
   taskLog....Log file to write messages to INSTEAD of the terminal
-             This is useful in long runs or batch files where
-             a bug in the ObitTalk message handling may cause
-             tasks to hang.  Path is absolute or relative to where
-             the task executes.
+             This is useful in long runs or batch files.
+             Path is absolute or relative to where the task 
+             executes.
   noScrat....A list of AIPS disk numbers on which you do not 
              wish scratch files
 ----------------------------------------------------------------

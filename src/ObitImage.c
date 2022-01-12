@@ -1,6 +1,6 @@
-/* $Id: ObitImage.c 157 2010-02-15 14:13:36Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2010                                          */
+/*;  Copyright (C) 2003-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -156,6 +156,7 @@ ObitImage* ObitImageFromFileInfo (gchar *prefix, ObitInfoList *inList,
   olong        trc[IM_MAXDIM] = {0,0,0,0,0,0,0};
   gboolean     exist;
   gchar        *keyword=NULL, *DataTypeKey = "DataType", *DataType=NULL;
+  gchar        *DTypeKey="DType";
   gchar        *routine = "ObitImageFromFileInfo";
 
   if (err->error) return out;  /* Previous error? */
@@ -183,7 +184,8 @@ ObitImage* ObitImageFromFileInfo (gchar *prefix, ObitInfoList *inList,
   g_free(keyword);
 
   /* File type - could be either AIPS or FITS */
-  if (prefix) keyword =  g_strconcat (prefix, DataTypeKey, NULL);
+  if (prefix && !strncmp(prefix,"out",3)) keyword =  g_strconcat (prefix, DTypeKey, NULL);
+  else if (prefix) keyword =  g_strconcat (prefix, DataTypeKey, NULL);
   else keyword =  g_strconcat (DataTypeKey, NULL);
   if (!ObitInfoListGetP (inList, keyword, &type, dim, (gpointer)&DataType)) {
     /* Try "DataType" */
@@ -196,6 +198,10 @@ ObitImage* ObitImageFromFileInfo (gchar *prefix, ObitInfoList *inList,
     }
   }
   g_free(keyword);
+
+  /* If blank try DataType */
+  if (!strncmp (DataType, "    ", 4)) 
+    ObitInfoListGetP (inList, "DataType", &type, dim, (gpointer)&DataType);
 
   if (!strncmp (DataType, "AIPS", 4)) { /* AIPS */
     /* AIPS disk */
@@ -279,6 +285,8 @@ ObitImage* ObitImageFromFileInfo (gchar *prefix, ObitInfoList *inList,
     } else { 
       strncpy (inFile, "No_Filename_Given", 128);
     }
+    inFile[128] = 0;
+    ObitTrimTrail(inFile);  /* No trailing blanks */
     g_free(keyword);
     
     /* input FITS disk */
@@ -318,11 +326,13 @@ ObitImage* ObitImageFromFileInfo (gchar *prefix, ObitInfoList *inList,
   if (err->error) Obit_traceback_val (err, routine, "inList", out);
 
   /* Set defaults BLC, TRC - use size on myIO as blc, trc incorporated into myDesc */
-  for (i=0; i<IM_MAXDIM; i++) {
-    if (blc[i]<=0) blc[i] = 1;
-    blc[i] = MAX (1,  blc[i]);
-    if (trc[i]<=0) trc[i] = ((ObitImageDesc*)out->myIO->myDesc)->inaxes[i];
-    trc[i] = MIN (trc[i], ((ObitImageDesc*)out->myIO->myDesc)->inaxes[i]);
+  if (exist) {
+    for (i=0; i<IM_MAXDIM; i++) {
+      if (blc[i]<=0) blc[i] = 1;
+      blc[i] = MAX (1,  blc[i]);
+      if (trc[i]<=0) trc[i] = ((ObitImageDesc*)out->myIO->myDesc)->inaxes[i];
+      trc[i] = MIN (trc[i], ((ObitImageDesc*)out->myIO->myDesc)->inaxes[i]);
+    }
   }
 
   /* Save blc, trc */
@@ -475,6 +485,9 @@ ObitImage* ObitImageZap (ObitImage *in, ObitErr *err)
     return ObitImageUnref(in); 
   }
 
+  /* Free image buffer if allocated */
+  in->image = ObitFArrayUnref(in->image);
+
   /* Delete Image and all tables  */
   ObitIOZap (in->myIO, err);
   if (err->error) Obit_traceback_val (err, routine, in->name, in);
@@ -609,6 +622,7 @@ ObitImage* ObitImageCopy (ObitImage *in, ObitImage *out, ObitErr *err)
     /* Output will initially have no associated tables */
     out->tableList = ObitTableListUnref(out->tableList);
     out->tableList = newObitTableList(out->name);
+    if (out->myIO) out->myIO->tableList = (Obit*)out->tableList;
     /* don't copy ObitThread  */
 }
 
@@ -736,6 +750,10 @@ void ObitImageClone  (ObitImage *in, ObitImage *out, ObitErr *err)
     return;
   }
 
+  /* Ensure in fully instantiated and OK  */
+  ObitImageFullInstantiate (in, TRUE, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
   /* deep copy any base class members */
   ParentClass = myClassInfo.ParentClass;
   g_assert ((ParentClass!=NULL) && (ParentClass->ObitCopy!=NULL));
@@ -748,7 +766,8 @@ void ObitImageClone  (ObitImage *in, ObitImage *out, ObitErr *err)
   /* Output will initially have no associated tables */
   out->tableList = ObitTableListUnref(out->tableList);
   out->tableList = newObitTableList(out->name);
-  /* don't copy ObitThread  */
+  if (out->myIO) out->myIO->tableList = (Obit*)out->tableList;
+ /* don't copy ObitThread  */
 
   /* Open to fully instantiate input and see if it's OK */
   iretCode = ObitImageOpen (in, OBIT_IO_ReadOnly, err);
@@ -901,6 +920,9 @@ void ObitImageClone2  (ObitImage *in1, ObitImage *in2, ObitImage *out,
   fact = 2.0 * fabs (pix3[0] - pix2[0]);
   fact = 1.0 + MIN (1.0, fact);
 
+  /* Take into account relative pixel sizes */
+  fact *= (fabs(in1->myDesc->cdelt[1]) / fabs(in2->myDesc->cdelt[1]));
+
   /* Increase size for possible differential rotation. */
   naxis[0] = (olong) (0.5+naxis[0]*fact);
   naxis[1] = (olong) (0.5+naxis[1]*fact);
@@ -929,9 +951,9 @@ void ObitImageClone2  (ObitImage *in1, ObitImage *in2, ObitImage *out,
   crpix[0] = (ofloat)((olong)(crpix[0]+0.5));
   crpix[1] = (ofloat)((olong)(crpix[1]+0.5));
 
- /* If it already exists and is big  enough, use it, create if needed */
-  if (out->image) out->image = ObitFArrayRealloc (out->image, 2, naxis);
-  else            out->image = ObitFArrayCreate (in1->name, 2, naxis);
+  /* Image buffer */
+  out->image = ObitFArrayUnref(out->image);            /* out with any old */
+  out->image = ObitFArrayCreate (in1->name, 2, naxis); /* in with the new */
 
   /* Copy basic in2 descriptor to out */
   out->myDesc = ObitImageDescCopy(in2->myDesc, out->myDesc, err);
@@ -1052,9 +1074,8 @@ ObitIOCode ObitImageOpen (ObitImage *in, ObitIOAccess access,
 
   /* Save info is actually doing IO (not Mem_only) */
   if (ObitIOIsA(in->myIO)) {
-    /* Add reference to tableList */
-    in->myIO->tableList = (Obit*)ObitUnref(in->myIO->tableList);
-    in->myIO->tableList = (Obit*)ObitRef(in->tableList);
+    /* Add copy of reference to tableList */
+    if (in->myIO) in->myIO->tableList = (Obit*)in->tableList;
     
     in->myIO->access = access; /* save access type */
     
@@ -1660,7 +1681,7 @@ void ObitImageSetBeamName (ObitImage *image, ObitErr *err)
 
     /* Allocate new cno */
     seq = entry->seq;
-    for (i=0; i<12;i++) AName[i] = entry->name[i]; AName[i] = 0;
+    for (i=0; i<12;i++) {AName[i] = entry->name[i];} AName[i] = 0;
     cno = ObitAIPSDirAlloc (disk, user, AName, AClass, AType, seq, &exist, err);
     g_free(entry);
     if (err->error)  Obit_traceback_msg (err, routine, image->myBeam->name);
@@ -1735,13 +1756,10 @@ void ObitImageSetSelect (ObitImage *in, ObitIOSize IOBy,
 {
    gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
    olong i;
-   olong tblc[IM_MAXDIM] = {1,1,1,1,1,1,1};
-   olong ttrc[IM_MAXDIM] = {0,0,0,0,0,0,0};
    gchar *routine = "ObitImageSetSelect";
  
   /*  Open image ReadOnly to get proper descriptor */
   dim[0] = IM_MAXDIM;
-  for (i=0; i<IM_MAXDIM; i++) {tblc[i] = 1; ttrc[i] = 0;}
   ObitInfoListPut (in->info, "BLC", OBIT_long, dim, blc, err); 
   ObitInfoListPut (in->info, "TRC", OBIT_long, dim, trc, err);
   if (err->error) Obit_traceback_msg (err, routine, in->name);
@@ -1804,13 +1822,92 @@ ObitImage* ObitImageGetBeam (ObitImage *image, olong beamNo,
 /**
  * Get highest order of image beam
  * Used for Sault-Wieringa wideband imaging, 0 for base class
- * \param image  Image whose beam name is to be set 
+ * \param image  Image whose beam order is sought
  * \return order number
  */
 olong ObitImageGetBeamOrder (ObitImage *image) 
 {
   return 0;
 } /* end ObitImageGetBeam */
+
+/**
+ * Get Frequency of current image plane
+ * \param image  Image in question
+ * \return Freq Frequency (Hz), 0.0 if none in descriptor
+ */
+odouble ObitImageGetPlaneFreq (ObitImage *image) 
+{
+  odouble Freq=0.0;
+  if (image->myDesc->jlocf>=0) 
+    Freq = image->myDesc->crval[image->myDesc->jlocf];
+  return Freq;
+} /* end ObitImageGetPlaneFreq */
+
+/**
+ *  Determine/reset image max/min , uses threads if enabled.
+ * \param in    Image to be updated
+ * \param err   Obit error structure
+ */
+void ObitImageMaxMin (ObitImage *in, ObitErr *err)
+{
+  olong plane[5], np1, np2, np3, np4, np5, nax, i1, i2, i3, i4, i5, pos[2];
+  ofloat val, fblank = ObitMagicF(), maxval=-1.0e5, minval=1.0e5;
+  ObitImageDesc *Desc=in->myDesc, *IODesc=(ObitImageDesc*)in->myIO->myDesc;
+  gchar *routine="ObitImageMaxMin";
+
+  /* error checks */
+  if (err->error) return;
+  g_assert (ObitImageIsA(in));
+
+  /* Open */
+  ObitImageOpen (in, OBIT_IO_ReadWrite, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+  nax = in->myDesc->naxis;
+  np1 = MAX(1, in->myDesc->inaxes[2]);
+  np2 = MAX(1, in->myDesc->inaxes[3]); if (nax<4) np2 = 1;
+  np3 = MAX(1, in->myDesc->inaxes[4]); if (nax<5) np3 = 1;
+  np4 = MAX(1, in->myDesc->inaxes[5]); if (nax<6) np4 = 1;
+  np5 = MAX(1, in->myDesc->inaxes[6]); if (nax<7) np5 = 1;
+  for (i5=1; i5<=np5; i5++) {
+    plane[4] = i5;
+    for (i4=1; i4<=np4; i4++) {
+      plane[3] = i4;
+      for (i3=1; i3<=np3; i3++) {
+	plane[2] = i3;
+	for (i2=1; i2<=np2; i2++) {
+	  plane[1] = i2;
+	  for (i1=1; i1<=np1; i1++) {
+	    plane[0] = i1;
+	    ObitImageGetPlane (in, NULL, plane, err);
+	    if (err->error) Obit_traceback_msg (err, routine, in->name);
+	    val = ObitFArrayMax (in->image, pos);
+	    if (val!=fblank) maxval = MAX (val, maxval);
+	    val = ObitFArrayMin (in->image, pos);
+	    if (val!=fblank) minval = MIN (val, minval);
+	  } /* end loop 1 */
+	} /* end loop 2 */
+      } /* end loop 3 */
+    } /* end loop 4 */
+  } /* end loop 5 */
+
+  /* Update both descriptors */
+  if (maxval!=fblank) {Desc->maxval = maxval; IODesc->maxval = maxval;}
+  else                {Desc->maxval = fblank; IODesc->maxval = fblank;}
+  if (minval!=fblank) {Desc->minval = minval; IODesc->minval = minval;}
+  else                {Desc->minval = fblank; IODesc->minval = fblank;}
+
+  /* Mark as modified */
+  in->myStatus = OBIT_Modified;
+
+  /* Close */
+  ObitImageClose (in, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+  /* Message */
+  if (err->prtLv>1) Obit_log_error(err, OBIT_InfoErr, "New image Max/Min %12.3g %12.3g",
+				   maxval, minval);
+
+} /* end ObitImageMaxMin  */
 
 /*-------Private functions called by ObitData class ------*/
 /** Private:  Copy Constructor for scratch file*/
@@ -1941,6 +2038,10 @@ static void ObitImageClassInfoDefFn ( gpointer inClass)
     (ObitImageGetBeamFP)ObitImageGetBeam;
   theClass->ObitImageGetBeamOrder = 
     (ObitImageGetBeamOrderFP)ObitImageGetBeamOrder;
+  theClass->ObitImageGetPlaneFreq = 
+    (ObitImageGetPlaneFreqFP)ObitImageGetPlaneFreq;
+  theClass->ObitImageMaxMin = 
+    (ObitImageMaxMinFP)ObitImageMaxMin;
 
   /* Function pointers referenced from ObitData class */
   theClass->newObitDataScratch  = (newObitDataScratchFP)newObitDataImageScratch;
@@ -2023,6 +2124,7 @@ void ObitImageClear (gpointer inn)
 
   /* delete this class members */
   in->tableList = ObitUnref(in->tableList);
+  if (in->myIO) in->myIO->tableList = (Obit*)in->tableList;
   in->thread    = ObitThreadUnref(in->thread);
   in->info      = ObitInfoListUnref(in->info);
   in->myIO      = ObitUnref(in->myIO);
@@ -2066,7 +2168,7 @@ static void ObitImageGetSelect (ObitInfoList *info, ObitImageDesc* desc,
 		       (gpointer)&sel->FileType, err)) {
     /* couldn't find it - add message to err and return */
     Obit_log_error(err, OBIT_Error, 
-		"%s: entry FileType not in InfoList Object %s",	routine, sel->name);
+		"%s: Image %s incompletely defined",	routine, sel->name);
   }
 
   /* set defaults */

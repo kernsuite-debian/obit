@@ -1,7 +1,7 @@
-/* $Id: UVCopy.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit Task to copy uv data                        .                */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005-2010                                          */
+/*;  Copyright (C) 2005-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -161,6 +161,7 @@ ObitInfoList* UVCopyIn (int argc, char **argv, ObitErr *err)
 
   /* Make default inputs InfoList */
   list = defaultInputs(err);
+  myOutput = defaultOutputs(err);
 
   /* command line arguments */
   /* fprintf (stderr,"DEBUG arg %d %s\n",argc,argv[0]); DEBUG */
@@ -310,7 +311,6 @@ ObitInfoList* UVCopyIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -574,10 +574,10 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gboolean     doCalSelect;
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
-    "Sources", "souCode", "Qual", "Stokes", "timeRange", 
-    "BChan", "EChan", "BIF", "EIF", "FreqID", "corrType", 
-    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", "doPol",
-    "Smooth", "Antennas",  "subA", "Sources", "souCode", "Qual",
+    "Sources", "souCode", "Qual", "Stokes", "timeRange", "UVRange",
+    "BChan", "EChan", "chanInc", "BIF", "EIF", "IFInc", "FreqID", "corrType", 
+    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", 
+    "doPol", "PDVer", "Smooth", "Antennas",  "subA", "Sources", "souCode", "Qual",
      NULL};
   gchar *routine = "getInputData";
 
@@ -635,6 +635,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     } else { 
       strncpy (inFile, "No_Filename_Given", 128);
     }
+    inFile[128] = 0;
     ObitTrimTrail(inFile);  /* remove trailing blanks */
     
     /* input FITS disk */
@@ -656,6 +657,8 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   doCalib = -1;
   ObitInfoListGetTest(myInput, "doCalib",  &type, dim, &doCalib);
   doCalSelect = doCalSelect || (doCalib>0);
+  /* Always */
+  doCalSelect = TRUE;
   ObitInfoListAlwaysPut (myInput, "doCalSelect", OBIT_bool, dim, &doCalSelect);
  
 
@@ -771,6 +774,7 @@ ObitUV* setOutputData (ObitInfoList *myInput, ObitUV* inData, ObitErr *err)
       ObitInfoListGetP (myInput, "inFile", &type, dim, (gpointer)&strTemp);
     n = MIN (128, dim[0]);
     for (i=0; i<n; i++) outFile[i] = strTemp[i]; outFile[i] = 0;
+    outFile[128] = 0;
     ObitTrimTrail(outFile);  /* remove trailing blanks */
 
     /* Save any defaulting on myInput */
@@ -817,10 +821,10 @@ void UVCopyHistory (ObitInfoList* myInput, ObitUV* inData, ObitUV* outData,
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", 
-    "inFile",  "inDisk", "inName", "inClass", "inSeq",
-    "FreqID", "BChan", "EChan", "BIF", "EIF",  "Stokes", 
+    "inFile",  "inDisk", "inName", "inClass", "inSeq","timeRange","UVRange",
+    "FreqID", "BChan", "EChan", "chanInc", "BIF", "EIF", "IFInc", "Stokes", 
     "Sources",  "Qual", "souCode", "subA", "Antennas", 
-    "doCalSelect", "doCalib", "gainUse", "doPol", "flagVer", 
+    "doCalSelect", "doCalib", "gainUse", "doPol", "PDVer", "flagVer", 
     "doBand", "BPVer", "Smooth",  "corrType", 
     "outFile",  "outDisk",  "outName", "outClass", "outSeq", "Compress",
     NULL};

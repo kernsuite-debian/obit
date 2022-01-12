@@ -1,6 +1,6 @@
-/* $Id: ObitSkyModelMF.c 155 2010-02-04 13:17:17Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -27,18 +27,22 @@
 /*--------------------------------------------------------------------*/
 
 #include <math.h>
+#include "ObitFFT.h"
 #include "ObitThread.h"
+#if HAVE_GPU==1  /* GPU? */
+#include "ObitGPUSkyModel.h"
+#endif /* HAVE_GPU */
 #include "ObitSkyModelMF.h"
 #include "ObitSkyModelVMSquint.h"
 #include "ObitSkyModelVMIon.h"
 #include "ObitImageMosaic.h"
 #include "ObitTableCCUtil.h"
-#include "ObitFFT.h"
 #include "ObitUVUtil.h"
 #include "ObitImageUtil.h"
 #include "ObitPBUtil.h"
 #include "ObitMem.h"
 #include "ObitSinCos.h"
+#include "ObitExp.h"
 #include "ObitImageMF.h"
 #include "ObitBeamShape.h"
 #include "ObitSpectrumFit.h"
@@ -67,7 +71,7 @@ static ObitSkyModelMFClassInfo myClassInfo = {FALSE};
 /*--------------- File Global Variables  ----------------*/
 
 /** Over sampling factor in uv plane */
-olong OverSampleMF=2; 
+olong OverSampleMF=4; 
 
 /*----------------- Macroes ---------------------------*/
 /** Half width of gridded subtraction interpolation kernal */
@@ -101,6 +105,10 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
 				       olong field, olong *inCCVer, olong *outCCver,
 				       olong *startCC, olong *endCC, ofloat range[2],
 				       ObitErr *err);
+
+/** Function to obtin oversampling factor */
+static olong GetOverSample (ObitSkyModelMF* in, olong field, ObitErr *err);
+
 /*---------------Private structures----------------*/
 /* FT threaded function argument */
 typedef struct {
@@ -122,6 +130,8 @@ typedef struct {
   gboolean doAlphaCorr;
   /* Prior spectral index correction */
   ofloat priorAlpha;
+  /* Reference frequency (Hz) for Prior spectral index */
+  odouble priorAlphaRefF;
   /* thread number, >0 -> no threading  */
   olong        ithread;
   /* Obit error stack object */
@@ -214,6 +224,7 @@ ObitSkyModelMF* newObitSkyModelMF (gchar* name)
  *      \li "xxxnThreads"        olong   Number of threads
  *      \li "xxxdoAlphaCorr"     boolean TRUE if prior spectral index corrections to be made
  *      \li "xxxpriorAlpha"      ofloat  prior spectral index applied to be corrected.
+ *      \li "xxxpriorAlphaRefF"  odouble prior spectral index ref freq (Hz).
  *      \li "xxxdoSmoo"          boolean TRUE if tabulated spectra to be smooothed
  * \param err     ObitErr for reporting errors.
  * \return the new object.
@@ -542,10 +553,16 @@ ObitSkyModelMF* ObitSkyModelMFFromInfo (gchar *prefix, ObitInfoList *inList,
   ObitInfoListGetTest(inList, keyword, &type, dim, &out->doAlphaCorr);
   g_free(keyword);
 
-  /* ""xxxpriorAlpha"        olong   Number of threads */
+  /* ""xxxpriorAlpha"    ofloat  prior spectral index applied to be corrected. */
   if (prefix) keyword = g_strconcat (prefix, "priorAlpha", NULL);
   else        keyword = g_strdup("priorAlpha");
   ObitInfoListGetTest(inList, keyword, &type, dim, &out->priorAlpha);
+  g_free(keyword);
+
+  /* ""xxxpriorAlphaRefF"    odouble prior spectral index ref freq (Hz). */
+  if (prefix) keyword = g_strconcat (prefix, "priorAlpha", NULL);
+  else        keyword = g_strdup("priorAlphaRefF");
+  ObitInfoListGetTest(inList, keyword, &type, dim, &out->priorAlphaRefF);
   g_free(keyword);
 
   /* ""xxxdoSmoo"        olong   Number of threads */
@@ -635,11 +652,11 @@ ObitSkyModel* ObitSkyModelMFCopy  (ObitSkyModel *inn, ObitSkyModel *outt, ObitEr
   out->doGrid   = in->doGrid;
   if ((out->mosaic) && (out->mosaic->numberImages>0)) {
     number = out->mosaic->numberImages;
-    out->CCver = ObitMemRealloc (out->CCver, sizeof(olong)*number);
+    out->CCver = ObitMemRealloc (out->CCver, sizeof(olong)*number*2);
     for (i=0; i<number; i++) out->CCver[i] = in->CCver[i];
-    out->startComp = ObitMemRealloc (out->startComp, sizeof(olong)*number);
+    out->startComp = ObitMemRealloc (out->startComp, sizeof(olong)*number*2);
     for (i=0; i<number; i++) out->startComp[i] = in->startComp[i];
-    out->endComp = ObitMemRealloc (out->endComp, sizeof(olong)*number);
+    out->endComp = ObitMemRealloc (out->endComp, sizeof(olong)*number*2);
     for (i=0; i<number; i++) out->endComp[i] = in->endComp[i];
   }
 
@@ -712,14 +729,18 @@ ObitSkyModelMF* ObitSkyModelMFCreate (gchar* name, ObitImageMosaic* mosaic)
   out->mosaic = ObitImageMosaicRef(mosaic);
   if ((out->mosaic) && (out->mosaic->numberImages>0)) {
     number = out->mosaic->numberImages;
-    out->CCver = ObitMemRealloc (out->CCver, sizeof(olong)*number);
+    out->CCver = ObitMemRealloc (out->CCver, sizeof(olong)*number*2);
     for (i=0; i<number; i++) out->CCver[i] = 0;
-    out->startComp = ObitMemRealloc (out->startComp, sizeof(olong)*number);
-    out->endComp   = ObitMemRealloc (out->endComp, sizeof(olong)*number);
+    out->startComp = ObitMemRealloc (out->startComp, sizeof(olong)*number*2);
+    out->endComp   = ObitMemRealloc (out->endComp, sizeof(olong)*number*2);
     for (i=0; i<number; i++) out->startComp[i] = 1;
     for (i=0; i<number; i++) out->endComp[i] = 0;
   }
 
+  /* Possibly using GPU? */
+#if HAVE_GPU==1  /*  GPU? */
+    out->GPUSkyModel = ObitGPUSkyModelCreate ("GPU", "DFT");
+#endif /* HAVE_GPU */
   return out;
 } /* end ObitSkyModelMFCreate */
 
@@ -735,11 +756,12 @@ void ObitSkyModelMFInitMod (ObitSkyModel* inn, ObitUV *uvdata, ObitErr *err)
   ObitImageMF *image0;
   olong i, j, k, nSpec, nif, nfreq, n;
   ofloat phase=0.5, cp, sp;
-  odouble test;
+  gboolean lsb, forceDFT;
   ObitInfoType type;
+  union ObitInfoListEquiv InfoReal; 
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   FTFuncArg *args;
-  gchar keyword[12];
+  gchar keyword[20];
   gchar *routine="SkyModelMFInitMod";
   
   /* Fourier transform threading routines */
@@ -759,20 +781,22 @@ void ObitSkyModelMFInitMod (ObitSkyModel* inn, ObitUV *uvdata, ObitErr *err)
     for (i=0; i<in->nThreads; i++) {
       args = (FTFuncArg*)in->threadArgs[i];
       strcpy (args->type, "MF");  /* Enter type as first entry */
-      args->in     = in;
-      args->uvdata = uvdata;
-      args->ithread= i;
-      args->doAlphaCorr = in->doAlphaCorr;
-      args->priorAlpha  = in->priorAlpha;
-      args->err    = err;
+      args->in             = in;
+      args->uvdata         = uvdata;
+      args->ithread        = i;
+      args->doAlphaCorr    = in->doAlphaCorr;
+      args->priorAlpha     = in->priorAlpha;
+      args->priorAlphaRefF = in->priorAlphaRefF;
+      args->err            = err;
       if (args->Interp) 
 	for (k=0; k<args->nSpec; k++) 
 	  args->Interp[k] = ObitCInterpolateUnref(args->Interp[k]);
     }
   } /* end initialize */
 
-  /* Init Sine/Cosine calculator - just to be sure about threading */
+  /* Init Sine/Cosine calculator, exp calculator - just to be sure about threading */
   ObitSinCosCalc(phase, &sp, &cp);
+  ObitExpInit();
 
   /* Create spectrum info arrays */
   nSpec = 1;
@@ -783,11 +807,17 @@ void ObitSkyModelMFInitMod (ObitSkyModel* inn, ObitUV *uvdata, ObitErr *err)
   /* get number of and channel frequencies for CC spectra from 
      CC table on first image in mosaic */
   if (nSpec>1) {
-    in->specFreq = g_malloc0(nSpec*sizeof(odouble));
+    in->specFreq   = g_malloc0(nSpec*sizeof(odouble));
+    in->specFreqLo = g_malloc0(nSpec*sizeof(odouble));
+    in->specFreqHi = g_malloc0(nSpec*sizeof(odouble));
     for (i=0; i<nSpec; i++) {
       in->specFreq[i] = 1.0;
       sprintf (keyword, "FREQ%4.4d",i+1);
       ObitInfoListGetTest(image0->myDesc->info, keyword, &type, dim, &in->specFreq[i]);
+      sprintf (keyword, "FREL%4.4d",i+1);
+      ObitInfoListGetTest(image0->myDesc->info, keyword, &type, dim, &in->specFreqLo[i]);
+      sprintf (keyword, "FREH%4.4d",i+1);
+      ObitInfoListGetTest(image0->myDesc->info, keyword, &type, dim, &in->specFreqHi[i]);
     }
   } else { /* Bummer */
     Obit_log_error(err, OBIT_Error,"%s No Frequency info in Image header for %s", 
@@ -796,25 +826,49 @@ void ObitSkyModelMFInitMod (ObitSkyModel* inn, ObitUV *uvdata, ObitErr *err)
   }
 
   /* Prior spectral index */
-  ObitInfoListGetTest(image0->myDesc->info, "ALPHA", &type, dim, &in->priorAlpha);
+  InfoReal.flt = 0.0;   type = OBIT_float;
+  ObitInfoListGetTest(image0->myDesc->info, "ALPHA", &type, dim, &InfoReal);
+  if (type==OBIT_double) in->priorAlpha = (ofloat)InfoReal.dbl;
+  if (type==OBIT_float)  in->priorAlpha = (ofloat)InfoReal.flt;
+
+  in->priorAlphaRefF = in->refFreq;
+  ObitInfoListGetTest(image0->myDesc->info, "RFALPHA", &type, dim, &in->priorAlphaRefF);
   
-  /* Make array of which coarse spectrum value is closest to each uv channel */
+  /* Make array of which coarse spectrum value corresponds to each uv channel */
   nfreq = uvdata->myDesc->inaxes[uvdata->myDesc->jlocf];
   if (uvdata->myDesc->jlocif>=0) 
     nif = uvdata->myDesc->inaxes[uvdata->myDesc->jlocif];
   else nif = 1;
+  lsb = uvdata->myDesc->cdelt[uvdata->myDesc->jlocf]<0.0; /* Lower sideband? */
   n = nfreq*nif;
   in->specIndex = g_malloc0(n*sizeof(olong)); 
+  forceDFT = FALSE;   /* Need to force DFT? */
   for (i=0; i<n; i++) {
-    test = 1.0e20;
     in->specIndex[i] = -1;
     for (j=0; j<nSpec; j++) {
-      if (fabs(uvdata->myDesc->freqArr[i]- in->specFreq[j])<test) {
-	test = fabs(uvdata->myDesc->freqArr[i]- in->specFreq[j]);
-	in->specIndex[i] = j;
-      }
+	if (uvdata->myDesc->freqArr[i] >= in->specFreqLo[j]) in->specIndex[i] = j;
+    }
+    /* If frequency out of range, force DFT */
+    if (in->specIndex[i]<0) {
+      forceDFT = TRUE;
+      /* Set to closest */
+      if ( lsb && (uvdata->myDesc->freqArr[i]<in->specFreqLo[nSpec-1]))      in->specIndex[i] = nSpec-1;
+      else if ( lsb && (uvdata->myDesc->freqArr[i]>in->specFreqHi[0]))       in->specIndex[i] = 0;
+      else if (!lsb && (uvdata->myDesc->freqArr[i]<in->specFreqLo[0]))       in->specIndex[i] = 0;
+      else if (!lsb && (uvdata->myDesc->freqArr[i]>in->specFreqHi[nSpec-1])) in->specIndex[i] = nSpec-1;
+      else in->specIndex[i] = 0;  /* Shouldn't happen */
     }
   } /* End of loop making lookup table */
+
+  /* Force DFT? */
+  if (forceDFT) {
+    Obit_log_error(err, OBIT_InfoWarn, "%s: Input freq out of table range, force DFT method",
+		   routine);
+    in->modelMode = OBIT_SkyModel_DFT;
+  }
+
+  /* Choose mode if requested */
+  ObitSkyModelMFChose (inn, uvdata);
 
   /* Tell selected model info if prtLv>1 */
   if (in->prtLv>1) {
@@ -826,6 +880,16 @@ void ObitSkyModelMFInitMod (ObitSkyModel* inn, ObitUV *uvdata, ObitErr *err)
       Obit_log_error(err, OBIT_InfoErr, "SkyModelMF using Fastest calculation type");
   }
 
+#if HAVE_GPU==1  /*  GPU?*/
+  /* Init GPU, create object if necessary */
+  if (in->GPUSkyModel==NULL)
+    in->GPUSkyModel = ObitGPUSkyModelCreate ("GPU", "DFT");
+  const ObitGPUSkyModelClassInfo *GPUClass;
+  GPUClass = (ObitGPUSkyModelClassInfo*)in->GPUSkyModel->ClassInfo;
+  if ((in->doGPU) && (in->modelMode==OBIT_SkyModel_DFT))
+    GPUClass->ObitGPUSkyModelDFTInit(in->GPUSkyModel, (Obit*)in, uvdata, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+#endif /* HAVE_GPU */
 } /* end ObitSkyModelMFInitMod */
 
 /**
@@ -863,19 +927,37 @@ void ObitSkyModelMFShutDownMod (ObitSkyModel* inn, ObitUV *uvdata, ObitErr *err)
   }
 
   /* Cleanup arrays */
-  if (in->specFreq)  g_free(in->specFreq);  in->specFreq = NULL;
-  if (in->specIndex) g_free(in->specIndex); in->specIndex = NULL;
+  if (in->specFreq)    g_free(in->specFreq);    in->specFreq   = NULL;
+  if (in->specFreqLo)  g_free(in->specFreqLo);  in->specFreqLo = NULL;
+  if (in->specFreqHi)  g_free(in->specFreqHi);  in->specFreqHi = NULL;
+  if (in->specIndex)   g_free(in->specIndex);   in->specIndex  = NULL;
+#if HAVE_GPU==1  /*  GPU? */
+  in->GPUSkyModel = ObitGPUSkyModelUnref (in->GPUSkyModel);
+#endif /* HAVE_GPU */
 } /* end ObitSkyModelMFShutDownMod */
 
 /**
  * Initializes an ObitSkyModelMF for a pass through data in time order
- * No op in this class
- * \param inn  SkyModel to initialize
+ * Copy model to GPU if used.
+ * \param in   SkyModel to initialize
  * \param err  Obit error stack object.
  */
-void ObitSkyModelMFInitModel (ObitSkyModel* inn, ObitErr *err)
+void ObitSkyModelMFInitModel (ObitSkyModel* in, ObitErr *err)
 {
-  /* nada */
+#if HAVE_GPU==1  /*  GPU? */
+  gchar *routine = "ObitSkyModelInitModel";
+  const ObitGPUSkyModelClassInfo *GPUClass;
+  GPUClass = (ObitGPUSkyModelClassInfo*)in->GPUSkyModel->ClassInfo;
+  if ((in->doGPU) && (in->modelMode==OBIT_SkyModel_DFT) && 
+      ((in->modType==OBIT_SkyModel_PointMod)      || 
+       (in->modType==OBIT_SkyModel_PointModSpec)  || 
+       (in->modType==OBIT_SkyModel_PointModTSpec) ||
+       (in->modType==OBIT_SkyModel_GaussMod)      || 
+       (in->modType==OBIT_SkyModel_GaussModSpec)  || 
+       (in->modType==OBIT_SkyModel_GaussModTSpec)))
+    GPUClass->ObitGPUSkyModelDFTSetMod (in->GPUSkyModel, (Obit*)in, in->comps, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+#endif /* HAVE_GPU */
 } /* end ObitSkyModelMFInitModel */
 
 /**
@@ -898,17 +980,13 @@ gboolean ObitSkyModelMFLoadPoint (ObitSkyModel *inn, ObitUV *uvdata, ObitErr *er
 {
   ObitSkyModelMF *in = (ObitSkyModelMF*)inn;
   gboolean gotSome = FALSE;
-  ObitIOCode retCode = OBIT_IO_SpecErr;
   olong i, cnt, ndim, naxis[2];
   ofloat *table, const2, ccrot, ssrot, cpa, spa, uvrot, xmaj, xmin;
-  ofloat dxyzc[3], xxoff, yyoff, zzoff;
+  ofloat dxyzc[3], xxoff, yyoff, zzoff, a;
   gchar *routine = "ObitSkyModelMFLoadPoint";
   
   /* error checks */
   if (err->error) return gotSome;
-  retCode = OBIT_IO_OK;
-
-  /* NEEDS MORE WORK TO BE USEFUL */
 
   gotSome = (in->pointFlux * in->factor!=0.0);  /* Non zero model? */
   if (!gotSome) return gotSome;
@@ -943,8 +1021,12 @@ gboolean ObitSkyModelMFLoadPoint (ObitSkyModel *inn, ObitUV *uvdata, ObitErr *er
   if (in->modType==OBIT_SkyModel_GaussModTSpec)   naxis[0] += 3; /* Gaussian */
   if (in->modType==OBIT_SkyModel_USphereMod)      naxis[0] += 2; /* Uniform sphere */
   if (in->modType==OBIT_SkyModel_USphereModTSpec) naxis[0] += 2; /* Uniform sphere */
+  if (in->modType==OBIT_SkyModel_expDiskMod)     naxis[0] += 2; /* Exponential disk */
+  if (in->modType==OBIT_SkyModel_expDiskModSpec) naxis[0] += 2; /* Exponential disk */
   /* Any spectral terms */
   naxis[0] += in->nSpecTerm;
+  /* Plus component spectral index if needed */
+  if (in->nSpecTerm>0) naxis[0]++;
   if (in->comps!=NULL) in->comps = ObitFArrayRealloc(in->comps, ndim, naxis);
   else in->comps = ObitFArrayCreate("Components", ndim, naxis);
 
@@ -991,14 +1073,30 @@ gboolean ObitSkyModelMFLoadPoint (ObitSkyModel *inn, ObitUV *uvdata, ObitErr *er
   /* Uniform sphere */
   if (in->modType==OBIT_SkyModel_USphereMod) {
     table[0] = 3.0 * in->pointFlux * in->factor;
-    table[4] = in->pointParms[1]  * 0.109662271 * 2.7777778e-4;
+    table[4] = in->pointParms[0]  * 0.109662271 * 2.7777778e-4;
     table[5] = 0.1;
  }
   /* Uniform sphere + spectrum*/
   if (in->modType==OBIT_SkyModel_USphereModSpec) {
     table[0] = 3.0 * in->pointFlux * in->factor;
-    table[4] = in->pointParms[1]  * 0.109662271 * 2.7777778e-4;
+    table[4] = in->pointParms[0]  * 0.109662271 * 2.7777778e-4;
     table[5] = 0.1;
+    for (i=0; i<in->nSpecTerm; i++) table[i+6] = in->pointParms[i+4];
+ }
+
+  /* Exponential disk parameters 1/r0^2, 1/r0^3 */
+  if (in->modType==OBIT_SkyModel_expDiskMod) {
+    if (in->pointParms[0]>1.0e-10) a = 1.0 / (DG2RAD*in->pointParms[0]);
+    else                           a = 1.0e7;
+    table[4] = a * a;
+    table[5] = a * a * a;
+ }
+  /* Exponential disk + spectrum*/
+  if (in->modType==OBIT_SkyModel_expDiskModSpec) {
+    if (in->pointParms[0]>1.0e-10) a = 1.0 / (DG2RAD*in->pointParms[0]);
+    else                           a = 1.0e7;
+    table[4] = a * a;
+    table[5] = a * a * a;
     for (i=0; i<in->nSpecTerm; i++) table[i+6] = in->pointParms[i+4];
  }
 
@@ -1013,6 +1111,7 @@ gboolean ObitSkyModelMFLoadPoint (ObitSkyModel *inn, ObitUV *uvdata, ObitErr *er
  * Multiplies by factor member and any prior spectral index correction.
  * This function may be overridden in a derived class and 
  * should always be called by its function pointer.
+ * Allows mixed points and Gaussians, one per CC Table
  * Adapted from the AIPSish QNOT:VISDFT
  * \param inn    SkyModelMF 
  * \param n      Image number on mosaic, if -1 load all images
@@ -1032,18 +1131,20 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
   ObitImageDesc *imDesc=NULL, *imIODesc=NULL;
   ObitUVDesc *uvDesc=NULL;
   ObitFArray *CompArr=NULL;
-  ObitSkyModelCompType modType;
+  ObitSkyModelCompType modType, maxModType=OBIT_SkyModel_PointMod;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-  olong warray, larray;
+  olong warray, larray, toff;
   ofloat *array, parms[20], *specCorr=NULL;
   olong ver, i, j, hi, lo, count, ncomp, startComp, endComp, irow, lrec;
-  olong nspec, iterm, outCCVer, ndim, naxis[2];
-  ofloat *table, xxoff, yyoff, zzoff;
+  olong nspec, iterm, maxTerm=1, outCCVer, ndim, naxis[2], lenEntry;
+  ofloat *table, xxoff, yyoff, zzoff, a;
   ofloat konst, konst2, xyz[3], xp[3], umat[3][3], pmat[3][3];
   ofloat ccrot, ssrot, xpoff, ypoff, maprot, uvrot;
-  ofloat dxyzc[3], cpa, spa, xmaj, xmin, range[2];
-  gboolean doCheck=FALSE, want, do3Dmul;
+  ofloat dxyzc[3], cpa, spa, xmaj, xmin, range[2], gp1=0., gp2=0., gp3=0.;
+  gboolean doCheck=FALSE, want, do3Dmul, noNeg, doZ, noSIfit;
+  gpointer fitArg=NULL;
+  ofloat *fitSigma=NULL, *fitParms=NULL, *Sigma=NULL;
   gchar *tabType = "AIPS CC";
   gchar *routine = "ObitSkyModelMFLoadComps";
   
@@ -1056,12 +1157,21 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
   /* UV descriptor */
   uvDesc = uvdata->myDesc;
 
+  /* Don't fit spectral index for polarization */
+  noSIfit = uvDesc->crval[uvdata->myDesc->jlocs]>1.;
+  noSIfit = noSIfit || (uvDesc->crval[uvdata->myDesc->jlocs]==-3.);
+  noSIfit = noSIfit || (uvDesc->crval[uvdata->myDesc->jlocs]==-4.);
+  noSIfit = noSIfit || (uvDesc->crval[uvdata->myDesc->jlocs]<-6.);
+
   konst = DG2RAD * 2.0 * G_PI;
   /* konst2 converts FWHM(deg) to coefficients for u*u, v*v, u*v */
-  konst2 = DG2RAD * (G_PI / 1.17741022) * sqrt (0.5);
+  /*konst2 = DG2RAD * (G_PI / 1.17741022) * sqrt (0.5);*/
+  /*konst2 = DG2RAD * (G_PI / 1.17741022) * sqrt (0.5);*/
+  konst2 = DG2RAD * sqrt(2.0) * G_PI / 2.35482044;
 
   /* Loop over images counting CCs */
   count = 0;
+  maxTerm = in->nSpec;
   in->modType = OBIT_SkyModel_Unknown; /* Model type not known */
   if (in->mosaic) {lo = 0; hi = in->mosaic->numberImages-1;}
   else {lo = 0; hi = 0;}
@@ -1104,9 +1214,13 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
     /* If only 3 col, or parmsCol 0 size then this is a point model */
     if ((CCTable->myDesc->nfield==3) || 
 	(CCTable->parmsCol<0) ||
-	(CCTable->myDesc->dim[CCTable->parmsCol]<=0))
-      in->modType = OBIT_SkyModel_PointMod;
-    if ((in->modType == OBIT_SkyModel_Unknown) && (in->startComp[i]<=endComp)) {
+	(CCTable->myDesc->dim[CCTable->parmsCol]<=0)) {
+      if (in->startComp[i]<=endComp) {
+	in->modType = OBIT_SkyModel_PointMod;
+	maxModType  =  MAX (maxModType, in->modType);
+      }
+      /* Check type of all tables with components to subtract */
+    } else if (in->startComp[i]<=endComp) {
       /* Create table row */
       CCRow = newObitTableCCRow (CCTable);
       /* Read first */
@@ -1120,13 +1234,14 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
 
       /* Get model type */
       in->modType = CCRow->parms[3] + 0.5;
+      maxModType  =  MAX (maxModType, in->modType);
       /* Release table row */
       CCRow = ObitTableCCRowUnref (CCRow);
     }
 
     /* Do we need to check model type */
-    doCheck = (CCTable->myDesc->nfield>4) && (CCTable->parmsCol>=0) && 
-      (CCTable->myDesc->dim[CCTable->parmsCol][0]>=3);
+    doCheck = doCheck || ((CCTable->myDesc->nfield>4) && (CCTable->parmsCol>=0) && 
+      (CCTable->myDesc->dim[CCTable->parmsCol][0]>=3));
     
     /* Close */
     retCode = ObitTableCCClose (CCTable, err);
@@ -1143,10 +1258,15 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
       imIODesc = (ObitImageDesc*)in->mosaic->images[0]->myIO->myDesc;
       nspec = imIODesc->inaxes[imIODesc->jlocf];
       ObitInfoListGetTest (in->mosaic->images[i]->myDesc->info, "NSPEC", &type, dim, &nspec);
+      maxTerm = MAX (nspec, maxTerm);
       in->nSpec = nspec;  /* Number of terms in the spectrum */
     }
 
   } /* end loop counting CCs */
+
+  /* Use mode type, nSpec of the highest encountered */
+  in->modType = maxModType;
+  in->nSpec   = MAX (0, maxTerm);
 
   /* (re)allocate structure */
   ndim = 2;
@@ -1155,18 +1275,36 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
   if (in->modType==OBIT_SkyModel_GaussModTSpec)   naxis[0] += 3; /* Gaussian */
   if (in->modType==OBIT_SkyModel_USphereMod)      naxis[0] += 2; /* Uniform sphere */
   if (in->modType==OBIT_SkyModel_USphereModTSpec) naxis[0] += 2; /* Uniform sphere */
+  if (in->modType==OBIT_SkyModel_expDiskMod)      naxis[0] += 2; /* Exponential disk */
+  if (in->modType==OBIT_SkyModel_expDiskModTSpec) naxis[0] += 2; /* Exponential disk */
 
   /* Any spectral terms */
   naxis[0] += in->nSpec;
+  /* Plus component spectral index if needed */
+  if (in->nSpec>0) naxis[0]++;
+  lenEntry = naxis[0];  /* Length of table entry */
 
-  /* Spectral correction for prior alpha array */
+  /* Fitting component spectra? */
+  if ((!noSIfit) && (in->nSpec>1)) {
+    fitSigma = g_malloc0(in->nSpec*sizeof(ofloat));
+    Sigma    = g_malloc0(in->nSpec*sizeof(ofloat));
+    for (i=0; i<in->nSpec; i++) fitSigma[i] = 0.0001;  /* Comp spectrum fitting sigmas (Jy/bm) */
+    fitArg = ObitSpectrumFitMakeArg (in->nSpec, 2, in->specFreq[0], in->specFreq, 
+				     FALSE, &fitParms, err);
+    if (err->error) Obit_traceback_val (err, routine, in->name, gotSome);
+  } else {   /* Default spectral index = 0 */
+    fitParms = g_malloc(2*sizeof(ofloat));
+    fitParms[0] = fitParms[1] = 0.0;
+  }
+  
+  /* Spectral correction for prior alpha array -  also Factor */
   specCorr = g_malloc0(in->nSpec*sizeof(ofloat));
   if (in->doAlphaCorr && (in->priorAlpha!=0.0)) {
     for (i=0; i<in->nSpec; i++) {
-      specCorr[i] = pow((in->specFreq[i]/in->refFreq), in->priorAlpha);
+      specCorr[i] = in->factor*pow((in->specFreq[i]/in->priorAlphaRefF), in->priorAlpha);
     }
   } else { /* No correction */
-    for (i=0; i<in->nSpec; i++) specCorr[i] = 1.0;
+    for (i=0; i<in->nSpec; i++) specCorr[i] = in->factor;
   }
 
   if (in->comps!=NULL) in->comps = ObitFArrayRealloc(in->comps, ndim, naxis);
@@ -1187,9 +1325,9 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
     outCCVer = 0;
     ver = in->CCver[i];
     startComp = in->startComp[i];
-    endComp = in->endComp[i];
-    range[0] = in->minDFT;  /* Range of merged fluxes for DFT */
-    range[1] = 1.0e20;
+    endComp   = in->endComp[i];
+    range[0]  = in->minDFT;  /* Range of merged fluxes for DFT */
+    range[1]  = 1.0e20;
     if (endComp>=startComp) {
       CCTable = ObitSkyModelMFgetPBCCTab (in, uvdata, (olong)i, &ver, 
 					  &outCCVer, &startComp, &endComp, range, err); 
@@ -1226,12 +1364,16 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
     ssrot = sin (DG2RAD * (uvrot - maprot));
     ccrot = cos (DG2RAD * (uvrot - maprot));
 
+    /* noNeg FALSE for Stokes != I */
+    if ((fabs(imDesc->crval[imDesc->jlocs])-1.0)>0.01) noNeg = FALSE;
+    else noNeg = in->noNeg;
+
     /* Get position phase shift parameters */
     ObitUVDescShiftPhase(uvDesc, imDesc, dxyzc, err);
     if (err->error) Obit_traceback_val (err, routine, in->name, retCode);
     
     /*    Get reference pixel offsets from tangent point */
-    if (in->do3D) {
+    if (imDesc->do3D) {
       /* These should always be zero for 3D imaging? */
       xpoff = 0.0;
       ypoff = 0.0;
@@ -1261,95 +1403,189 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
     warray = CompArr->naxis[0];
     larray = CompArr->naxis[1];
     modType = (ObitSkyModelCompType)(parms[3]+0.5);  /* model type +20 */
+    in->modType = MAX (in->modType, modType);  /* Need highest number */
 
-    /* Test for consistency for spectral terms */
-    Obit_retval_if_fail ((CompArr->naxis[0]-3>=in->nSpec), err, retCode,
-			 "%s Inconsistent request for spectral corrections, %d < %d",  
-		       routine,CompArr->naxis[0]-3, in->nSpec);  
-   
+    /* Gaussian parameters */
+    if ((modType==OBIT_SkyModel_GaussMod) || (modType==OBIT_SkyModel_GaussModTSpec)) {
+      cpa = cos (DG2RAD * parms[2]);
+      spa = sin (DG2RAD * parms[2]);
+      xmaj = parms[0] * konst2;
+      xmin = parms[1] * konst2;
+      gp1 = -(((cpa * xmaj)*(cpa * xmaj)) + (spa * xmin)*(spa * xmin));
+      gp2 = -(((spa * xmaj)*(spa * xmaj)) + (cpa * xmin)*(cpa * xmin));
+      gp3 = -2.0 *  cpa * spa * (xmaj*xmaj - xmin*xmin);
+    }
+
+    /* Does the CC table have a DeltaZ column? */
+    doZ = CCTable->DeltaZCol>=0;
+    if (doZ) toff = 4;
+    else     toff = 3;
+
     /* loop over CCs */
     for (j=0; j<larray; j++) {
 
       /* Only down to first negative? */
-      if (in->noNeg && (array[0]<=0.0)) break;
+      if (noNeg && (array[0]<=0.0)) break;
 
-      /* Do we want this one? Only accept components of in->modType */
-      if (doCheck) want = in->modType==modType;
-	else want = TRUE;
-      want = want && (fabs(array[0])>in->minDFT);
-      want = want && (array[0]>in->minFlux);
+      /* Do we want this one?  */
+      want = (fabs(array[0])>in->minDFT);
+      want = want && (fabs(array[0])>in->minFlux);
       want = want && (ncomp<count);  /* don't overflow */
       if (want) {
 
+	/* Fitting component spectra? */
+	if ((!noSIfit) && (in->nSpec>1)) {
+	  for (iterm=0; iterm<in->nSpec; iterm++) table[iterm] = array[iterm+toff]*specCorr[iterm];
+	  /* Don't trust values exactly zero */
+	  for (iterm=0; iterm<in->nSpec; iterm++) {
+	    if (array[iterm+toff]==0.0) fitSigma[iterm]=1.0e10;
+	    else Sigma[iterm] = fitSigma[iterm];
+	  }
+	  ObitSpectrumFitSingleArg (fitArg, table, Sigma, fitParms);
+	  /* Sanity check */
+	  if (fitParms[1]<-2.0) fitParms[1] = 0.0;
+	  if (fitParms[1]> 2.0) fitParms[1] = 0.0;
+	} /* end fit component spectrum */
+
 	/* Point */
 	table[0] = array[0] * in->factor;
-	xp[0] = (array[1] + xpoff) * konst;
-	xp[1] = (array[2] + ypoff) * konst;
-	xp[2] = 0.0;
-	if (do3Dmul) {
-	  xyz[0] = xp[0]*umat[0][0] + xp[1]*umat[1][0];
-	  xyz[1] = xp[0]*umat[0][1] + xp[1]*umat[1][1];
-	  xyz[2] = xp[0]*umat[0][2] + xp[1]*umat[1][2];
-	  /* PRJMUL (2, XP, UMAT, XYZ); */
-	} else {  /* no rotn matrix */
-	  xyz[0] = ccrot * xp[0] + ssrot * xp[1];
-	  xyz[1] = ccrot * xp[1] - ssrot * xp[0];
-	  xyz[2] = 0.0;
- 	}
-	table[1] = xyz[0] + xxoff;
-	table[2] = xyz[1] + yyoff;
-	table[3] = xyz[2] + zzoff;
+	if (doZ && (array[3]!=0.0)) {   /* Already have shift stuff */
+	  table[1] = array[1] * konst;
+	  table[2] = array[2] * konst;
+	  table[3] = array[3] * konst;
+	} else {  /* add shift for facet */
+	  xp[0] = (array[1] + xpoff) * konst;
+	  xp[1] = (array[2] + ypoff) * konst;
+	  xp[2] = 0.0;
+	  if (do3Dmul) {
+	    xyz[0] = xp[0]*umat[0][0] + xp[1]*umat[1][0];
+	    xyz[1] = xp[0]*umat[0][1] + xp[1]*umat[1][1];
+	    xyz[2] = xp[0]*umat[0][2] + xp[1]*umat[1][2];
+	    /* PRJMUL (2, XP, UMAT, XYZ); */
+	  } else {  /* no rotn matrix */
+	    xyz[0] = ccrot * xp[0] + ssrot * xp[1];
+	    xyz[1] = ccrot * xp[1] - ssrot * xp[0];
+	    xyz[2] = xp[2];
+	  }
+	  table[1] = xyz[0] + xxoff;
+	  table[2] = xyz[1] + yyoff;
+	  table[3] = xyz[2] + zzoff;
+	} /* end add shift */
+
+	/* Zero rest in case */
+	for (iterm=4; iterm<lenEntry; iterm++) table[iterm] = 0.0;
 
 	/* DEBUG
         fprintf (stderr,"%s: comp %d   pos %g %g %g xyz %g %g %g poff %g %g\n",
         routine, irow,table[1],table[2],table[3], xxoff, yyoff, zzoff, xpoff, ypoff);  */
 
-	/* Point with tabulated spectrum */
-	if (in->modType==OBIT_SkyModel_PointModTSpec) {
-	  for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+4] = array[iterm+3]*specCorr[iterm];
+	/* Only same type as highest */
+	if  (in->modType==modType) {
+	  /* Only Point */
+	  if (modType==OBIT_SkyModel_PointMod){
+	    /* Nothing special this case */
+	    
+	    /* Only Point with tabulated spectrum */
+	  } else if (modType==OBIT_SkyModel_PointModTSpec) {
+	    table[4] = fitParms[1];   /* Component spectral index */
+	    for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+5] = array[iterm+toff]*specCorr[iterm];
+	    
+	    /* Only Gaussian */
+	  } else if (in->modType==OBIT_SkyModel_GaussMod) {
+	    table[4] = gp1;
+	    table[5] = gp2;
+	    table[6] = gp3;
+	    
+	    /* Only Gaussian + tabulated spectrum */
+	  } else if (in->modType==OBIT_SkyModel_GaussModTSpec) {
+	    table[4] = gp1;
+	    table[5] = gp2;
+	    table[6] = gp3;
+	    /*  spectrum */
+	    table[7] = fitParms[1];   /* Component spectral index */
+	    for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+8] = array[iterm+toff]*specCorr[iterm];
+	    
+	    /* Only Uniform sphere */
+	  } else if (in->modType==OBIT_SkyModel_USphereMod) {
+	    table[0] = 3.0 * array[0] * in->factor;
+	    table[4] = parms[0]  * 0.109662271 * 2.7777778e-4;
+	    table[5] = 0.1;
+	    
+	    /* Only Uniform sphere+ spectrum */
+	  } else if (in->modType==OBIT_SkyModel_USphereModTSpec) {
+	    table[0] = 3.0 * array[0] * in->factor;
+	    table[4] = parms[0]  * 0.109662271 * 2.7777778e-4;
+	    table[5] = 0.1;
+	    /*  spectrum */
+	    table[6] = fitParms[1];   /* Component spectral index */
+	    for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+6] = array[iterm+toff]*specCorr[iterm];
+	    /* Only Exponential disk parameters 1/r0^2, 1/r0^3 */
+	  } else if (in->modType==OBIT_SkyModel_expDiskMod) {
+	    if (parms[0]>1.0e-10) a = 1.0 / (DG2RAD*parms[0]);
+	    else                  a = 1.0e7;
+	    table[0] =  array[0] * in->factor;
+	    table[4] = a * a;
+	    table[5] = a * a * a;
+	    
+	    /* Only Exponential disk + spectrum */
+	  } else if (in->modType==OBIT_SkyModel_expDiskModTSpec) {
+	    if (parms[0]>1.0e-10) a = 1.0 / (DG2RAD*parms[0]);
+	    else                  a = 1.0e7;
+	    table[0] =  array[0] * in->factor;
+	    table[4] = a * a;
+	    table[5] = a * a * a;
+	    /*  spectrum */
+	    table[6] = fitParms[1];   /* Component spectral index */
+	    for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+7] = array[iterm+toff]*specCorr[iterm];
+	  }
+	} else { /* Mixed type - zero unused model components */
 
-	/* Gaussian */
-	} else if (in->modType==OBIT_SkyModel_GaussMod) {
-	  cpa = cos (DG2RAD * parms[2]);
-	  spa = sin (DG2RAD * parms[2]);
-	  xmaj = parms[0] * konst2;
-	  xmin = parms[1] * konst2;
-	  table[4] = -(((cpa * xmaj)*(cpa * xmaj)) + (spa * xmin)*(spa * xmin));
-	  table[5] = -(((spa * xmaj)*(spa * xmaj)) + (cpa * xmin)*(cpa * xmin));
-	  table[6] = -2.0 *  cpa * spa * (xmaj*xmaj - xmin*xmin);
+	  /* Only Point here but some Gaussian - zero Gauss comps */
+	  if ((modType==OBIT_SkyModel_PointMod) && (in->modType==OBIT_SkyModel_GaussMod)) {
+	    table[4] = 0.0;
+	    table[5] = 0.0;
+	    table[6] = 0.0;
 	  
-	/* Gaussian + tabulated spectrum */
-	} else if (in->modType==OBIT_SkyModel_GaussModTSpec) {
-	  cpa = cos (DG2RAD * parms[2]);
-	  spa = sin (DG2RAD * parms[2]);
-	  xmaj = parms[0] * konst2;
-	  xmin = parms[1] * konst2;
-	  table[4] = -(((cpa * xmaj)*(cpa * xmaj)) + (spa * xmin)*(spa * xmin));
-	  table[5] = -(((spa * xmaj)*(spa * xmaj)) + (cpa * xmin)*(cpa * xmin));
-	  table[6] = -2.0 *  cpa * spa * (xmaj*xmaj - xmin*xmin);
-	  /*  spectrum */
-	  for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+7] = array[iterm+3]*specCorr[iterm];
+	    /* Gauss here but also some points */
+	  } else if ((modType==OBIT_SkyModel_GaussMod) && (in->modType==OBIT_SkyModel_PointMod)) {
+	    table[4] = gp1;
+	    table[5] = gp2;
+	    table[6] = gp3;
 	  
-	/* Uniform sphere */
-	} else if (in->modType==OBIT_SkyModel_USphereMod) {
-	  table[0] = 3.0 * array[0] * in->factor;
-	  table[4] = parms[1]  * 0.109662271 * 2.7777778e-4;
-	  table[5] = 0.1;
+	  /* Only PointSpectrum here but some GaussianSpectrum - zero Gauss comps */
+	  } else if ((modType==OBIT_SkyModel_PointModTSpec) && (in->modType==OBIT_SkyModel_GaussModTSpec)) {
+	    table[4] = 0.0;
+	    table[5] = 0.0;
+	    table[6] = 0.0;
+	    table[7] = fitParms[1];   /* Component spectral index */
+	    for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+8] = array[iterm+toff]*specCorr[iterm];
+	  
+	    /* GaussianTSpectrum here but also some PointTSpectrum */
+	  } else if ((in->modType==OBIT_SkyModel_PointModTSpec) && (modType==OBIT_SkyModel_GaussModTSpec)) {
+	    table[4] = gp1;
+	    table[5] = gp2;
+	    table[6] = gp3;
+	    /*  spectrum */
+	    table[7] = fitParms[1];   /* Component spectral index */
+	    for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+8] = array[iterm+toff];
+	  
+	  /* Only Point here but some with spectrum - zero spectra (Unlikely) */
+	  } else if ((modType==OBIT_SkyModel_PointMod) && (in->modType==OBIT_SkyModel_PointModTSpec)) {
+	    table[4] = fitParms[1];   /* Component spectral index */
+	    for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+5] = 0.0;
 
-	/* Uniform sphere + tabulated spectrum */
-	} else if (in->modType==OBIT_SkyModel_USphereModTSpec) {
-	  table[0] = 3.0 * array[0] * in->factor;
-	  table[4] = parms[1]  * 0.109662271 * 2.7777778e-4;
-	  table[5] = 0.1;
-	  /*  spectrum */
-	  for (iterm=0; iterm<in->nSpec; iterm++) table[iterm+6] = array[iterm+3]*specCorr[iterm];
-	}
+	  } else { /* Unsupported combination */
+	    Obit_log_error(err, OBIT_Error,"%s Unsupported combination of model types %d %d  %s",
+			   routine, modType, in->modType, CCTable->name);
+	    Obit_traceback_val (err, routine, in->name, retCode);
+	  }
+	} /* end mixed type */
 	    
 	/* Update */
 	table += lrec;
-	array += warray;
 	ncomp++;
       } /* End only desired */
+      array += warray;
     } /* end loop over components */
 
     /* Delete merged CC array */
@@ -1379,6 +1615,10 @@ gboolean ObitSkyModelMFLoadComps (ObitSkyModel *inn, olong n, ObitUV *uvdata,
   } /* end loop zeroing extra components */
 
   if (specCorr) g_free(specCorr); /* Cleanup */
+  if (fitSigma) g_free(fitSigma);
+  if (Sigma)    g_free(Sigma);
+  if (fitParms) g_free(fitParms);
+  if (fitArg)   ObitSpectrumFitKillArg (fitArg);
 
   /* Find anything */
   gotSome = ncomp>0;
@@ -1473,7 +1713,7 @@ void ObitSkyModelMFFTDFT (ObitSkyModel *inn, olong field, ObitUV *uvdata, ObitEr
 
   /* Divide up work - single threaded if too little data per call */
   nvis = uvdata->myDesc->numVisBuff;
-  if (nvis<1000) nThreads = 1;
+  if (nvis<100) nThreads = 1;
   else nThreads = in->nThreads;
   nvisPerThread = MAX (1, nvis/nThreads);
   lovis = 1;
@@ -1506,6 +1746,198 @@ void ObitSkyModelMFFTDFT (ObitSkyModel *inn, olong field, ObitUV *uvdata, ObitEr
   /* Check for problems */
   if (!OK) Obit_log_error(err, OBIT_Error,"%s: Problem in threading", routine);
 }  /* end ObitSkyModelMFFTDFT */
+
+/* gcc or icc */
+# define ALIGN32_BEG
+# define ALIGN32_END __attribute__((aligned(32)))
+# define ALIGN64_BEG
+# define ALIGN64_END __attribute__((aligned(64)))
+/* AVX512 =16 float vectors */
+#if HAVE_AVX512==1
+#include <immintrin.h>
+typedef __m512   v16sf;
+typedef __m512d  v8df;
+typedef __m256   v8sf;
+typedef ALIGN64_BEG union {
+  double    f[8];
+  long long i[8];
+  v8df      v;
+} ALIGN64_END V8DF;
+#endif
+#if HAVE_AVX==1
+#include <immintrin.h>
+typedef __m256  v8sf;
+typedef __m256d v4df;
+typedef __m128  v4sf;
+typedef ALIGN32_BEG union {
+  double    f[4];
+  long long i[4];
+  v4df      v;
+} ALIGN32_END V4DF;
+#endif
+
+/**
+ * Routine to get dot product of two vectors 
+ * possibly with AVX512 implementation
+ * \param n   Number of elements
+ * \param v1  First vector
+ * \param v2  Second vector
+ * \return dot product
+ */
+static inline ofloat SkyModelDot (olong n, ofloat *v1, ofloat *v2) {
+  olong i, ilast;
+  ofloat outval=0.0;
+  /* AVX512=16 floats */
+#if HAVE_AVX512==1
+  v16sf vv1, vv2;
+#endif
+
+  if (n<=0) return outval;
+  ilast = 0;
+  /* AVX512 in blocks of 16 */
+#if HAVE_AVX512==1
+  for (i=ilast; i<n; i+=16) {
+  if (i+16>n) break;
+  ilast = i+16;
+  vv1 = _mm512_load_ps((float*)&v1[i]);
+  vv2 = _mm512_load_ps((float*)&v2[i]);
+  vv1 = _mm512_mul_ps(vv1, vv2); 
+  outval += (ofloat)_mm512_reduce_add_ps(vv1);
+  }
+#endif
+  for (i=ilast; i<n; i++) {
+    outval += v1[i]*v2[i];
+  }
+  return outval;
+} /* end SkyModelDot */
+
+/**
+ * Routine to get 2D dot product of two vectors 
+ * each element of ov is v1*s1 + v2*s2 + v3*s3, in double
+ * possibly with AVX & AVX512 implementation
+ * \param n   Number of elements
+ * \param v1  First vector
+ * \param v2  Second vector
+ * \param v3  Third vector
+ * \param s1  First scalar
+ * \param s2  Second scalar
+ * \param s3  Third scalar
+ * \param ov  output vector
+ */
+static inline void SkyModel2DDot (olong n, ofloat *v1, ofloat *v2, ofloat *v3, 
+			   ofloat s1, ofloat s2, ofloat s3,
+			   ofloat *ov) {
+  olong i, ilast;
+  double ds1, ds2, ds3;
+  /* AVX512=16 floats */
+#if HAVE_AVX512==1
+  v8df vv1, vv2, vv3, vs1, vs2, vs3;
+  v8sf vsp;
+#elif HAVE_AVX==1
+  v4df vv1, vv2, vv3, vs1, vs2, vs3;
+  v4sf vsp;
+#endif
+
+  if (n<=0) return;
+  ds1 = s1; ds2 = s2; ds3 = s3;
+  ilast = 0;
+  /* AVX512 double in blocks of 8 */
+#if HAVE_AVX512==1
+  for (i=0; i<n; i+=8) { 
+    if (ilast+8>n) break;
+    ilast = i+8;
+    vsp = _mm256_load_ps((float*)&v1[i]);
+    vv1 = _mm512_cvtps_pd(vsp);  /* to double */
+    vs1 = _mm512_set1_pd((double)s1);
+    vv1 = _mm512_mul_pd(vv1, vs1); 
+    vsp = _mm256_load_ps((float*)&v2[i]);
+    vv2 = _mm512_cvtps_pd(vsp);  /* to double */
+    vs2 = _mm512_set1_pd((double)s2);
+    vv1 = _mm512_fmadd_pd(vv2, vs2, vv1); 
+    vsp = _mm256_load_ps((float*)&v3[i]);
+    vv3 = _mm512_cvtps_pd(vsp);  /* to double */
+    vs3 = _mm512_set1_pd((double)s3);
+    vv1 = _mm512_fmadd_pd(vv3, vs3, vv1); 
+    vsp = _mm512_cvtpd_ps(vv1); /* to single precision */		       
+    _mm256_store_ps((float*)&ov[i], vsp);
+  }
+  /* rest as scalar */
+  /* AVX  double in blocks of 4 */
+#elif HAVE_AVX==1
+  for (i=0; i<n; i+=4) {
+    if (ilast+4>n) break;
+    ilast = i+4;
+    vsp = _mm_load_ps((float*)&v1[i]);
+    vv1 = _mm256_cvtps_pd(vsp);  /* to double */
+    vs1 = _mm256_set1_pd((double)s1);
+    vv1 = _mm256_mul_pd(vv1, vs1); 
+    vsp = _mm_load_ps((float*)&v2[i]);
+    vv2 = _mm256_cvtps_pd(vsp);  /* to double */
+    vs2 = _mm256_set1_pd((double)s2);
+    vv2 = _mm256_mul_pd(vv2, vs2); 
+    vv1 = _mm256_add_pd(vv1, vv2); 
+    vsp = _mm_load_ps((float*)&v3[i]);
+    vv3 = _mm256_cvtps_pd(vsp);  /* to double */
+    vs3 = _mm256_set1_pd((double)s3);
+    vv3 = _mm256_mul_pd(vv3, vs3); 
+    vv1 = _mm256_add_pd(vv1, vv3); 
+    vsp = _mm256_cvtpd_ps(vv1); /* to single precision */		       
+    _mm_store_ps((float*)&ov[i], vsp);
+  }
+  /* rest as scalar */
+#endif
+  for (i=ilast; i<n; i++) {
+    ov[i] = (ofloat)(v1[i]*ds1 + v2[i]*ds2 + v3[i]*ds3);
+  }
+  return;
+}/* end SkyModel2DDot */
+
+/**
+ * Routine to multiply vectors
+ * possibly with AVX implementation
+ * \param n   Number of elements
+ * \param v1  First vector
+ * \param v2  Second vector
+ * \param ov  output vector
+ */
+ static inline void SkyModelVMul (olong n, ofloat *v1, ofloat *v2, ofloat *ov) {
+  olong i, ilast;
+#if HAVE_AVX512==1
+  v16sf vv1, vv2;
+#elif HAVE_AVX==1
+  v8sf vv1, vv2;
+#endif
+
+  if (n<=0) return;
+  ilast = 0;
+  /* AVX512 in blocks of 16 */
+#if HAVE_AVX512==1
+  for (i=ilast; i<n; i+=16) {
+  if (ilast+16>n) break;
+  ilast = i+16;
+  vv1 = _mm512_load_ps((float*)&v1[i]);
+  vv2 = _mm512_load_ps((float*)&v2[i]);
+  vv1 = _mm512_mul_ps(vv1, vv2); 
+  _mm512_store_ps((float*)&ov[i], vv1);
+  }
+  /* rest as scalar */
+  /* AVX in blocks of 8 */
+#elif HAVE_AVX==1
+  for (i=ilast; i<n; i+=8) {
+  if (ilast+8>n) break;
+  ilast = i+8;
+  vv1 = _mm256_load_ps((float*)&v1[i]);
+  vv2 = _mm256_load_ps((float*)&v2[i]);
+  vv1 = _mm256_mul_ps(vv1, vv2); 
+  _mm256_store_ps((float*)&ov[i], vv1);
+  }
+  /* rest as scalar */
+#endif
+  for (i=ilast; i<n; i++) {
+    ov[i] = v1[i]*v2[i];
+  }
+  return;
+ } /* end SkyModelVMul */
 
 /**
  * Do Fourier transform using a DFT for a buffer of data.
@@ -1546,12 +1978,26 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
   olong offset, offsetChannel, offsetIF;
   olong ilocu, ilocv, ilocw;
   ofloat *visData, *ccData, *data, *fscale;
-  ofloat modReal, modImag;
-  ofloat amp, arg, freq2, freqFact, wt=0.0, temp;
-#define FazArrSize 100  /* Size of the amp/phase/sine/cosine arrays */
+  ofloat modReal, modImag, logNuONu0;
+  ofloat amp, arg, freq2, freqFact, wt=0.0, temp, fourpisq;
+#define FazArrSize 256  /* Size of the amp/phase/sine/cosine arrays */
+#if HAVE_AVX512==1
+  __attribute__((aligned(32))) ofloat AmpArr[FazArrSize], FazArr[FazArrSize], CosArr[FazArrSize], SinArr[FazArrSize];
+  __attribute__((aligned(32))) ofloat ExpArg[FazArrSize], ExpVal[FazArrSize], ExpArg2[FazArrSize], ExpVal2[FazArrSize];
+  __attribute__((aligned(32))) ofloat VecL[FazArrSize], VecM[FazArrSize], VecN[FazArrSize];
+ #elif HAVE_AVX==1
+  __attribute__((aligned(32))) ofloat AmpArr[FazArrSize], FazArr[FazArrSize], CosArr[FazArrSize], SinArr[FazArrSize];
+  __attribute__((aligned(32))) ofloat ExpArg[FazArrSize], ExpVal[FazArrSize], ExpArg2[FazArrSize], ExpVal2[FazArrSize];
+  __attribute__((aligned(32))) ofloat VecL[FazArrSize], VecM[FazArrSize], VecN[FazArrSize];
+#else 
   ofloat AmpArr[FazArrSize], FazArr[FazArrSize], CosArr[FazArrSize], SinArr[FazArrSize];
-  olong it, jt, itcnt, ifq, itab;
-  odouble tx, ty, tz, sumReal, sumImag, *freqArr;
+  ofloat ExpArg[FazArrSize], ExpVal[FazArrSize], ExpArg2[FazArrSize], ExpVal2[FazArrSize];
+  ofloat VecL[FazArrSize], VecM[FazArrSize], VecN[FazArrSize];
+#endif
+  gboolean OK;
+  olong it, jt, itcnt, ifq, itab, jtcnt, lim;
+  odouble sumReal, sumImag, *freqArr, *freqIF;
+  odouble u, v, w;
   gchar *routine = "ThreadSkyModelMFFTDFT";
 
   /* error checks - assume most done at higher level */
@@ -1565,13 +2011,15 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
     goto finish;
   }
 
+  fourpisq = 4.0 * G_PI *G_PI;  /* 4 pi^2 */
+
   /* Get pointer for components */
   naxis[0] = 0; naxis[1] = 0; 
   data  = ObitFArrayIndex(in->comps, naxis);
   lcomp = in->comps->naxis[0];  /* Length of row in comp table */
   ncomp = in->comps->naxis[1];  /* number of components */
   if (ncomp<=0) goto finish; /* Anything? */
-  nspec = in->nSpecTerm;
+  nspec = in->nSpec;
 
   /* Count number of actual components */
   mcomp = 0;
@@ -1581,6 +2029,11 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
     ccData += lcomp;  /* update pointer */
   } /* end loop over components */
   
+  if ((largs->ithread==1) && (uvdata->myDesc->firstVis<10)) { /* DEBUG */
+    Obit_log_error(err, OBIT_InfoErr, "SkyModel with %d components", mcomp);
+    ObitErrLog(err);
+  }
+
   /* Visibility pointers */
   ilocu =  uvdata->myDesc->ilocu;
   ilocv =  uvdata->myDesc->ilocv;
@@ -1606,8 +2059,8 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
       kincf = uvdata->myDesc->inaxes[uvdata->myDesc->jlocif];
     } 
   } else {  /* NO IF axis */
-      kincif = 1;
-      kincf  = 1;
+    kincif = 1;
+    kincf  = 1;
   }
 
   /* DEBUG 
@@ -1619,6 +2072,7 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
   /* Get pointer for frequency correction tables */
   fscale  = uvdata->myDesc->fscale;
   freqArr = uvdata->myDesc->freqArr;
+  freqIF  = uvdata->myDesc->freqIF;
 
   /* Loop over vis in buffer */
   lrec    = uvdata->myDesc->lrec;         /* Length of record */
@@ -1628,10 +2082,26 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
     /* Loop over IFs */
     for (iIF=startIF; iIF<startIF+numberIF; iIF++) {
       offsetIF = nrparm + iIF*jincif; 
+      /* Loop over channels */
       for (iChannel=startChannel; iChannel<startChannel+numberChannel; iChannel++) {
 	offsetChannel = offsetIF + iChannel*jincf; 
+	/* Anything to model? */
+	OK = FALSE;
+	for (iStoke=startPoln; iStoke<startPoln+numberPoln; iStoke++) {
+	  offset = offsetChannel + iStoke*jincs; /* Visibility offset */
+	  OK = OK || (visData[offset+2]>0.0);
+	}
+	if (!OK && !in->doReplace) continue;
 	ifq = iIF*kincif + iChannel*kincf;
 	freqFact = fscale[ifq];  /* Frequency scaling factor */
+	/* Log ratio of channel freq to Tabulated freq */
+	itab      = in->specIndex[ifq];
+	logNuONu0 = (ofloat)log(freqArr[ifq]/in->specFreq[itab]);
+
+	/* u,v,w at frequency */
+	u = (odouble)visData[ilocu]*freqFact;
+	v = (odouble)visData[ilocv]*freqFact;
+	w = (odouble)visData[ilocw]*freqFact;
 
 	/* Sum over components */
 	sumReal = sumImag = 0.0;
@@ -1644,52 +2114,56 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
 	  /* outer loop */
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
 	      if (ccData[0]!=0.0) {  /* valid? */
-		tx = ccData[1]*(odouble)visData[ilocu];
-		ty = ccData[2]*(odouble)visData[ilocv];
-		tz = ccData[3]*(odouble)visData[ilocw];
-		FazArr[itcnt] = freqFact * (tx + ty + tz);
 		AmpArr[itcnt] = ccData[0];
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		itcnt++;          /* Count in buffers */
 	      }  /* end if valid */
 	      ccData += lcomp;  /* update pointer */
-	      itcnt++;          /* Count in amp/phase buffers */
-	      if (itcnt>=FazArrSize) break;
 	    } /* end inner loop over components */
-
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
 	    /* Convert phases to sin/cos */
 	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
 	    /* Accumulate real and imaginary parts */
-	    for (jt=0; jt<itcnt; jt++) {
-	      sumReal += AmpArr[jt]*CosArr[jt];
-	      sumImag += AmpArr[jt]*SinArr[jt];
-	    }
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
 	  } /*end outer loop over components */
 	  break;
 	case OBIT_SkyModel_PointModTSpec:     /* Point + tabulated spectrum */
+	  itab = 5 + in->specIndex[ifq];
+	  jtcnt = 0;
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
-	      if (ccData[0]!=0.0) {  /* valid? */
-		tx = ccData[1]*(odouble)visData[ilocu];
-		ty = ccData[2]*(odouble)visData[ilocv];
-		tz = ccData[3]*(odouble)visData[ilocw];
-		FazArr[itcnt] = freqFact * (tx + ty + tz);
-		itab = 4 + in->specIndex[ifq];
-		AmpArr[itcnt] = ccData[itab];
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
+	      if (ccData[itab]!=0.0) {  /* valid? */
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		ExpArg2[itcnt] = logNuONu0 * ccData[4];
+		AmpArr[itcnt]  = ccData[itab];
+		itcnt++;          /* Count in amp/phase buffers */
 	      }  /* end if valid */
-	      ccData += lcomp;  /* update pointer */
-	      itcnt++;          /* Count in amp/phase buffers */
-	      if (itcnt>=FazArrSize) break;
+	      ccData += lcomp; jtcnt++; /* update pointer */
 	    } /* end inner loop over components */
 	    
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
 	    /* Convert phases to sin/cos */
 	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
+	    /* Evaluate spectral index */
+	    ObitExpVec(itcnt, ExpArg2, ExpVal2);
 	    /* Accumulate real and imaginary parts */
-	    for (jt=0; jt<itcnt; jt++) {
-	      sumReal += AmpArr[jt]*CosArr[jt];
-	      sumImag += AmpArr[jt]*SinArr[jt];
-	    }
+	    /* Spectral index correction */
+	    SkyModelVMul(itcnt, AmpArr,  ExpVal2, AmpArr);
+	    /* Accumulate real and imaginary parts */
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
 	  } /*end outer loop over components */
 	  break;
 	case OBIT_SkyModel_GaussMod:     /* Gaussian on sky */
@@ -1697,124 +2171,188 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
 	  freq2 = freqFact*freqFact;    /* Frequency factor squared */
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
 	      if (ccData[0]!=0.0) {  /* valid? */
-		arg = freq2 * (ccData[4]*visData[ilocu]*visData[ilocu] +
-			       ccData[5]*visData[ilocv]*visData[ilocv] +
-			       ccData[6]*visData[ilocu]*visData[ilocv]);
-		if (arg<-1.0e-5) amp = ccData[0] * exp (arg);
-		else amp = ccData[0];
-		tx = ccData[1]*(odouble)visData[ilocu];
-		ty = ccData[2]*(odouble)visData[ilocv];
-		tz = ccData[3]*(odouble)visData[ilocw];
-		FazArr[itcnt] = freqFact * (tx + ty + tz);
+		amp = ccData[0];
+		arg = (ccData[4]*u*u + ccData[5]*v*v + ccData[6]*u*v);
+		ExpArg[itcnt] = -arg;
 		AmpArr[itcnt] = amp;
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		itcnt++;          /* Count in amp/phase buffers */
 	      } /* end if valid */
 	      ccData += lcomp;  /* update pointer */
-	      itcnt++;          /* Count in amp/phase buffers */
-	      if (itcnt>=FazArrSize) break;
 	    }  /* end inner loop over components */
 	    
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
 	    /* Convert phases to sin/cos */
 	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
+	    /* Convert Gaussian exp arguments */
+	    ObitExpVec(itcnt, ExpArg, ExpVal);
+	    /* Gaussian correction */
+	    SkyModelVMul(itcnt, AmpArr,  ExpVal, AmpArr);
 	    /* Accumulate real and imaginary parts */
-	    for (jt=0; jt<itcnt; jt++) {
-	      sumReal += AmpArr[jt]*CosArr[jt];
-	      sumImag += AmpArr[jt]*SinArr[jt];
-	    }
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
 	  } /*end outer loop over components */
 	  break;
 	case OBIT_SkyModel_GaussModTSpec:     /* Gaussian on sky + tabulated spectrum*/
 	  freq2 = freqFact*freqFact;    /* Frequency factor squared */
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
-	      if (ccData[0]!=0.0) {  /* valid? */
-		itab = 7 + in->specIndex[ifq];
-		arg = freq2 * (ccData[4]*visData[ilocu]*visData[ilocu] +
-			       ccData[5]*visData[ilocv]*visData[ilocv] +
-			       ccData[6]*visData[ilocu]*visData[ilocv]);
-		if (arg<-1.0e-5) amp = ccData[itab] * exp (arg);
-		else amp = ccData[0];
-		tx = ccData[1]*(odouble)visData[ilocu];
-		ty = ccData[2]*(odouble)visData[ilocv];
-		tz = ccData[3]*(odouble)visData[ilocw];
-		FazArr[itcnt] = freqFact * (tx + ty + tz);
-		AmpArr[itcnt] = amp;
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
+	      itab = 8 + in->specIndex[ifq];
+	      if (ccData[itab]!=0.0) {  /* valid? */
+		arg = (ccData[4]*u*u + ccData[5]*v*v + ccData[6]*u*v);
+		amp = ccData[itab];
+		ExpArg[itcnt]  = arg;
+		AmpArr[itcnt]  = amp;
+		ExpArg2[itcnt] = logNuONu0 * ccData[7];
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		itcnt++;          /* Count in amp/phase buffers */
 	      } /* end if valid */
 	      ccData += lcomp;  /* update pointer */
-	      itcnt++;          /* Count in amp/phase buffers */
-	      if (itcnt>=FazArrSize) break;
 	    }  /* end inner loop over components */
 	    
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
 	    /* Convert phases to sin/cos */
 	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
 	    /* Accumulate real and imaginary parts */
-	    for (jt=0; jt<itcnt; jt++) {
-	      sumReal += AmpArr[jt]*CosArr[jt];
-	      sumImag += AmpArr[jt]*SinArr[jt];
-	    }
-	  } /* end outer loop over components */
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
+	  } /*end outer loop over components */
 	  break;
 	case OBIT_SkyModel_USphereMod:    /* Uniform sphere */
 	  /* From the AIPSish QSPSUB.FOR  */
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
 	      if (ccData[0]!=0.0) {  /* valid? */
-		arg = freqFact * sqrt(visData[ilocu]*visData[ilocu] +
-				      visData[ilocv]*visData[ilocv]) * ccData[4];
+		arg = sqrt(u*u+v*v) * ccData[4];
 		arg = MAX (arg, 0.1);
 		amp = ccData[0] * ((sin(arg)/(arg*arg*arg)) - cos(arg)/(arg*arg));
-		tx = ccData[1]*(odouble)visData[ilocu];
-		ty = ccData[2]*(odouble)visData[ilocv];
-		tz = ccData[3]*(odouble)visData[ilocw];
-		FazArr[itcnt] = freqFact * (tx + ty + tz);
 		AmpArr[itcnt] = amp;
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		itcnt++;          /* Count in amp/phase buffers */
 	      } /* end if valid */
 	      ccData += lcomp;  /* update pointer */
-	      itcnt++;          /* Count in amp/phase buffers */
-	      if (itcnt>=FazArrSize) break;
-	    }  /* end inner ver components */
+	    }  /* end inner loop over components */
 	    
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
 	    /* Convert phases to sin/cos */
 	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
 	    /* Accumulate real and imaginary parts */
-	    for (jt=0; jt<itcnt; jt++) {
-	      sumReal += AmpArr[jt]*CosArr[jt];
-	      sumImag += AmpArr[jt]*SinArr[jt];
-	    }
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
 	  } /* end outer loop over components */
 	  break;
 	case OBIT_SkyModel_USphereModTSpec:    /* Uniform sphere + tabulated spectrum*/
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
 	      if (ccData[0]!=0.0) {  /* valid? */
-		itab = 6 + in->specIndex[ifq];
-		arg = freqFact * sqrt(visData[ilocu]*visData[ilocu] +
-				      visData[ilocv]*visData[ilocv]) * ccData[4];
+		itab = 7 + in->specIndex[ifq];
+		arg = sqrt(u*u+v*v) * ccData[4];
 		arg = MAX (arg, 0.1);
 		amp = ccData[itab] * ((sin(arg)/(arg*arg*arg)) - cos(arg)/(arg*arg));
-		tx = ccData[1]*(odouble)visData[ilocu];
-		ty = ccData[2]*(odouble)visData[ilocv];
-		tz = ccData[3]*(odouble)visData[ilocw];
-		FazArr[itcnt] = freqFact * (tx + ty + tz);
 		AmpArr[itcnt] = amp;
+		ExpArg2[itcnt] = logNuONu0 * ccData[6];
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		itcnt++;          /* Count in amp/phase buffers */
 	      } /* end if valid */
 	      ccData += lcomp;  /* update pointer */
-	      itcnt++;          /* Count in amp/phase buffers */
-	      if (itcnt>=FazArrSize) break;
 	    }  /* end inner loop over components */
 	    
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
+	    /* Convert phases to sin/cos */
+	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
+	    /* Evaluate spectral index */
+	    ObitExpVec(itcnt, ExpArg2, ExpVal2);
+	    /* Spectral index correction */
+	    SkyModelVMul(itcnt, AmpArr,  ExpVal2, AmpArr);
+	    /* Accumulate real and imaginary parts */
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
+	  } /* end outer loop over components */
+	  break;
+	case OBIT_SkyModel_expDiskMod:    /* Exponential disk  parameters 1/r0^2, 1/r0^3 */
+	  for (it=0; it<mcomp; it+=FazArrSize) {
+	    itcnt = 0;
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
+	      if (ccData[0]!=0.0) {  /* valid? */
+		arg = fourpisq*(u*u + v*v);
+		/* Resolved? */
+		if (arg>0.001*ccData[4]) 
+		       amp = ccData[0] * ccData[5] * powf(arg+ccData[4], -1.5);
+		else   amp = ccData[0];
+		AmpArr[itcnt] = amp;
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		itcnt++;          /* Count in amp/phase buffers */
+	      } /* end if valid */
+	      ccData += lcomp;  /* update pointer */
+	    }  /* end inner ver components */
+	    
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
 	    /* Convert phases to sin/cos */
 	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
 	    /* Accumulate real and imaginary parts */
-	    for (jt=0; jt<itcnt; jt++) {
-	      sumReal += AmpArr[jt]*CosArr[jt];
-	      sumImag += AmpArr[jt]*SinArr[jt];
-	    }
-	  } /*end outer loop over components */
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
+	  } /* end outer loop over components */
+	  break;
+	case OBIT_SkyModel_expDiskModTSpec:    /* Exponential disk parameters 1/r0^2, 1/r0^3 + tabulated spectrum*/
+	  for (it=0; it<mcomp; it+=FazArrSize) {
+	    itcnt = 0;
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
+	      if (ccData[0]!=0.0) {  /* valid? */
+		itab = 7 + in->specIndex[ifq];
+		arg = fourpisq*(u*u + v*v);
+		/* Resolved? */
+		if (arg>0.001*ccData[4]) 
+		       amp = ccData[itab] * ccData[5] * powf(arg+ccData[4], -1.5);
+		else   amp = ccData[itab];
+		AmpArr[itcnt] = amp;
+		ExpArg2[itcnt] = logNuONu0 * ccData[6];
+		VecL[itcnt] = ccData[1];
+		VecM[itcnt] = ccData[2];
+		VecN[itcnt] = ccData[3];
+		itcnt++;          /* Count in amp/phase buffers */
+	      } /* end if valid */
+	      ccData += lcomp;  /* update pointer */
+	    }  /* end inner loop over components */
+	    
+	    /* Compute phases */
+	    SkyModel2DDot(itcnt, VecL, VecM, VecN, u, v, w, FazArr);
+	    /* Convert phases to sin/cos */
+	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
+	    /* Evaluate spectral index */
+	    ObitExpVec(itcnt, ExpArg2, ExpVal2);
+	    /* Spectral index correction */
+	    SkyModelVMul(itcnt, AmpArr,  ExpVal2, AmpArr);
+	    /* Accumulate real and imaginary parts */
+	    sumReal += SkyModelDot(itcnt, AmpArr, CosArr);
+	    sumImag += SkyModelDot(itcnt, AmpArr, SinArr);
+	  } /* end outer loop over components */
 	  break;
 	default:
 	  ObitThreadLock(in->thread);  /* Lock against other threads */
@@ -1876,9 +2414,7 @@ static gpointer ThreadSkyModelMFFTDFT (gpointer args)
 	  
 	  offset += jincs;
 	} /* end loop over Stokes */
-	  offsetChannel += jincf;
       } /* end loop over Channel */
- 	  offsetIF += jincif;
    } /* end loop over IF */
 
     visData += lrec; /* Update vis pointer */
@@ -1937,7 +2473,7 @@ void ObitSkyModelMFFTGrid (ObitSkyModel *inn, olong field, ObitUV *uvdata, ObitE
   
   /* Divide up work - single threaded if too little data per call */
   nvis = uvdata->myDesc->numVisBuff;
-  if (nvis<1000) nThreads = 1;
+  if (nvis<100) nThreads = 1;
   else nThreads = in->nThreads;
   nvisPerThread = MAX (1, nvis/nThreads);
   lovis = 1;
@@ -2070,13 +2606,19 @@ gpointer ThreadSkyModelMFFTGrid (gpointer args)
   numberPoln = in->numberPoln;
   jincs      = uvDesc->incs;  /* increment in real array */
   /* Increments in frequency tables */
-  if (uvdata->myDesc->jlocf<uvdata->myDesc->jlocif) { /* freq before IF */
-    kincf = 1;
-    kincif = uvdata->myDesc->inaxes[uvdata->myDesc->jlocf];
-  } else { /* IF before freq  */
+  if (uvdata->myDesc->jlocif>=0) {
+    if (uvdata->myDesc->jlocf<uvdata->myDesc->jlocif) { /* freq before IF */
+      kincf = 1;
+      kincif = uvdata->myDesc->inaxes[uvdata->myDesc->jlocf];
+    } else { /* IF before freq  */
+      kincif = 1;
+      kincf = uvdata->myDesc->inaxes[uvdata->myDesc->jlocif];
+    }
+  } else {  /* NO IF axis */
     kincif = 1;
-    kincf = uvdata->myDesc->inaxes[uvdata->myDesc->jlocif];
+    kincf  = 1;
   }
+
 
   /* Get pointer for frequency correction tables */
   fscale  = uvDesc->fscale;
@@ -2419,7 +2961,7 @@ void  ObitSkyModelMFChose (ObitSkyModel *inn, ObitUV* uvdata)
   ObitSkyModelMF *in = (ObitSkyModelMF*)inn;
   olong nfield, ncc, nx, ny, nvis, nchan, sumcc, i, timff1, timff2, timff3, x;
   olong startComp, endComp;
-  ofloat timdft, timfft;
+  ofloat timdft, timfft, gfact=1.0;
 
   /* Constants to pick relative times Last determined for FPS 120Bs (Oh yeah!) */
   ofloat tpvgrd = 1.0e-5; /* Time/vis to interpolate (ALGSUB) */
@@ -2444,9 +2986,11 @@ void  ObitSkyModelMFChose (ObitSkyModel *inn, ObitUV* uvdata)
     nchan *= uvdata->myDesc->inaxes[uvdata->myDesc->jlocif];
 
   /* Loop over fields */
-  sumcc = 0;
+  sumcc  = 0;
   timff1 = timff2 = timff3 = 0;
+  gfact  = 1.0;
   for (i=0; i<nfield; i++) {
+    if (in->mosaic->BeamTaper[i]>0.0) gfact = 6.0;  /* Gaussians take longer */
     startComp = MAX (1, in->startComp[i]);
     endComp = MAX (1, in->endComp[i]);
     ncc = MAX (0, (endComp - startComp + 1));
@@ -2464,11 +3008,11 @@ void  ObitSkyModelMFChose (ObitSkyModel *inn, ObitUV* uvdata)
 
   /* How long for gridded method? */
   timfft = (timff1 * tpvgrd + timff2 * tfft*in->nSpec + timff3 * tpcgrd) * nchan;
-  /* Ad Hoc hack*/
-  timfft *= 2.0;
+  /* Ad Hoc hack */
+  timfft *= 0.50;
 
   /* How long for a DFT? */
-  timdft = tpvpc * nvis * sumcc * nchan;
+  timdft = tpvpc * nvis * sumcc * nchan * gfact;
 
   if (timdft<=timfft) in->currentMode = OBIT_SkyModel_DFT;
   else in->currentMode = OBIT_SkyModel_Grid;
@@ -2519,7 +3063,7 @@ gboolean ObitSkyModelMFGridFTComps (ObitSkyModel* inn, olong field, ObitUV* uvda
   ObitSkyModelMF *in  = (ObitSkyModelMF*)inn;
   gboolean gotSome = FALSE;
   ObitImageDesc *imDesc = NULL;
-  olong i, j, k, nx, ny;
+  olong i, j, k, nx, ny, overSample, nThread;
   olong ncomp, ndim, naxis[2];
   ofloat gparm[3], dU, dV, UU, VV, texp;
   ofloat konst, xmaj, xmin, cpa, spa, b1, b2, b3, bb2, bb3;
@@ -2533,6 +3077,10 @@ gboolean ObitSkyModelMFGridFTComps (ObitSkyModel* inn, olong field, ObitUV* uvda
 
   /* error check */
   if (err->error) return gotSome ;
+
+  /* Get oversampling factor */
+  overSample = GetOverSample(in, field, err );
+  if (err->error) Obit_traceback_val (err, routine, in->name, gotSome);
 
   /* Create grid, sum components into in->planes */
   ObitSkyModelMFLoadGridComps (inn, field, uvdata, gparm, &ncomp, err);
@@ -2559,6 +3107,12 @@ gboolean ObitSkyModelMFGridFTComps (ObitSkyModel* inn, olong field, ObitUV* uvda
   naxis[0] = 1+in->planes[0]->naxis[0]/2; naxis[1] = in->planes[0]->naxis[1]; 
   FFTImage = ObitCArrayCreate ("FFT output", ndim, naxis);
   
+  imDesc = in->mosaic->images[field]->myDesc; 
+  /* How many threads for FFT? 2 per 1K pixels in x */
+  nThread = MAX (1, ObitThreadNumProc(in->thread));
+  nThread = MIN (MAX (1, 2*overSample*imDesc->inaxes[imDesc->jlocr]), nThread);
+  ObitFFTNThreads (nThread);   /* Enable FFT with threading */
+
   /* Loop over spectral planes */
   for (k=0; k<in->nSpec; k++) {
     
@@ -2581,16 +3135,14 @@ gboolean ObitSkyModelMFGridFTComps (ObitSkyModel* inn, olong field, ObitUV* uvda
        if (err->error) Obit_traceback_val (err, routine, in->name, gotSome); */
     /* END DEBUG */
     
-    imDesc = in->mosaic->images[field]->myDesc; 
-    
     /* Add taper if necessary */
     /* Are these Gaussians? */
     doGaus = (gparm[0]>0.0) || (gparm[1]>0.0);
     /* If tapering, create array, set constants */
     if (doGaus) {
       /* Image info - descriptor should still be valid */
-      nx = OverSampleMF*imDesc->inaxes[imDesc->jlocr];
-      ny = OverSampleMF*imDesc->inaxes[imDesc->jlocd];
+      nx = overSample*imDesc->inaxes[imDesc->jlocr];
+      ny = overSample*imDesc->inaxes[imDesc->jlocd];
       
       /* UV cell spacing */
       dU = RAD2DG /  (nx * fabs(imDesc->cdelt[imDesc->jlocr]));
@@ -2624,7 +3176,7 @@ gboolean ObitSkyModelMFGridFTComps (ObitSkyModel* inn, olong field, ObitUV* uvda
 	  grid[2*j]   *= taper;
 	  grid[2*j+1] *= taper;
 	}
-	grid += FFTImage->naxis[0];
+	grid += 2*FFTImage->naxis[0];
       }
     } /* end tapering */
     
@@ -2643,7 +3195,7 @@ gboolean ObitSkyModelMFGridFTComps (ObitSkyModel* inn, olong field, ObitUV* uvda
     /* END DEBUG */
     
     /* (re)Create interpolator */
-    factor[0] = OverSampleMF; factor[1] = OverSampleMF;
+    factor[0] = overSample; factor[1] = overSample;
     in->myInterps[k] = ObitCInterpolateUnref(in->myInterps[k]);
     in->myInterps[k] = 
       newObitCInterpolateCreate("UV data interpolator", in->FTplanes[k], imDesc,
@@ -2654,13 +3206,14 @@ gboolean ObitSkyModelMFGridFTComps (ObitSkyModel* inn, olong field, ObitUV* uvda
 
   /* Cleanup */
   FFTImage  = ObitCArrayUnref(FFTImage);
-
+  ObitFFTNThreads (1);   /* Reset FFT threading */
+  ObitFFTClearThreads();
 
   return gotSome;
 } /* end ObitSkyModelMFGridFTComps */
 
 /**
- * Create arrays OverSampleMF times the size of the input image (in->planes) 
+ * Create arrays overSample times the size of the input image (in->planes) 
  * and sum components onto them.
  * Grid is oversize for increased accuracy.
  * Due to the difference with the FFT ordering for half plane complex 
@@ -2682,7 +3235,7 @@ void  ObitSkyModelMFLoadGridComps (ObitSkyModel* inn, olong field, ObitUV* uvdat
   ObitTableCC *CCTable = NULL;
   ObitImageDesc *imDesc = NULL;
   ofloat range[2], specCorr;
-  olong k;
+  olong k, overSample;
   gchar *tabType = "AIPS CC";
   olong outCCVer, ver, first, last, startComp, endComp;
   gchar *routine = "ObitSkyModelMFLoadGridComps";
@@ -2695,7 +3248,11 @@ void  ObitSkyModelMFLoadGridComps (ObitSkyModel* inn, olong field, ObitUV* uvdat
     *ncomp = 0;
     return;
   }
-
+  
+  /* Get oversampling factor */
+  overSample = GetOverSample(in, field, err );
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+  
   /* Open Image */
   /* Use external buffer (Not actually reading image here) */
   in->mosaic->images[field]->extBuffer = TRUE;
@@ -2726,12 +3283,12 @@ void  ObitSkyModelMFLoadGridComps (ObitSkyModel* inn, olong field, ObitUV* uvdat
 
     /* Spectral correction for prior alpha array */
      if (in->doAlphaCorr && (in->priorAlpha!=0.0)) {
-       specCorr = pow((in->specFreq[k]/in->refFreq), in->priorAlpha);
+       specCorr = pow((in->specFreq[k]/in->priorAlphaRefF), in->priorAlpha);
     } else { /* No correction */
       specCorr = 1.0;
     }
     
-    retCode = ObitTableCCUtilGridSpect (CCTable, OverSampleMF, k+1,
+    retCode = ObitTableCCUtilGridSpect (CCTable, overSample, k+1,
 					&first, &last, in->noNeg,
 					in->factor*specCorr, 
 					in->minFlux, in->maxGrid,
@@ -2743,11 +3300,11 @@ void  ObitSkyModelMFLoadGridComps (ObitSkyModel* inn, olong field, ObitUV* uvdat
   /* Save values of highest comp - probably bad*/
   if (outCCVer==0) {
     /* no translation of table */
-    in->startComp[field] = first;
-    in->endComp[field] = last;
+    /* Bad in->startComp[field] = first;
+       in->endComp[field] = last; */
   } else {
     /* Translated table with only selected values */
-    in->endComp[field] = in->startComp[field] + last-first;
+    /* Bad in->endComp[field] = in->startComp[field] + last-first; */
   }
   
   /* if outCCver>0 then the CCtable is temporary - Zap */
@@ -2855,6 +3412,7 @@ void  ObitSkyModelMFFTImage (ObitSkyModel* inn, ObitFArray *inArray,
  *      \li "xxxnThreads"        olong   Number of threads
  *      \li "xxxdoAlphaCorr"     boolean TRUE if prior spectral index corrections to be made
  *      \li "xxxpriorAlpha"      ofloat  prior spectral index applied to be corrected.
+ *      \li "xxxpriorAlphaRefF"  odouble prior spectral index ref freq (Hz).
  *      \li "xxxdoSmoo"          boolean TRUE if tabulated spectra to be smooothed
  * \param err     ObitErr for reporting errors.
  */
@@ -3200,6 +3758,13 @@ void ObitSkyModelMFGetInfo (ObitSkyModel *inn, gchar *prefix, ObitInfoList *outL
   ObitInfoListAlwaysPut(outList, keyword, OBIT_float, dim, &in->priorAlpha);
   g_free(keyword);
 
+  /* "xxxpriorAlphaRefF"        odouble prior spectral index ref freq (Hz) */
+  if (prefix) keyword = g_strconcat (prefix, "priorAlphaRefF", NULL);
+  else        keyword = g_strdup("priorAlphaRefF");
+  dim[0] = 1;
+  ObitInfoListAlwaysPut(outList, keyword, OBIT_double, dim, &in->priorAlphaRefF);
+  g_free(keyword);
+
   /* "xxxdoSmoo"        olong   Number of threads */
   if (prefix) keyword = g_strconcat (prefix, "doSmoo", NULL);
   else        keyword = g_strdup("doSmoo");
@@ -3255,6 +3820,7 @@ static void ObitSkyModelMFClassInfoDefFn (gpointer inClass)
   theClass->ObitClone     = NULL;
   theClass->ObitClear     = (ObitClearFP)ObitSkyModelMFClear;
   theClass->ObitInit      = (ObitInitFP)ObitSkyModelMFInit;
+  theClass->ObitSkyModelCreate  = (ObitSkyModelCreateFP)ObitSkyModelMFCreate;
   theClass->ObitSkyModelInitMod = (ObitSkyModelInitModFP)ObitSkyModelMFInitMod;
   theClass->ObitSkyModelShutDownMod= (ObitSkyModelShutDownModFP)ObitSkyModelMFShutDownMod;
   theClass->ObitSkyModelInitModel= (ObitSkyModelInitModelFP)ObitSkyModelMFInitModel;
@@ -3296,15 +3862,17 @@ void ObitSkyModelMFInit  (gpointer inn)
     ParentClass->ObitInit (inn);
 
   /* set members in this class */
-  in->planes      = NULL;
-  in->FTplanes    = NULL;
-  in->myInterps   = NULL;
-  in->specFreq    = NULL;
-  in->specIndex   = NULL;
-  in->refFreq     = 1.0;
-  in->nSpec       = 0;
-  in->doAlphaCorr = FALSE;
-  in->priorAlpha  = 0.0;
+  in->planes      =  NULL;
+  in->FTplanes    =  NULL;
+  in->myInterps   =  NULL;
+  in->specFreq    =  NULL;
+  in->specFreqLo  =  NULL;
+  in->specFreqHi  =  NULL;
+  in->specIndex   =  NULL;
+  in->refFreq     =  1.0;
+  in->nSpec       =  0;
+  in->doAlphaCorr =  FALSE;
+  in->priorAlphaRefF = 1.0;
 
 } /* end ObitSkyModelMFInit */
 
@@ -3357,8 +3925,10 @@ void ObitSkyModelMFClear (gpointer inn)
       in->myInterps[k] = ObitCInterpolateUnref(in->myInterps[k]);
     g_free(in->myInterps);
   }
-  if (in->specFreq)  g_free(in->specFreq);  in->specFreq = NULL;
-  if (in->specIndex) g_free(in->specIndex); in->specIndex = NULL;
+  if (in->specFreq)    g_free(in->specFreq);    in->specFreq   = NULL;
+  if (in->specFreqLo)  g_free(in->specFreqLo);  in->specFreqLo = NULL;
+  if (in->specFreqHi)  g_free(in->specFreqHi);  in->specFreqHi = NULL;
+  if (in->specIndex)   g_free(in->specIndex);   in->specIndex  = NULL;
   
   /* unlink parent class members */
   ParentClass = (ObitClassInfo*)(myClassInfo.ParentClass);
@@ -3398,9 +3968,9 @@ void ObitSkyModelMFClear (gpointer inn)
  * \return ObitCCTable to use, this should be Unref and Zapped when done 
  */
 ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata, 
-				     olong field, olong *inCCVer, olong *outCCVer,
-				     olong *startCC, olong *endCC, ofloat range[2],
-				     ObitErr *err)
+				       olong field, olong *inCCVer, olong *outCCVer,
+				       olong *startCC, olong *endCC, ofloat range[2],
+				       ObitErr *err)
 {
   ObitTableCC *CCTable = NULL;
   ObitTableCCRow *CCRow = NULL;
@@ -3409,14 +3979,15 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
   ObitBeamShapeClassInfo *BSClass;
   ObitIOCode retCode;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  union ObitInfoListEquiv InfoReal; 
   ObitInfoType type;
-  ofloat *flux=NULL, *sigma=NULL, *fitResult=NULL, pbmin=0.01, PBCorr=1.0, alpha;
+  ofloat *flux=NULL, *sigma=NULL, *fitResult=NULL, pbmin=0.01, *PBCorr=NULL, alpha=0.0;
   ofloat *FreqFact=NULL, *sigmaField=NULL, ll, lll, arg, specFact;
   odouble *Freq=NULL, refFreq;
   odouble Angle=0.0;
   gpointer fitArg=NULL;
   olong irow, row, i, iterm, nterm, offset, nSpec, tiver;
-  gchar keyword[12];
+  gchar keyword[20];
   gchar *routine = "ObitSkyModelMFgetPBCCTab";
 
   /* error checks */
@@ -3460,12 +4031,19 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
       }
     }
     
+    if (in->prtLv>1) Obit_log_error(err, OBIT_InfoErr, 
+				    "Smooth CCs to %d term spectrum",
+				    nterm);
+    
+    /* Prior spectral index */
+    InfoReal.flt = 0.0;   type = OBIT_float;
+    ObitInfoListGetTest(image->myDesc->info, "ALPHA", &type, dim, &InfoReal);
+    if (type==OBIT_double) alpha = (ofloat)InfoReal.dbl;
+    if (type==OBIT_float)  alpha = (ofloat)InfoReal.flt;
+  
     /* Log Freq ratio */
     for (i=0; i<nSpec; i++)  FreqFact[i] = log(Freq[i]/refFreq);
 
-    /* Prior spectral index */
-    ObitInfoListGetTest(image->myDesc->info, "ALPHA", &type, dim, &alpha);
-  
     /* Open CC table */
     retCode = ObitTableCCOpen (CCTable, OBIT_IO_ReadWrite, err);
     if ((retCode != OBIT_IO_OK) || (err->error))
@@ -3476,14 +4054,16 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
 			routine, *outCCVer);
 
     /* Setup */
-    offset    = 4;
-    flux      = g_malloc0(nSpec*sizeof(ofloat));
-    sigma     = g_malloc0(nSpec*sizeof(ofloat));
+    offset     = 4;
+    flux       = g_malloc0(nSpec*sizeof(ofloat));
+    sigma      = g_malloc0(nSpec*sizeof(ofloat));
     sigmaField = g_malloc0(nSpec*sizeof(ofloat));
-    BeamShape = ObitBeamShapeCreate ("BS", (ObitImage*)image, pbmin, in->antSize, TRUE);
-    BSClass   = (ObitBeamShapeClassInfo*)(BeamShape->ClassInfo);
-    fitArg    = ObitSpectrumFitMakeArg (nSpec, nterm-1, refFreq, Freq, FALSE, 
-					&fitResult, err);
+    PBCorr     = g_malloc0(nSpec*sizeof(ofloat));
+    BeamShape  = ObitBeamShapeCreate ("BS", (ObitImage*)image, pbmin, in->antSize, TRUE);
+    BeamShape  = ObitBeamShapeCreate ("BS", (ObitImage*)image, pbmin, in->antSize, TRUE);
+    BSClass    = (ObitBeamShapeClassInfo*)(BeamShape->ClassInfo);
+    fitArg     = ObitSpectrumFitMakeArg (nSpec, nterm, refFreq, Freq, FALSE, 
+					 &fitResult, err);
     for (i=0; i<nterm; i++) fitResult[i]  = 0.0;
     for (i=0; i<nSpec; i++) sigmaField[i] = -1.0;
     if  (err->error) goto cleanup;
@@ -3512,12 +4092,13 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
       /* Loop over spectral channels get corrected flux, sigma */
       for (i=0; i<nSpec; i++) {
 	BeamShape->refFreq = Freq[i];  /* Set frequency */
-	PBCorr   = BSClass->ObitBeamShapeGainSym(BeamShape, Angle);
-	flux[i]  = CCRow->parms[offset+i] / PBCorr;
-	sigma[i] = sigmaField[i] / (PBCorr*PBCorr);
+	PBCorr[i] = BSClass->ObitBeamShapeGainSym(BeamShape, Angle);
+	flux[i]   = CCRow->parms[offset+i] / PBCorr[i];
+	/* Exactly zero is probably bad */
+	if (CCRow->parms[offset+i]==0.0) sigma[i]  = 1.0e10;
+	else sigma[i] = sigmaField[i] / (PBCorr[i]*PBCorr[i]);
       }
-
-   
+ 
       /* Fit spectrum */
       ObitSpectrumFitSingleArg (fitArg, flux, sigma, fitResult);
       
@@ -3526,8 +4107,6 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
 
       /* Replace channel fluxes with fitted spectrum */
       for (i=0; i<nSpec; i++) {
-   	BeamShape->refFreq = Freq[i];  /* Set frequency */
-	PBCorr  = BSClass->ObitBeamShapeGainSym(BeamShape, Angle);
 	/* Frequency dependent term */
 	lll = ll = FreqFact[i];
 	arg = 0.0;
@@ -3536,7 +4115,7 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
 	  lll *= ll;
 	}
 	specFact = exp(arg);
-	CCRow->parms[offset+i] = specFact*fitResult[0]*PBCorr;
+	CCRow->parms[offset+i] = specFact*fitResult[0]*PBCorr[i];
       }
  
      /* ReWrite output */
@@ -3554,6 +4133,7 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
     if (flux)       g_free(flux);
     if (sigma)      g_free(sigma);
     if (sigmaField) g_free(sigmaField);
+    if (PBCorr)     g_free(PBCorr);
     if (Freq)       g_free(Freq);
     if (FreqFact)   g_free(FreqFact);
     if (fitResult)  g_free(fitResult);
@@ -3564,5 +4144,50 @@ ObitTableCC* ObitSkyModelMFgetPBCCTab (ObitSkyModelMF* in, ObitUV* uvdata,
  } /* End smoothing table */
   
   return CCTable;
+} /* end ObitSkyModelMFgetPBCCTab */
+
+/**
+ * Returns the OverSampling factor to use
+ * Default is OverSampleMF but factors of 2 less may be used 
+ * not to exceed 0.75 GByte usage for 32 bit and 5 GByte for 64 bit pointers
+ * \param in       SkyModelMF
+ * \param field    Field number in in->mosaic
+ * \param err      Obit error stack object.
+ * \return oversampling factor
+ */
+static olong GetOverSample (ObitSkyModelMF* in, olong field, ObitErr *err)
+{
+  olong out = OverSampleMF;
+  odouble size;
+  ObitImageDesc *imDesc = NULL;
+  gchar *routine="ObitSkyModelMF:GetOverSample";
+
+  /* Error condition? */
+  if (err->error) return out;
+
+  /* Size of gridding arrays with no oversampling */
+  imDesc = in->mosaic->images[field]->myDesc; 
+  size = sizeof(ofloat)*in->nSpec;
+  size *= imDesc->inaxes[imDesc->jlocr];
+  size *= imDesc->inaxes[imDesc->jlocd];
+
+  /* By pointer size */
+  if (sizeof(olong*)==4) {
+    while (out*out*size>0.75e9) out /=2;
+  } else if (sizeof(olong*)==8) {
+    while (out*out*size>5.0e9) out /=2;
+  } else  {  /* Shouldn't happen */
+     out = OverSampleMF;
+  }
+
+  /* Check that out at least 1 */
+  Obit_retval_if_fail((out>=1), err, out,
+		      "%s: Insufficient memory to make grids", routine);
+  
+  /* Tell if reduced size */
+  if (out<OverSampleMF) 
+    Obit_log_error(err, OBIT_InfoWarn, "%s: Reduced oversampling from %d to %d to fit",
+		   routine, OverSampleMF, out);
+  return out;
 } /* end ObitSkyModelMFgetPBCCTab */
 

@@ -1,4 +1,4 @@
-/* $Id: ObitImageSel.h 117 2009-07-14 14:30:25Z bill.cotton $    */
+/* $Id$    */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2003-2009                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

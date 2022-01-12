@@ -3,9 +3,9 @@
 This module contains utilities for Sky Geometry calculations
 Also primary beam calculations
 """
-# $Id: SkyGeom.py 2 2008-06-10 15:32:27Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2007
+#  Copyright (C) 2007-2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -32,6 +32,7 @@ Also primary beam calculations
 #-----------------------------------------------------------------------
 
 # Python utility package for  Sky Geometry 
+from __future__ import absolute_import
 import Obit, UVDesc
 import math
 
@@ -70,6 +71,38 @@ def PXYShift (ra, dec, xShift, yShift, rotate):
     return Obit.SkyGeomXYShift (ra, dec, xShift, yShift, rotate, [0.0], [0.0])
     # end PXYShift
 
+def PShiftSIN (ra, dec, rotate, xra, xdec):
+    """ 
+
+    Determine coefficients of a 3D SIN projection shift
+     ra       Initial Right Ascension in deg.
+     dec      Initial declination in deg.
+     rotate   Rotation of field, to E from N, deg.
+     xra      Shifted RA (deg)
+     xdec     Shifted dec (deg)
+     rotate   Rotation of field, to E from N, deg.
+     return [shiftx, shifty, shiftz] u,v,w coefficients.
+    """
+    ################################################################
+    return Obit.SkyGeomShiftSIN (ra, dec, rotate, xra, xdec)
+    # end PShiftSIN
+
+def PShiftNCP (ra, dec, rotate, xra, xdec):
+    """ 
+
+    Determine coefficients of a 3D NCP projection shift
+     ra       Initial Right Ascension in deg.
+     dec      Initial declination in deg.
+     rotate   Rotation of field, to E from N, deg.
+     xra      Shifted RA (deg)
+     xdec     Shifted dec (deg)
+     rotate   Rotation of field, to E from N, deg.
+     return [shiftx, shifty, shiftz] u,v,w coefficients.
+    """
+    ################################################################
+    return Obit.SkyGeomShiftNCP (ra, dec, rotate, xra, xdec)
+    # end PShiftNCP
+
     
 
 def PNewPos (type, ra0, dec0, l, m):
@@ -99,8 +132,6 @@ def PNewPos (type, ra0, dec0, l, m):
     ################################################################
     return Obit.SkyGeomNewPos (type, ra0, dec0, l, m,[0.0], [0.0], [0])
     # end PNewPos
-
-    
 
 def PWorldPos(xpix, ypix, xref, yref, xrefpix, yrefpix, xinc, yinc, rot, \
               type, xpos, ypos):
@@ -433,6 +464,44 @@ def PPBPoly (Desc, RA, Dec, cutoff=None):
         pbfact =  Obit.PBUtilPoly(angle, freq, 0.0)
     return pbfact
     # end  PPBPoly
+
+def PPBKAT (Desc, RA, Dec, cutoff=None):
+    """ Compute KAT-7 beam shape from a fitted polynomial
+    
+    Compute primary beam at RA, Dec with pointing given in Desc
+      Desc   = Data (UV or Image) descriptor with pointing position
+               and frequency
+      Ra     = Right Ascension in degrees
+      Dec    = Declination in degrees
+      cutoff = distance from pointing beyond which to set primary
+               beam to zero
+      Return Primary beam  power factor [0.0, 1.0].
+    """
+    ################################################################
+    d = Desc.Dict    # Descriptor as dictionary
+    freq = d["crval"][d["jlocf"]]   # Frequency
+    rotate = d["crota"][d["jlocd"]] # Rotation
+    # Get pointing position, obsra, obsdec if possible
+    if "obsra" in d:
+        obsra  = d["obsra"]
+    else:
+        obsra  = 0.0
+    if "obsdec" in d:
+        obsdec = d["obsdec"]
+    else:
+        obsdec  = 0.0
+    if (obsra == 0.0) and (obsdec == 0.0):
+        obsra  = d["crval"][d["jlocr"]]
+        obsdec = d["crval"][d["jlocd"]]
+    # Angle from obs posn
+    (dra, ddec) =  PShiftXY (obsra, obsdec, rotate, RA, Dec)
+    angle = math.sqrt (dra*dra+ddec*ddec)
+    if cutoff and (angle>cutoff):
+        pbfact = 0.0
+    else:
+        pbfact =  Obit.PBUtilKAT(angle, freq, 0.0)
+    return pbfact
+    # end  PPBKAT
 
 def PPBJinc (Desc, RA, Dec, antSize=25.0, cutoff=None):
     """ Compute Antenna beam assuming uniform illumination of an antenna

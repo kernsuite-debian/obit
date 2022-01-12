@@ -1,6 +1,6 @@
-/* $Id: ObitUVSelfCal.c 168 2010-03-25 11:54:01Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005-2010                                          */
+/*;  Copyright (C) 2005-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -32,6 +32,7 @@
 #include "ObitUVUtil.h"
 #include "ObitUVSoln.h"
 #include "ObitUVGSolveWB.h"
+#include "ObitSystem.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -255,6 +256,8 @@ ObitUVSelfCal* ObitUVSelfCalCreate (gchar* name, ObitSkyModel *skyModel)
  *                                  image pixel value to use to determine if SC needed
  *                                  else use sum of CC in SkyModel.
  * \li "noNeg"   OBIT_bool  (1,1,1) If True, exclude negative summed CLEAN components 
+ * On output the following is set
+ * \li "FractOK"    OBIT_float (1,1,1) The fraction of solutions which are OK
  *                                  from the model calculation def [FALSE]
  * \param inUV     Input UV data. 
  * \param init     If True, this is the first SC in a series.
@@ -273,9 +276,9 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitInfoType type;
   olong i, j, jj, nfield, *iatemp, itemp, isuba, refant, bestSN=0, oldDoCal;
-  ofloat best, posFlux, peakFlux;
+  ofloat best, posFlux, peakFlux, FractOK;
   ofloat minFluxPSC, minFluxASC, minFlux;
-  gchar *dispURL=NULL, tname[129], solmod[5], tbuff[128];
+  gchar *dispURL=NULL, tname[129], solmod[5], tbuff[128], *Stokes="    ";
   gboolean Tr=TRUE, Fl=FALSE, diverged, quit, doSmoo, doDelay, noNeg;
   gchar        *SCParms[] = {  /* Self parameters */
     "refAnt", "solInt", "solType", "solMode", "WtUV", "avgPol", "avgIF", 
@@ -308,7 +311,7 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
   }
 
   /* Want negative CCs in model? */
-  noNeg = FALSE;
+  noNeg = TRUE;
   ObitInfoListGetTest(in->info, "noNeg", &type, dim, &noNeg);
 
   /* Quality for convergence test of SkyModel */
@@ -349,6 +352,7 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
     Obit_log_error(err, OBIT_InfoErr, "Peak Flux %g < %g - no Self cal needed", 
 		   peakFlux, minFlux);
     *noSCNeed = TRUE;
+    ObitInfoListAlwaysPut(in->skyModel->info, "noNeg", OBIT_bool, dim, &Fl);
     return TRUE;
   }
   /* Need model total flux density at least  minFlux) */
@@ -356,6 +360,7 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
     Obit_log_error(err, OBIT_InfoErr, "Model Flux %g < %g - no Self cal needed", 
 		   posFlux, minFlux);
     *noSCNeed = TRUE;
+    ObitInfoListAlwaysPut(in->skyModel->info, "noNeg", OBIT_bool, dim, &Fl);
     return TRUE;
   }
 
@@ -394,7 +399,7 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
   else in->totalQual = 1.0e20;
 
   /* Divergence test - call it diverged if solution worse that 1.3*last */
-  diverged  = (in->numLast>21) && (in->totalQual > 1.3*in->lastQual[in->numLast-1]);
+  diverged  = (in->numLast>2) && (in->totalQual > 1.3*in->lastQual[in->numLast-1]);
   converged = diverged;
 
   /* Convergence test - not improved in 2 cycles */
@@ -419,8 +424,12 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
   else if (converged) Obit_log_error(err, OBIT_InfoErr, "Solution converged");
   ObitErrLog(err);
  
+  /* Running out of time? (90% of allowed time) */
+  quit = ObitSystemOutOfTime (0.90, err);
+  if (quit) {converged=TRUE;in->outaTime=TRUE;}
+
   /* Show user and allow judgement */
-  if (in->display) {
+  if (in->display && (!quit)) {
     Obit_log_error(err, OBIT_InfoErr, 
 		   "Display residual from CLEAN, continue with self-cal?");
     ObitErrLog(err);
@@ -472,9 +481,15 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
     
     /* Scratch file to use for self calibration */
     if (in->SCData==NULL) {
-      in->SCData = newObitUVScratch (inUV, err);
+      /* All Stokes on scratch file */
+      dim[0] = 4;
+      ObitInfoListAlwaysPut (inUV->info, "Stokes", OBIT_string, dim, Stokes);
+      /* Open and close uvdata to set descriptor for scratch file */
+      ObitUVOpen (inUV, OBIT_IO_ReadCal, err);
+      ObitUVClose (inUV, err);
       if (err->error) Obit_traceback_val (err, routine, inUV->name, converged);
-    }
+       in->SCData = newObitUVScratch (inUV, err);
+   }
     
     /* Don't apply any  calibration to inUV */
     dim[0] = 1; dim[1] = 1;
@@ -525,6 +540,14 @@ gboolean ObitUVSelfCalSelfCal (ObitUVSelfCal *in, ObitUV *inUV, gboolean init,
   ObitInfoListAlwaysPut(inUV->info, "gainUse", OBIT_long, dim, &itemp);
   /* Use all components */
   ObitInfoListAlwaysPut(in->skyModel->info, "noNeg", OBIT_bool, dim, &Fl);
+
+  /* Copy FractOK to in */
+  FractOK = 1.0; dim[0] = dim[1] = dim[2] = dim[3] = dim[4] = 1;
+  ObitInfoListGetTest(in->mySolver->info, "FractOK", &type, dim, &FractOK);
+  ObitInfoListAlwaysPut(in->info, "FractOK", OBIT_float, dim, &FractOK);
+
+  /* Cleanup */
+  in->mySolver = ObitUVGSolveUnref(in->mySolver);
 
   return converged;
 } /* end ObitUVSelfCalSelfCal */
@@ -722,6 +745,10 @@ void ObitUVSelfCalFluxHist (ObitUVSelfCal *in, ObitUV *inUV, ObitErr *err)
   if (err->error) return;
   g_assert (ObitUVSelfCalIsA(in));
   g_assert (ObitUVIsA(inUV));
+  /* Better be some data*/
+  Obit_return_if_fail((inUV->myDesc->nvis>=100), err,
+ 		      "%s: TOO few data %d", 
+		      routine, inUV->myDesc->nvis);
 
   /* Get baseline range */
   ObitUVUtilUVWExtrema (inUV, &MaxBL, &MaxW, err);
@@ -972,6 +999,7 @@ void ObitUVSelfCalInit  (gpointer inn)
   in->histRMS   = NULL;
   in->UVFullRange[0] = 0.0;
   in->UVFullRange[1] = 0.0;
+  in->outaTime       = FALSE;
 
 } /* end ObitUVSelfCalInit */
 

@@ -1,10 +1,10 @@
-; $Id: Calib.TDF 199 2010-06-15 11:39:58Z bill.cotton $
+; $Id$
 ; Calib
 ;---------------------------------------------------------------
 ;! Obit Radio interferometry calibration software
 ;# Task Obit Imaging calibration
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2006-2010
+;;  Copyright (C) 2006-2015
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -57,9 +57,9 @@ UVRange         0.                  Min & max baseline (klambda)
 **PARAM** float 1  **DEF** 0.01
 WtUV              0.0               Weight outside full wt uvrange
 **PARAM** int 1
-BChan            0.0     8192.0     Low freq. channel 0 for cont.
+BChan            0.0    65536.0     Low freq. channel 0 for cont.
 **PARAM** int 1
-EChan            0.0     8192.0     Highest freq channel
+EChan            0.0    65536.0     Highest freq channel
 **PARAM** int 1
 subA                                Subarray
 **PARAM** int 50
@@ -76,8 +76,15 @@ BPVer                               Bandpass table version
 flagVer                             Flag table version
 **PARAM** boo 1 **DEF** F
 doPol                               Apply polarization cal?
+**PARAM** int 1 **DEF** -1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
 **PARAM** float 1  **DEF** 0.0
 Alpha           -20.       20.      Spectral Index to correct
+**PARAM** boo 1   **DEF** F
+PBCor                               Apply Frequency PB Corr?
+**PARAM** float 1 **DEF** 24.5
+antSize                             Diameter of ant. for PBCor (m)
 **PARAM** str 4
 DataType2                           "FITS" or "AIPS" type of model
 **PARAM** str 48
@@ -102,7 +109,7 @@ BComp                               First CLEAN comp to sub.
 EComp                               Last CLEAN comp to sub.
                                     to use (0 => all)
 **PARAM** str 4
-Cmethod                            Modeling method:
+Cmethod                            Modeling method (see Help):
                                    'DFT','GRID','    '
 **PARAM** str 4
 Cmodel                             Model type: 'COMP','IMAG'
@@ -117,19 +124,21 @@ modelParm                           Initial parameters (maj, min, pa, type)
                                     alpha, beta...
 **PARAM** int 1
 solnVer                             SN table to write
-**PARAM** int 1
-refAnt            0                 Reference antenna
+**PARAM** int 5
+refAnts           0                 Reference antenna(s)
 **PARAM** float 1
 solInt            0.0               Solution interval (min)
 **PARAM** str 4
 solType                             Soln. Type: '  ', 'L1', 
 **PARAM** str 4
 solMode                             Soln. Mode:'A&P', 'P', 'P!A', "DELA"
+**PARAM** boo 1 **DEF** T
+doTwo                               1 & 2 baseline combs for SolMode="DELA"
 **PARAM** boo 1 **DEF** F
 avgPol                              Avg. poln?
 **PARAM** boo 1 **DEF** F
 avgIF                               Avg. IFs?
-**PARAM** boo 1 **DEF** F
+**PARAM** boo 1 **DEF** T
 noNeg                               Exclude negative CLEAN comps?
 **PARAM** boo 1  **DEF** F
 doMGM                               Apply mean gain modulus
@@ -145,6 +154,8 @@ minNo             2                 Min. no. antennas in selfcal
 prtLv             0.0               Print level in selfcal
 **PARAM** int 1 **DEF** 1
 nThreads            0              Number of threads to use
+**PARAM** boo 1 **DEF** F
+doGPU            0                 Use GPU if available
 **PARAM** str 128
 taskLog                            Logfile to write task messages to
 **PARAM** int 10
@@ -207,28 +218,33 @@ Adverbs:
   doBand.....If true (>0) then correct the data for the shape of the
              antenna bandpasses using the BP table specified by BPVer.
              The correction has five modes:
-             (a) if DOBAND=1 all entries for an antenna in the table
+             (a) if doBand=1 all entries for an antenna in the table
              are averaged together before correcting the data.
-             (b) if DOBAND=2 the entry nearest in time (including
+             (b) if doBand=2 the entry nearest in time (including
              solution weights) is used to correct the data.
-             (c) if DOBAND=3 the table entries are interpolated in
+             (c) if doBand=3 the table entries are interpolated in
              time (using solution weights) and the data are then
              corrected.
-             (d) if DOBAND=4 the entry nearest in time (ignoring
+             (d) if doBand=4 the entry nearest in time (ignoring
              solution weights) is used to correct the data.
-             (e) if DOBAND=5 the table entries are interpolated in
+             (e) if doBand=5 the table entries are interpolated in
              time (ignoring solution weights) and the data are then
              corrected.
-             IMAGR uses DOBAND as the nearest integer; 0.1 is therefore
+             Calib uses doBand as the nearest integer; 0.1 is therefore
              "false".
   BPVer......Specifies the version of the BP table to be applied
                 0 => highest numbered table.
                <0 => no bandpass correction to be applied.
   flagVer....FG table to use for editing. 0 => highest.
   doPol......True => apply polarization calibration
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   Alpha......If != 0.0 then correct data by spectral index Alpha before 
              calibration. 
              -0.7 is typical for synchrotron.
+  PBCor......Apply Frequency dependent primary beam corrections?
+  antSize....Diameter of antenna for PBCor (m), default = 24.5
 
       Model
   DataType2.'FITS' or 'AIPS'  type of input, defaults to DataType
@@ -262,9 +278,11 @@ Adverbs:
              computation.
              '    ' allows the program to use the fastest
              method.
-             NOTE: Cmethod='GRID' does not work correctly for RL
+             NB: Cmethod='GRID' does not work correctly for RL
              and LR data; DO NOT USE Cmethod='GRID' for RL, LR!
              (Not sure this is correct for Obit)
+             NB: If the input model has CLEAN components with spectral
+             parameters (not Tab Spec) then 'DFT' MUST be used.
   Cmodel.....This indicates the type of input model; 'COMP' means that
              the input model consists of Clean components, 'IMAG'
              indicates that the input model consists of images.  If
@@ -300,12 +318,19 @@ Adverbs:
              full weight. (default all)
   WtUV.......Weighting (wrt 1) to use outside of basic UVRange
              [def 0.0]
-  refAnt.....Reference antenna number
+  refAnts....List of acceptable Reference antenna numbers
+             For solMode="DELA" multiple reference antennas may be 
+             atempted.
+             For other solution modes, only the first value is used.
   solInt.....Solution interval (min)
   solType....Solution Type: '  ', 'L1', 
   solMode....Solution Mode:'A&P', 'P', 'P!A',
              "DELA" => solve for group delay and phase
-  avgPol.....Average Polarizations in scalibration? [def False]
+  doTwo......If true use one and two baseline combinations for
+             solMode="DELA" calibration.  If False then only
+             the baseline from the reference antenna to each 
+             antenna is used.
+  avgPol.....Average Polarizations in calibration? [def False]
   avgIF......Average IFs in calibration? [def False]
   doMGM......Apply mean gain modulus to A&P soln.
   elevMGM....Minimum elevation for mean gain modulus average.
@@ -320,6 +345,8 @@ Adverbs:
              operations. 
              NB: This only improves performance if there are 
              multiple processors and/or cores in the host.
+  doGPU......If software is built for a GPU and one is available
+             True=use it, otherwise use CPU
   taskLog....Log file to write messages to INSTEAD of the terminal
              This is useful in long runs or batch files where
              a bug in the ObitTalk message handling may cause

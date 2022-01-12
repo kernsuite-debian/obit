@@ -1,6 +1,6 @@
-/* $Id: ObitSkyModelVMSquint.c 183 2010-04-02 14:21:01Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2009                                          */
+/*;  Copyright (C) 2006-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,6 +26,7 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitUVDesc.h"
 #include "ObitThread.h"
 #include "ObitSkyModelVMSquint.h"
 #include "ObitTableCCUtil.h"
@@ -38,6 +39,7 @@
 #include "ObitTableANUtil.h"
 #include "ObitSkyGeom.h"
 #include "ObitSinCos.h"
+#include "ObitExp.h"
 #ifndef VELIGHT
 #define VELIGHT 2.997924562e8
 #endif /* VELIGHT */
@@ -406,7 +408,7 @@ void ObitSkyModelVMSquintInitMod (ObitSkyModel* inn, ObitUV *uvdata,
   in->numAntList = numAntList;
   for (iver=1; iver<=numAntList; iver++) { 
     TableAN = newObitTableANValue ("AN", (ObitData*)uvdata, &iver, 
-				   OBIT_IO_ReadOnly, 0, 0, err);
+				   OBIT_IO_ReadOnly, 0, 0, 0, err);
     in->AntList[iver-1] = ObitAntennaListUnref(in->AntList[iver-1]);
     in->AntList[iver-1] = ObitTableANGetList(TableAN, err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
@@ -421,7 +423,7 @@ void ObitSkyModelVMSquintInitMod (ObitSkyModel* inn, ObitUV *uvdata,
   /* Precess to get Apparent position */
   ObitPrecessUVJPrecessApp (uvdata->myDesc, in->curSource);
 
-  /* Init Sine/Cosine calculator - just to be sure about threading */
+  /* Init Sine/Cosine, exp calculator - just to be sure about threading */
   ObitSinCosCalc(phase, &sp, &cp);
 
 } /* end ObitSkyModelVMSquintInitMod */
@@ -523,6 +525,7 @@ void ObitSkyModelVMSquintUpdateModel (ObitSkyModelVM *inn,
   ofloat feedPA, squint, dx, dy, x, y, antsize = 24.5, pbmin = 0.0;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  gboolean allEVLA;
   VMSquintFTFuncArg *args;
   gchar *routine = "ObitSkyModelVMSquintUpdateModel";
 
@@ -556,16 +559,17 @@ void ObitSkyModelVMSquintUpdateModel (ObitSkyModelVM *inn,
   /* Which antennas are EVLA ? */
   if (in->isEVLA==NULL) {
     ObitThreadLock(in->thread);  /* Lock against other threads */
-    if (in->isEVLA==NULL)   /* Still NULL? */
+    if (in->isEVLA==NULL)        /* Still NULL? */
       in->isEVLA = g_malloc((100+in->AntList[suba]->number)*sizeof(gboolean));
     ObitThreadUnlock(in->thread); 
   }
+  allEVLA = !strncmp(in->AntList[suba]->ArrName, "EVLA", 4);
   for (i=0; i<in->AntList[suba]->number; i++) {
-    in->isEVLA[i] = 
-      (in->AntList[suba]->ANlist[i]->AntName[0]=='E') &&
-      (in->AntList[suba]->ANlist[i]->AntName[1]=='V') &&
-      (in->AntList[suba]->ANlist[i]->AntName[2]=='L') &&
-      (in->AntList[suba]->ANlist[i]->AntName[3]=='A');
+    in->isEVLA[i] = allEVLA ||
+      ((in->AntList[suba]->ANlist[i]->AntName[0]=='E') &&
+       (in->AntList[suba]->ANlist[i]->AntName[1]=='V') &&
+       (in->AntList[suba]->ANlist[i]->AntName[2]=='L') &&
+       (in->AntList[suba]->ANlist[i]->AntName[3]=='A'));
   }
 
   /* Compute VLA corrections */
@@ -579,11 +583,11 @@ void ObitSkyModelVMSquintUpdateModel (ObitSkyModelVM *inn,
   /* feedPA -= 2.0*curPA; Correct to on sky */
   /* The sign of this angle is not well tested as it only matters to x
      and the source in the test data is due south (y only).*/
-  feedPA = -feedPA; /* Correct to on sky */
+  /*feedPA = -feedPA;  Correct to on sky */
 
   /* Offsets due to beam squint - for LL + for RR */
-  dx = squint * sin(feedPA);
-  dy = squint * cos(feedPA);
+  dx = squint * sin(2.0*G_PI-feedPA);
+  dy = squint * cos(2.0*G_PI-feedPA);
 
   npos[0] = 0; npos[1] = 0; 
   ccData = ObitFArrayIndex(in->comps, npos);
@@ -630,19 +634,22 @@ void ObitSkyModelVMSquintUpdateModel (ObitSkyModelVM *inn,
   /* Compute EVLA corrections */
   /* What azimuth is the feed at? */
   feedPA = DG2RAD*FeedAzE (in, uvdata, &squint);
-  feedPA -= curPA; /* Correct to on sky */
+   /*feedPA -= curPA; Correct to on sky */
+   feedPA -= curPA; /*Correct to on sky */
 
   /* DEBUG
-  squint = 0.0;
-  squint = -squint; *//* ?? */
+  squint = 0.0;*//* ?? */
+  /*squint = -squint;  ?? */
   /* feedPA -= 2.0*curPA; Correct to on sky */
   /* The sign of this angle is not well tested as it only matters to x
      and the source in the test data is due south (y only).*/
-  feedPA = -feedPA; /* Correct to on sky */
+  /* feedPA = -feedPA; Correct to on sky */
 
   /* Offsets due to beam squint - for LL + for RR */
-  dx = squint * sin(feedPA);
-  dy = squint * cos(feedPA);
+   dx = squint * sin(2.0*G_PI-feedPA);
+   dy = squint * cos(2.0*G_PI-feedPA);
+   /* DEBUG dx = squint * sin(feedPA);
+      dy = squint * cos(feedPA);*/
 
   npos[0] = 0; npos[1] = 0; 
   ccData = ObitFArrayIndex(in->comps, npos);
@@ -667,13 +674,15 @@ void ObitSkyModelVMSquintUpdateModel (ObitSkyModelVM *inn,
     /* Angle with squint LL */
     /*AngleLL = ObitImageDescAngle(in->mosaic->images[ifield]->myDesc, 
       y-dy, x-dx);*/
-    AngleLL = BeamAngle(in->mosaic->images[ifield]->myDesc, x, y, -dx, -dy);
+    /* DEBUG AngleLL = BeamAngle(in->mosaic->images[ifield]->myDesc, x, y, -dx, -dy);*/
+    AngleLL = BeamAngle(in->mosaic->images[ifield]->myDesc, x, y, dx, dy);
     Lgain[i] = sqrt(ObitPBUtilPntErr (Angle, AngleLL, antsize, pbmin, Freq));
 
     /* Angle with squint RR */
     /* AngleRR = ObitImageDescAngle(in->mosaic->images[ifield]->myDesc, 
        y+dy, x+dx);*/
-    AngleRR = BeamAngle(in->mosaic->images[ifield]->myDesc, x, y, dx, dy);
+    /* DEBUG AngleRR = BeamAngle(in->mosaic->images[ifield]->myDesc, x, y, dx, dy);*/
+    AngleRR = BeamAngle(in->mosaic->images[ifield]->myDesc, x, y, -dx, -dy);
     Rgain[i] = sqrt(ObitPBUtilPntErr (Angle, AngleRR, antsize, pbmin, Freq));
 
     /* DEBUG 
@@ -1125,17 +1134,18 @@ static gpointer ThreadSkyModelVMSquintFTDFT (gpointer args)
   olong lrec, nrparm, naxis[2];
   olong startPoln, numberPoln, jincs, startChannel, numberChannel;
   olong jincf, startIF, numberIF, jincif, kincf, kincif;
-  olong offset, offsetChannel, offsetIF;
-  olong ilocu, ilocv, ilocw, iloct, ilocb, suba, itemp, ant1, ant2, mcomp;
+  olong offset, offsetChannel, offsetIF, lim;
+  olong ilocu, ilocv, ilocw, iloct, suba, it1, it2, ant1, ant2, mcomp;
   ofloat *visData, *Data, *ddata, *fscale;
   ofloat sumRealRR, sumImagRR, modRealRR, modImagRR;
   ofloat sumRealLL, sumImagLL, modRealLL, modImagLL;
-  ofloat cbase, *rgain1, *lgain1, *rgain2, *lgain2;
+  ofloat *rgain1, *lgain1, *rgain2, *lgain2;
 #define FazArrSize 100  /* Size of the amp/phase/sine/cosine arrays */
   ofloat AmpArrR[FazArrSize], AmpArrL[FazArrSize], FazArr[FazArrSize];
   ofloat CosArr[FazArrSize], SinArr[FazArrSize];
+  ofloat ExpArgR[FazArrSize],  ExpValR[FazArrSize], ExpArgL[FazArrSize],  ExpValL[FazArrSize];
   olong it, jt, itcnt;
-  ofloat ampr, ampl, arg, freq2, freqFact, wtRR=0.0, wtLL=0.0, temp;
+  ofloat ampr, ampl, arg=0.0, freq2, freqFact, wtRR=0.0, wtLL=0.0, temp;
   odouble *freqArr;
   const ObitSkyModelVMClassInfo 
     *myClass=(const ObitSkyModelVMClassInfo*)in->ClassInfo;
@@ -1145,11 +1155,10 @@ static gpointer ThreadSkyModelVMSquintFTDFT (gpointer args)
   if (err->error) goto finish;
 
  /* Visibility pointers */
-  ilocu =  uvdata->myDesc->ilocu;
-  ilocv =  uvdata->myDesc->ilocv;
-  ilocw =  uvdata->myDesc->ilocw;
-  iloct =  uvdata->myDesc->iloct;
-  ilocb =  uvdata->myDesc->ilocb;
+  ilocu  =  uvdata->myDesc->ilocu;
+  ilocv  =  uvdata->myDesc->ilocv;
+  ilocw  =  uvdata->myDesc->ilocw;
+  iloct  =  uvdata->myDesc->iloct;
 
   /* Set channel, IF and Stokes ranges (to 0-rel)*/
   startIF  = in->startIFPB-1;
@@ -1191,8 +1200,8 @@ static gpointer ThreadSkyModelVMSquintFTDFT (gpointer args)
     /* Is current model still valid? */
     if (visData[iloct] > largs->endVMModelTime) {
       /* Subarray 0-rel */
-      itemp = (olong)visData[ilocb];
-      suba = 100.0 * (visData[ilocb]-itemp) + 0.5; 
+      ObitUVDescGetAnts(uvdata->myDesc, visData, &it1, &it2, &suba);
+      suba -= 1;  /* to 0-rel */
       /* Update */
       myClass->ObitSkyModelVMUpdateModel ((ObitSkyModelVM*)in, visData[iloct], suba, uvdata, ithread, err);
       if (err->error) {
@@ -1205,9 +1214,7 @@ static gpointer ThreadSkyModelVMSquintFTDFT (gpointer args)
     }
 
     /* Need antennas numbers */
-    cbase = visData[ilocb]; /* Baseline */
-    ant1 = (cbase / 256.0) + 0.001;
-    ant2 = (cbase - ant1 * 256) + 0.001;
+    ObitUVDescGetAnts(uvdata->myDesc, visData, &ant1, &ant2, &it1);
     ant1--;    /* 0 rel */
     ant1 = MAX (0, ant1);
     ant2--;    /* 0 rel */
@@ -1271,39 +1278,41 @@ static gpointer ThreadSkyModelVMSquintFTDFT (gpointer args)
 	  break;
 	case OBIT_SkyModel_GaussMod:     /* Gaussian on sky */
 	  /* From the AIPSish QGASUB.FOR  */
-	  freq2 = freqArr[iIF*kincif + iChannel*kincf];    /* Frequency squared */
-	  freq2 *= freq2;
+	  /* freq2 = freqArr[iIF*kincif + iChannel*kincf];    Frequency squared */
+	  freq2 = freqFact * freqFact;    /* Frequency factor squared */
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
 	      FazArr[itcnt] = freqFact * (ddata[4]*visData[ilocu] + 
 					  ddata[5]*visData[ilocv] + 
 					  ddata[6]*visData[ilocw]);
-	      arg = freq2 * (ddata[7]*visData[ilocu]*visData[ilocu] +
-			     ddata[8]*visData[ilocv]*visData[ilocv] +
-			     ddata[9]*visData[ilocu]*visData[ilocv]);
+	      ExpArgR[itcnt] = freq2 * (ddata[7]*visData[ilocu]*visData[ilocu] +
+					ddata[8]*visData[ilocv]*visData[ilocv] +
+					ddata[9]*visData[ilocu]*visData[ilocv]);
 	      ampr = ddata[3] * rgain1[iComp] * rgain2[iComp];
-	      if (arg>1.0e-5) ampr *= exp (arg);
-	      arg = freq2 * (ddata[7]*visData[ilocu]*visData[ilocu] +
-			     ddata[8]*visData[ilocv]*visData[ilocv] +
-			     ddata[9]*visData[ilocu]*visData[ilocv]);
+	      ExpArgL[itcnt] = freq2 * (ddata[7]*visData[ilocu]*visData[ilocu] +
+					 ddata[8]*visData[ilocv]*visData[ilocv] +
+					 ddata[9]*visData[ilocu]*visData[ilocv]);
 	      ampl = ddata[3] * lgain1[iComp] * lgain2[iComp];
-	      if (arg>1.0e-5) ampl *= exp (arg);
+	      /*if (arg>1.0e-5) ampl *= exp (arg);*/
 	      AmpArrR[itcnt] = ampr;
 	      AmpArrL[itcnt] = ampl;
 	      ddata += lcomp;   /* update pointer */
 	      itcnt++;          /* Count in amp/phase buffers */
-	      if (itcnt>=FazArrSize) break;
 	    }  /* end inner loop over components */
 	    
 	    /* Convert phases to sin/cos */
 	    ObitSinCosVec(itcnt, FazArr, SinArr, CosArr);
+	    /* Convert Gaussian exp arguments */
+	    ObitExpVec(itcnt, ExpArgR, ExpValR);
+	    ObitExpVec(itcnt, ExpArgL, ExpValL);
 	    /* Accumulate real and imaginary parts */
 	    for (jt=0; jt<itcnt; jt++) {
-	      sumRealRR += AmpArrR[jt]*CosArr[jt];
-	      sumImagRR += AmpArrR[jt]*SinArr[jt];
-	      sumRealLL += AmpArrL[jt]*CosArr[jt];
-	      sumImagLL += AmpArrL[jt]*SinArr[jt];
+	      sumRealRR += AmpArrR[jt]*CosArr[jt]*ExpValR[jt];
+	      sumImagRR += AmpArrR[jt]*SinArr[jt]*ExpValR[jt];
+	      sumRealLL += AmpArrL[jt]*CosArr[jt]*ExpValL[jt];
+	      sumImagLL += AmpArrL[jt]*SinArr[jt]*ExpValL[jt];
 	    } /* End loop over amp/phase buffer */
 	  } /* end outer loop over components */
 	  break;
@@ -1311,7 +1320,8 @@ static gpointer ThreadSkyModelVMSquintFTDFT (gpointer args)
 	  /* From the AIPSish QSPSUB.FOR  */
 	  for (it=0; it<mcomp; it+=FazArrSize) {
 	    itcnt = 0;
-	    for (iComp=it; iComp<mcomp; iComp++) {
+	    lim = MIN (mcomp, it+FazArrSize);
+	    for (iComp=it; iComp<lim; iComp++) {
 	      FazArr[itcnt] = freqFact * (ddata[4]*visData[ilocu] + 
 					  ddata[5]*visData[ilocv] + 
 					  ddata[6]*visData[ilocw]);
@@ -1325,7 +1335,6 @@ static gpointer ThreadSkyModelVMSquintFTDFT (gpointer args)
 	    AmpArrL[itcnt] = ampl;
 	    ddata += lcomp;   /* update pointer */
 	    itcnt++;          /* Count in amp/phase buffers */
-	    if (itcnt>=FazArrSize) break;
 	  } /* end inner loop over components */
 	    
 	    /* Convert phases to sin/cos */
@@ -1537,11 +1546,11 @@ static ofloat FeedAzE (ObitSkyModelVMSquint* in, ObitUV *uvdata,
   /* Get angle by reference frequency */
   if ((Freq>1.0e9) && (Freq<2.0e9)) {
     out = -84.1;   /* EVLA L band measured */
-  } else if ((Freq>2.0e9) && (Freq<3.0e9)) {
+  } else if ((Freq>2.0e9) && (Freq<3.9e9)) {
     out = 101.6;   /* EVLA S band  nominal*/
-  } else if ((Freq>3.0e9) && (Freq<7.0e9)) {
+  } else if ((Freq>3.95e9) && (Freq<7.9e9)) {
     out = 165.6;   /* EVLA C band measured*/
-  } else if ((Freq>7.0e9) && (Freq<12.0e9)) {
+  } else if ((Freq>7.95e9) && (Freq<12.0e9)) {
     out = -156.3;   /* EVLA X band, ant 6,14,22 = 9.7 */
   } else if ((Freq>12.0e9) && (Freq<20.0e9)) {
     out = 47.6;   /* EVLA Ku nominal */

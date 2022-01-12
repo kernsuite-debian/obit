@@ -1,4 +1,4 @@
-/* $Id: ObitSkyModelVM.h 15 2008-08-12 10:49:55Z bill.cotton $     */
+/* $Id$     */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2006-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

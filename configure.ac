@@ -1,4 +1,4 @@
-# $Id: configure.ac 117 2009-07-14 14:30:25Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
 #;  Copyright (C) 2007-2009
 #;  Associated Universities, Inc. Washington DC, USA.
@@ -35,10 +35,9 @@ AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 AC_CONFIG_SRCDIR(src/Obit.c)
 
 # Checks for programs.
-CFLAGS="-g -O3"
 AC_PROG_CC
 AC_PROG_RANLIB
-AM_PATH_PYTHON(2.5)
+#AM_PATH_PYTHON(2.5)
 AC_PATH_PROG(SWIG, swig)
 
 # Checks for header files.
@@ -66,6 +65,8 @@ AC_PATH_XMLRPC
 AC_PATH_ZLIB
 AC_PATH_PLPLOT
 AM_PATH_PGPLOT
+AC_PATH_PYTHON2_5
+AC_PATH_WVR
 
 # Checks for library functions
 AC_FUNC_FSEEKO

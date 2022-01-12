@@ -1,4 +1,4 @@
-/* $Id: CubeVel.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit task - Get flux weighted velocity image                       */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2007,2010                                          */

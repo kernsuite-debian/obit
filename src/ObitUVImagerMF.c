@@ -1,6 +1,6 @@
-/* $Id: ObitUVImagerMF.c 129 2009-09-27 22:00:59Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -32,6 +32,12 @@
 #include "ObitUVWeight.h"
 #include "ObitImageUtil.h"
 #include "ObitImageMosaicMF.h"
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#else
+#include "sys/sysinfo.h"
+#endif
+#include "unistd.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -221,6 +227,7 @@ void ObitUVImagerMFClone  (ObitUVImager *inn, ObitUVImager *outt, ObitErr *err)
  * \param order  Spectral imaging order,0=flux,1=si, 2=curve
  * \param maxFBW Maximum IF center fractional bandwidth.
  * \param alpha  Spectral index correction applied to uv data making mosaic
+ * \param alphaRefF Reference frequency for alpha
  * \param uvdata ObitUV object with info member containng the output image
  *               specifications and all processing parameters.
  * \li FileType = Underlying file type, OBIT_IO_FITS, OBIT_IO_AIPS
@@ -255,7 +262,7 @@ void ObitUVImagerMFClone  (ObitUVImager *inn, ObitUVImager *outt, ObitErr *err)
  * \li Catalog  =    AIPSVZ format catalog for defining outliers, 
  *                   'None'=don't use [default]
  *                   'Default' = use default catalog.
- *                   Assumed in FITSdata disk 1.
+ * \li CatDisk  =    FITS disk for Catalog [def 1]
  * \li OutlierDist = Maximum distance (deg) from center to include outlier fields
  *                   from Catalog. [default 1 deg]
  * \li OutlierFlux = Minimum estimated flux density include outlier fields
@@ -267,7 +274,8 @@ void ObitUVImagerMFClone  (ObitUVImager *inn, ObitUVImager *outt, ObitErr *err)
  * \return the new object.
  */
 ObitUVImagerMF* ObitUVImagerMFCreate (gchar* name, olong order,ofloat maxFBW, 
-				      ofloat alpha, ObitUV *uvdata,  ObitErr *err)
+				      ofloat alpha, odouble alphaRefF, 
+				      ObitUV *uvdata,  ObitErr *err)
 {
   ObitUVImagerMF* out=NULL;
   gchar *routine = "ObitUVImagerMFCreate";
@@ -287,7 +295,7 @@ ObitUVImagerMF* ObitUVImagerMFCreate (gchar* name, olong order,ofloat maxFBW,
   /* Create output mosaic */
   out->mosaic = 
     (ObitImageMosaic*)ObitImageMosaicMFCreate (name, order, maxFBW, alpha,
-					       uvdata, err);
+					       alphaRefF, uvdata, err);
   if (err->error) Obit_traceback_val (err, routine, name, out);
 
   /* Define images */
@@ -337,6 +345,79 @@ ObitUVImagerMF* ObitUVImagerMFCreate2 (gchar* name, olong order, ObitUV *uvdata,
 
   return out;
 } /* end ObitUVImagerMFCreate2 */
+
+/**
+ * Apply weighting to uvdata and write to uvwork member
+ * \param in  The input object
+ *   The following uvdata info items control behavior:
+ *   \li "HalfStoke"   OBIT_boo (1,1,1)   If true, all Stokes are passed in uvwork [def F]
+ *                                        else I
+ * \param err Obit error stack object.
+ */
+void ObitUVImagerMFWeight (ObitUVImager *in, ObitErr *err)
+{
+  gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitInfoType type;
+  gboolean HalfStoke=FALSE, Tr=TRUE;
+  gchar *Stokes="HALF", IStokes[5];
+  /* List of control parameters on uvwork */
+  gchar *controlList[] = 
+    {"FOV", "doFull", "NField", "xCells", "yCells", "nx", "ny", 
+     "RAShift", "DecShift", "Sources", "Beam", "targBeam", 
+     "Catalog",  "CatDisk", "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
+     "nuGrid", "nvGrid", "WtBox", "WtFunc", "UVTaper", "UVITaper", "Robust", "WtPower",
+     "RobustIF", "TaperIF", "MFTaper",
+     NULL};
+  gchar *routine = "ObitUVImagerWeight";
+
+  /* error checks */
+  g_assert (ObitErrIsA(err));
+  if (err->error) return;
+  g_assert (ObitIsA(in, &myClassInfo));
+
+  /* Get Stokes being imaged */
+  strncpy (IStokes, "F   ", 4); 
+  ObitInfoListGetTest (in->uvdata->info, "Stokes", &type, dim, IStokes);
+
+  /* Want parallel poln? */
+  ObitInfoListGetTest (in->uvdata->info, "HalfStoke", &type, dim, &HalfStoke);
+
+  /* Want RR, LL data */
+  if (HalfStoke) {
+    dim[0] = 4;
+    ObitInfoListAlwaysPut (in->uvdata->info, "Stokes", OBIT_string, dim, Stokes);
+  }
+
+  /* Open and close uvdata to set descriptor for scratch file */
+  ObitUVOpen (in->uvdata, OBIT_IO_ReadCal, err);
+  ObitUVClose (in->uvdata, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+  /* Create scratch uvwork if it doesn't exist */
+  if (in->uvwork==NULL) in->uvwork = newObitUVScratch (in->uvdata, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+ 
+  /* Copy/calibrate/select uvdata to uvwork */
+  in->uvwork = ObitUVCopy (in->uvdata, in->uvwork, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+  /* Copy control info to uvwork */
+  ObitInfoListCopyList (in->uvdata->info, in->uvwork->info, controlList);
+
+  /* Weight uvwork */
+  ObitUVWeightData (in->uvwork, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+  /* Image I */
+  dim[0] = 4;
+  ObitInfoListAlwaysPut (in->uvwork->info, "Stokes", OBIT_string, dim, IStokes);
+
+  /* Restore original Stokes on uvdata */
+  ObitInfoListAlwaysPut (in->uvdata->info, "Stokes", OBIT_string, dim, IStokes);
+  dim[0] = 1;
+  ObitInfoListAlwaysPut (in->uvwork->info, "doCalSelect", OBIT_bool, dim, &Tr);
+
+} /* end ObitUVImagerMFWeight */
 
 /**
  * Create shifted 2D imaging facets
@@ -436,6 +517,7 @@ void ObitUVImagerMFGetInfo (ObitUVImager *inn, gchar *prefix, ObitInfoList *outL
      "RAShift", "DecShift", "Sources", 
      "Catalog",  "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
      "nuGrid", "nvGrid", "WtBox", "WtFunc", "UVTaper", "Robust", "WtPower",
+     "RobustIF", "TaperIF", "MFTaper",
      NULL};
   gchar *routine = "ObitUVImagerMFGetInfo";
 
@@ -508,32 +590,68 @@ void ObitUVImagerMFGetInfo (ObitUVImager *inn, gchar *prefix, ObitInfoList *outL
 
 /**
  * Get number of parallel images
- * Target memory usage is 1 GByte.
+ * Target memory usage is 0.75 GByte if 32 bit, 3 GByte if 64.
  * \param inn     Object of interest.
  * \return the number of parallel images.
  */
-olong ObitUVImagerMFGetNumPar (ObitUVImager *inn, ObitErr *err)
+olong ObitUVImagerMFGetNumPar (ObitUVImager *inn, gboolean doBeam, ObitErr *err)
 {
   ObitUVImagerMF *in  = (ObitUVImagerMF*)inn;
   olong out=8, nSpec;
-  odouble lenVis, numVis, imSize, bufSize;
+  odouble lenVis, numVis, imSize, bufSize, tSize, mSize;
+  ObitImage *beam;
+  long int avphys_pages, phys_pages;
+  int pagesize;
+  gchar *routine="ObitUVImagerMFGetNumPar";
 
   if (err->error) return out;
   g_assert(ObitUVImagerMFIsA(in));
 
+#ifdef __APPLE__
+  int mib[2];
+  int64_t physical_memory;
+  size_t length;
+
+  // Get the Physical memory size
+  mib[0] = CTL_HW;
+  mib[1] = HW_MEMSIZE;
+  length = sizeof(physical_memory);
+  sysctl(mib, 2, &physical_memory, &length, NULL, 0);  
+  mSize = physical_memory;
+#else
+   /* Inquire as to the amount of available pages of memory */
+  avphys_pages = get_avphys_pages();
+  phys_pages   = get_phys_pages();
+  pagesize     = getpagesize();
+  /* How much to ask for (64-bit) - up to 1/5 total */
+  mSize = 0.2*phys_pages*pagesize;
+#endif
+
   /* How big are things? */
   numVis = (odouble)ObitImageUtilBufSize (in->uvdata);  /* Size of buffer */
   lenVis = (odouble)in->uvdata->myDesc->lrec;
-  imSize = 2.0 * in->mosaic->images[0]->myDesc->inaxes[0] * 
+  imSize = in->mosaic->images[0]->myDesc->inaxes[0] * 
     in->mosaic->images[0]->myDesc->inaxes[1];  /* Image plane size */
+  if (doBeam) {
+    /* Beam size */
+    beam = (ObitImage*)in->mosaic->images[0]->myBeam;
+    if (beam!=NULL) imSize += beam->myDesc->inaxes[0] * beam->myDesc->inaxes[1];
+    else imSize *= 5;  /* Assume 4X as large (plus map) */
+  }
 
   nSpec = ((ObitImageMF*)in->mosaic->images[0])->nSpec;
   bufSize = numVis*lenVis + imSize*nSpec;  /* Approx memory (words) per parallel image */
   bufSize *= sizeof(ofloat);               /* to bytes */
 
-  out = 1.0e9 / bufSize;  /* How many fit in a gByte? */
+  if (sizeof(olong*)==4)      tSize = 0.75e9;  /* Use sizeof a pointer type to get 32/64 bit */
+  else if (sizeof(olong*)==8) tSize =  mSize;  /*3.0e9; */
+  else                        tSize = 1.0e9;  /* Shouldn't happen */
+  out = tSize / bufSize;  /* How many fit in a tSize? */
 
-  return out;
+  /* Better be at least 1 */
+  Obit_retval_if_fail((out>=1), err, out,
+		      "%s: Insufficient memory to make images", routine);
+ return out;
 } /*  end ObitUVImagerMFGetNumPar */
 
 /**
@@ -578,6 +696,7 @@ static void ObitUVImagerMFClassInfoDefFn (gpointer inClass)
   theClass->ObitGetClass       = (ObitGetClassFP)ObitUVImagerMFGetClass;
   theClass->ObitUVImagerCreate = (ObitUVImagerCreateFP)ObitUVImagerCreate;
   theClass->ObitUVImagerCreate2= (ObitUVImagerCreate2FP)ObitUVImagerMFCreate2;
+  theClass->ObitUVImagerWeight = (ObitUVImagerWeightFP)ObitUVImagerMFWeight;
   theClass->ObitUVImagerGetInfo= (ObitUVImagerGetInfoFP)ObitUVImagerMFGetInfo;
   theClass->ObitUVImagerGetNumPar= (ObitUVImagerGetNumParFP)ObitUVImagerMFGetNumPar;
   theClass->ObitUVImagerShifty = (ObitUVImagerShiftyFP)ObitUVImagerMFShifty;

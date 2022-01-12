@@ -3,10 +3,11 @@
 Widgets using wxPython must all be created and run in the same thread.
 This class creates a wxPython App in a separate thread and allows starting
 new widgets in this same thread.
-   New widgets can be created using the functions
-   newMsgWin(tw) create message windiow and execute TaskWindow tw
+
+New widgets can be created using the functions
+newMsgWin(tw) create message windiow and execute TaskWindow tw
 """
-# $Id: OTWindow.py 2 2008-06-10 15:32:27Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
 #  Copyright (C) 2006
 #  Associated Universities, Inc. Washington DC, USA.
@@ -33,22 +34,24 @@ new widgets in this same thread.
 #                         520 Edgemont Road
 #                         Charlottesville, VA 22903-2475 USA
 #-----------------------------------------------------------------------
+from __future__ import absolute_import
 class OTWindow:
     def start(self):
-        """ start the GUI thread
         """
-        import  thread
-        thread.start_new_thread(self.run, ())
-
+        start the GUI thread
+        """
+        import  six.moves._thread
+        six.moves._thread.start_new_thread(self.run, ())
+        
     def run(self):
         """
-            Note that OTWindow2 is first imported ***here***.
-            This is the second thread.
-            OTWindow2  imports wxPython, if we imported it at
-            the module level instead of in this function,
-            the import would occur in the main thread and
-            wxPython would not run correctly in the second thread.
-            The wxPython GUI MainLoop is run here (i.e. no return)
+        Note that OTWindow2 is first imported ***here***.
+        This is the second thread.
+        OTWindow2  imports wxPython, if we imported it at
+        the module level instead of in this function,
+        the import would occur in the main thread and
+        wxPython would not run correctly in the second thread.
+        The wxPython GUI MainLoop is run here (i.e. no return)
         """
         ################################################################
         try:
@@ -58,7 +61,7 @@ class OTWindow:
             self.app.MainLoop()
         except TypeError:
             self.app = None
-        except Exception, e:
+        except Exception as e:
             self.app = None
             #print "DEBUG: oh bugger untrapped exception in OTWindow.run"
             #print e
@@ -69,7 +72,8 @@ class OTWindow:
         
         Send an event to the catcher window in the
         other thread and tell it to create a MsgWin window.
-        tw = TaskWindow of task to be run
+
+        * tw = TaskWindow of task to be run
         """
         ################################################################
         import  OTWindow2, MsgWin
@@ -89,8 +93,9 @@ class OTWindow:
         
         Send an event to the catcher window in the other thread
         and tell it to Setlabel on window Id to label
-        Id    = widget Id
-        label = New text to label
+
+        * Id    = widget Id
+        * label = New text to label
         """
         ################################################################
         import  OTWindow2
@@ -108,8 +113,9 @@ class OTWindow:
         
         Send an event to the catcher window in the other thread
         and tell it to rebind the event handler on button Id
-        Id      = widget Id
-        handler = new event handler
+
+        * Id      = widget Id
+        * handler = new event handler
         """
         ################################################################
         import  OTWindow2
@@ -127,7 +133,8 @@ class OTWindow:
         
         Send an event to the catcher window in the other thread
         and tell it to refresh the display of widget Id
-        Id      = widget Id
+
+        * Id      = widget Id
         """
         ################################################################
         import  OTWindow2
@@ -144,8 +151,9 @@ class OTWindow:
         
         Send an event to the catcher window in the other thread
         and tell it to append message(s) in widget Id
-        Id      = widget Id (a TextCtrl)
-        message = either a single string or an array of strings
+
+        * Id      = widget Id (a TextCtrl)
+        * message = either a single string or an array of strings
         """
         ################################################################
         import  OTWindow2
@@ -171,7 +179,8 @@ def newMsgWin(tw):
     
     Create a new task message window, run the task displaying messages
     and handling communications
-    tw = TaskWindow for task to be executed.
+
+    * tw = TaskWindow for task to be executed.
     """
     ################################################################
     # Be sure gui thread started
@@ -185,8 +194,8 @@ def CallSetLabel (Id, label):
     """
     Set label on widget Id
 
-    Id    = widget Id
-    label = New text to label
+    * Id    = widget Id
+    * label = New text to label
     """
     gui.SetLabel (Id, label)
     # end CallSetLabel
@@ -195,8 +204,8 @@ def CallBind (Id, handler):
     """
     Set Button event handler 
 
-    Id      = widget Id
-    handler = new event handler
+    * Id      = widget Id
+    * handler = new event handler
     """
     gui.Bind (Id, handler)
     # end CallBind
@@ -204,8 +213,8 @@ def CallBind (Id, handler):
 def CallUpdate(Id):
     """
     Update Widget Id
-    
-    Id    = widget Id
+
+    * Id    = widget Id
     """
     gui.Update (Id)
     # end CallUpdate
@@ -213,9 +222,9 @@ def CallUpdate(Id):
 def CallMessage (Id, message):
     """
     Set label on widget Id
-    
-    Id      = widget Id
-    message = either a single string or an array of strings
+
+    * Id      = widget Id
+    * message = either a single string or an array of strings
     """
     gui.Message (Id, message)
     # end CallMessage 

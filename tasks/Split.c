@@ -1,7 +1,7 @@
-/* $Id: Split.c 199 2010-06-15 11:39:58Z bill.cotton $  */
-/* Obit Task apply calibration snd write single source files */
+/* $Id$  */
+/* Obit Task apply calibration and write single source files */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2007,2010                                          */
+/*;  Copyright (C) 2007-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -159,6 +159,11 @@ ObitInfoList* SplitIn (int argc, char **argv, ObitErr *err)
   /* Make default inputs InfoList */
   list = defaultInputs(err);
 
+  /* Initialize output */
+  myOutput = defaultOutputs(err);
+  ObitReturnDumpRetCode (-999, outfile, myOutput, err);
+  if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
+
   /* command line arguments */
   /* fprintf (stderr,"DEBUG arg %d %s\n",argc,argv[0]); DEBUG */
   if (argc<=1) Usage(); /* must have arguments */
@@ -285,11 +290,6 @@ ObitInfoList* SplitIn (int argc, char **argv, ObitErr *err)
       strTemp += dim[0];
     }
   }
-
-  /* Initialize output */
-  myOutput = defaultOutputs(err);
-  ObitReturnDumpRetCode (-999, outfile, myOutput, err);
-  if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
   return list;
 } /* end SplitIn */
@@ -581,6 +581,9 @@ void digestInputs(ObitInfoList *myInput, ObitErr *err)
   dim[0] = dim[1] = dim[2] = 1;
   ObitInfoListAlwaysPut (myInput, "doCalib", OBIT_long, dim, &doCalib);
 
+  /* Initialize Threading */
+  ObitThreadInit (myInput);
+
 } /* end digestInputs */
 
 /*----------------------------------------------------------------------- */
@@ -596,12 +599,12 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
 {
   ObitUV       *inData = NULL;
   ObitInfoType type;
-  olong         Aseq, disk, cno, nvis=1000;
+  olong         Aseq, disk, cno, nvis=1000, PDVer;
   gchar        *Type, *strTemp, inFile[129];
   oint         doCalib;
   gchar        Aname[16], Aclass[8], *Atype = "UV";
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-  gboolean     doCalSelect;
+  gboolean     doCalSelect, doPol;
   gchar *routine = "getInputData";
 
   /* error checks */
@@ -672,13 +675,20 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     return inData;
   }
 
-  /* Make sure doCalSelect set properly */
+  /* Make sure doCalSelect, etc set properly */
   doCalSelect = FALSE;
   ObitInfoListGetTest(myInput, "doCalSelect",  &type, dim, &doCalSelect);
   doCalib = -1;
   ObitInfoListGetTest(myInput, "doCalib",  &type, dim, &doCalib);
   doCalSelect = doCalSelect || (doCalib>0);
-  ObitInfoListAlwaysPut (myInput, "doCalSelect", OBIT_bool, dim, &doCalSelect);
+  ObitInfoListAlwaysPut (inData->info, "doCalSelect", OBIT_long, dim, &doCalSelect);
+  /* May need to convert poln */
+  doPol = FALSE;
+  ObitInfoListGetTest(myInput, "doPol",  &type, dim, &doPol);
+  ObitInfoListAlwaysPut (inData->info, "doPol", OBIT_bool, dim, &doPol);
+  PDVer = -1;
+  ObitInfoListGetTest(myInput, "PDVer",  &type, dim, &PDVer);
+  ObitInfoListAlwaysPut (inData->info, "PDVer", OBIT_long, dim, &PDVer);
  
 
   /* Ensure inData fully instantiated and OK */
@@ -705,8 +715,7 @@ ObitUV* setOutputUV (gchar *Source, ObitInfoList *myInput, ObitUV* inData,
 {
   ObitUV    *outUV = NULL;
   ObitInfoType type;
-  ObitIOType IOType;
-  olong      i, n, Aseq, disk, cno, lType;
+  olong      i, n, Aseq, disk, cno;
   gchar     *Type, *strTemp, outFile[129], *outName, *outF;
   gchar     Aname[13], Aclass[7], *Atype = "UV";
   olong      nvis;
@@ -727,7 +736,6 @@ ObitUV* setOutputUV (gchar *Source, ObitInfoList *myInput, ObitUV* inData,
     
   /* File type - could be either AIPS or FITS */
   ObitInfoListGetP (myInput, "DataType", &type, dim, (gpointer)&Type);
-  lType = dim[0];
   if (!strncmp (Type, "AIPS", 4)) { /* AIPS input */
     /* Generate output name from Source, outName */
     ObitInfoListGetP (myInput, "outName", &type, dim, (gpointer)&outName);
@@ -740,7 +748,6 @@ ObitUV* setOutputUV (gchar *Source, ObitInfoList *myInput, ObitUV* inData,
       g_snprintf (tname, 128, "%s", strTemp);
     }
       
-    IOType = OBIT_IO_AIPS;  /* Save file type */
     ObitInfoListGet(myInput, "outDisk", &type, dim, &disk, err);
     /* output AIPS sequence */
     ObitInfoListGet(myInput, "outSeq", &type, dim, &Aseq, err);
@@ -788,8 +795,6 @@ ObitUV* setOutputUV (gchar *Source, ObitInfoList *myInput, ObitUV* inData,
     else g_snprintf (outFile, 128, "%s%s", Source, tname);
     ObitTrimTrail(outFile);  /* remove trailing blanks */
 	   
-    IOType = OBIT_IO_FITS;  /* Save file type */
-
     /* output FITS disk */
     ObitInfoListGet(myInput, "outDisk", &type, dim, &disk, err);
     
@@ -826,7 +831,7 @@ void doSources  (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   olong         maxlen, isource;
   gchar        *dataParms[] = {  /* Source selection*/
-    "Sources", "souCode", "Qual", "timeRange", "FreqID",
+    "Sources", "souCode", "Qual", "timeRange", "UVRange","FreqID",
     NULL
   };
   gchar *routine = "doSources";
@@ -842,6 +847,7 @@ void doSources  (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   
   /* Get source list to do */
   doList = ObitUVUtilWhichSources (inData, err);
+  if (err->error) Obit_traceback_msg (err, routine, inData->name);
 
   /* Loop over list of sources */
   for (isource = 0; isource<doList->number; isource++) {
@@ -883,13 +889,13 @@ void doSplit (gchar *Source, ObitInfoList* myInput, ObitUV* inData,
   ObitInfoType type;
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ofloat       timeAvg;
-  olong         avgFreq, nchAvg;
+  olong        avgFreq, nchAvg;
   gboolean     isScratch, doAvgAll;
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
-    "Stokes", "UVRange", "timeRange", "FreqID",
+    "Stokes", "UVRange", "timeRange", "FreqID", "souCode", "Qual", 
     "BIF", "EIF", "BChan", "EChan", "subA", "doCalWt", "dropSubA",
     "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "Smooth", "flagVer", 
-    "doPol", "Mode", "corrType", "BLVer", "InputAvgTime", "timeAvg",
+    "doPol", "PDVer", "Mode", "corrType", "BLVer", "InputAvgTime", "timeAvg",
     "NumChAvg", "ChanSel",
     NULL  };
   gchar        *outParms[] = {  /* Parameters for output data */
@@ -941,14 +947,19 @@ void doSplit (gchar *Source, ObitInfoList* myInput, ObitUV* inData,
     /* First frequency */
     isScratch = TRUE;
     scrData = ObitUVUtilAvgF (inData, isScratch, NULL, err);
+    if (err->error) Obit_traceback_msg (err, routine, inData->name);
     /* Then time */
     isScratch = FALSE;
+    dim[0] = dim[1] = 1;
+    ObitInfoListAlwaysPut (scrData->info, "timeAvg", OBIT_float, dim, &timeAvg);
     outData = ObitUVUtilAvgT (scrData, isScratch, outData, err);
     if (err->error) Obit_traceback_msg (err, routine, inData->name);
     scrData = ObitUVUnref(scrData);
 
   } else if (avgFreq>0) {    /* Freq averaging only */
     isScratch = FALSE;
+    /* Need to clone */
+    ObitUVClone (inData, outData, err);
     outData = ObitUVUtilAvgF (inData, isScratch, outData, err);
     if (err->error) Obit_traceback_msg (err, routine, inData->name);
 
@@ -993,12 +1004,13 @@ void SplitHistory (gchar *Source, ObitInfoList* myInput, ObitUV* inData,
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq",
+    "FreqID", "souCode", "Qual", 
     "outFile",  "outDisk", "outName", "outClass", "outSeq",
     "BIF", "EIF", "BChan", "EChan",  "chInc", "chAvg",
     "UVRange",  "timeRange",  "Compress", "doCalWt", "dropSubA",
     "doCalSelect",  "doCalib",  "gainUse",  "doBand ",  "BPVer",  "flagVer", 
-    "doPol", "BLVer", "timeAvg", "avgFreq", "chAvg",  "ChanSel",
-    "InputAvgTime",  "dropSubA",  "doWtCal",  "corrType",  
+    "doPol", "PDVer", "BLVer", "timeAvg", "avgFreq", "chAvg",  "ChanSel",
+    "InputAvgTime",  "dropSubA",  "doWtCal",  "corrType", "nThreads", 
     NULL};
   gchar *routine = "SplitHistory";
 

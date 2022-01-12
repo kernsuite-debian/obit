@@ -1,6 +1,6 @@
-/* $Id: ObitIonCal.c 197 2010-06-09 12:47:20Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2013                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -459,7 +459,7 @@ void ObitIonCalFindImage (ObitIonCal *in, ObitImage* image, ObitErr* err)
   if (!strncmp(Catalog, "    ", 4)) sprintf (Catalog, "Default");
   if (!strncmp(Catalog, "Default", 7)) sprintf (Catalog, "NVSSVZ.FIT");
   catDisk = 1;
-  ObitInfoListGetTest(in->info, "catDisk",   &type, dim, &catDisk);
+  ObitInfoListGetTest(in->info, "CatDisk",   &type, dim, &catDisk);
   OutlierFlux = 1.0;
   ObitInfoListGetTest(in->info, "OutlierFlux", &type, dim, &OutlierFlux);
   OutlierSI = -0.75;
@@ -827,7 +827,7 @@ void ObitIonCaldoCal (ObitIonCal*in, ObitErr* err)
   /* Parameters to copy from inUV to CLEAN object */
   gchar *ParmList[] = {"Niter", "minFlux", "dispURL", "autoWindow", NULL};
   /* Parameters to copy from inUV to IonCal object */
-  gchar *IonParmList[] = {"Catalog", "catDisk", "OutlierFlux", "OutlierSI", 
+  gchar *IonParmList[] = {"Catalog", "CatDisk", "OutlierFlux", "OutlierSI", 
 			  NULL};
   gchar *routine = "ObitIonCaldoCal";
 
@@ -940,13 +940,13 @@ void ObitIonCaldoCal (ObitIonCal*in, ObitErr* err)
   if (prtLv>0) {
     g_snprintf (msgtxt,100,"calibrating ionosphere, max RMS seeing= %6.2f qual=%5d", 
 		MaxRMS, qual);
-    Obit_log_error(err, OBIT_InfoWarn, msgtxt);
+    Obit_log_error(err, OBIT_InfoWarn, "%s", msgtxt);
     
     g_snprintf (msgtxt,100,"observing date = %s", inUV->myDesc->obsdat);
-    Obit_log_error(err, OBIT_InfoWarn, msgtxt);
+    Obit_log_error(err, OBIT_InfoWarn, "%s", msgtxt);
     ObitImageDescGetPoint (myMosaic->images[0]->myDesc, &obsra, &obsdec);
     g_snprintf (msgtxt,100,"pointing ra=%10.6f dec=%10.6f deg", obsra, obsdec);
-    Obit_log_error(err, OBIT_InfoWarn, msgtxt);
+    Obit_log_error(err, OBIT_InfoWarn, "%s", msgtxt);
   }
 
   ObitErrLog(err); /* show any messages on err */
@@ -2148,7 +2148,7 @@ LookupCals (ObitIonCal *in, ObitImageMosaic *mosaic, CalList *calList,
   if (!strncmp(Catalog, "    ", 4)) sprintf (Catalog, "Default");
   if (!strncmp(Catalog, "Default", 7)) sprintf (Catalog, "NVSSVZ.FIT");
   catDisk = 1;
-  ObitInfoListGetTest(in->info, "catDisk",   &type, dim, &catDisk);
+  ObitInfoListGetTest(in->info, "CatDisk",   &type, dim, &catDisk);
   alpha = -0.75;
   ObitInfoListGetTest(in->info, "OutlierSI", &type, dim, &alpha);
   asize = 25.0;
@@ -2573,8 +2573,9 @@ FitAll (ObitIonCal *in, olong ncoef, olong nEpoch,
 
   /* further constraints on weights */
   for (i=0; i<n; i++) { /* loop 60 */
-    /* Toss data if integrated value less than a third the peak */
-    if (sint[i]  <  (0.35*flux[i])) wt[i] = 0.0;
+    /* Toss data if integrated value less than a third the peak
+    if (sint[i]  <  (0.35*flux[i])) wt[i] = 0.0; */
+    if (sint[i]  <  (0.05*flux[i])) wt[i] = 0.0; /* DEBUG */
     /* ... more than thrice the peak */
     if (sint[i]  >  (3.0*flux[i])) wt[i] = 0.0;
   } /* end loop  L60:  */

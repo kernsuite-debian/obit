@@ -1,6 +1,6 @@
-/* $Id: ObitUV.c 167 2010-03-19 14:33:04Z bill.cotton $          */
+/* $Id$          */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,13 +26,14 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitUVSel.h"
+#include "ObitUVCal.h"
 #include "ObitUV.h"
 #include "ObitIOUVFITS.h"
 #include "ObitIOUVAIPS.h"
 #include "ObitAIPSDir.h"
 #include "ObitFITS.h"
 #include "ObitUVDesc.h"
-#include "ObitUVSel.h"
 #include "ObitTableFQ.h"
 #include "ObitTableANUtil.h"
 #include "ObitTableBP.h"
@@ -42,6 +43,7 @@
 #include "ObitTableSN.h"
 #include "ObitTableFG.h"
 #include "ObitTableNX.h"
+#include "ObitTablePD.h"
 #include "ObitTableSNUtil.h"
 #include "ObitTableCLUtil.h"
 #include "ObitTableFQUtil.h"
@@ -49,6 +51,7 @@
 #include "ObitSystem.h"
 #include "ObitMem.h"
 #include "ObitHistory.h"
+#include "ObitPrecess.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -156,10 +159,13 @@ ObitUV* newObitUV (gchar* name)
  *              "HALF" = RR,LL, "FULL"=RR,LL,RL,LR. [default "    "]
  *              In the above 'F' can substitute for "formal" 'I' (both RR+LL).
  * \li xxxBChan OBIT_int (1,1,1) First spectral channel selected. [def all]
- * \li xxxEChan OBIT_int (1,1,1) Highest spectral channel selected. [def all]
+ * \li xxxEChan OBIT_int (1,1,1) Selected channel increment. [def all]
+ * \li xxxchanInc OBIT_int (1,1,1) Highest spectral channel selected. [def 1]
  * \li xxxBIF   OBIT_int (1,1,1) First "IF" selected. [def all]
  * \li xxxEIF   OBIT_int (1,1,1) Highest "IF" selected. [def all]
- * \li xxxdoPol OBIT_int (1,1,1) >0 -> calibrate polarization.
+ * \li xxxIFInc OBIT_int (1,1,1) "IF" increment. [def 1]
+ * \li xxxIFDrop OBIT_int (?,1,1) List of input IF numbers not to copy [def none]
+ * \li xxxdoPol  OBIT_int (1,1,1) >0 -> calibrate polarization.
  * \li xxxdoCalib OBIT_int (1,1,1) >0 -> calibrate, 2=> also calibrate Weights
  * \li xxxgainUse OBIT_int (1,1,1) SN/CL table version number, 0-> use highest
  * \li xxxflagVer OBIT_int (1,1,1) Flag table version, 0-> use highest, <0-> none
@@ -216,6 +222,7 @@ ObitUV* newObitUV (gchar* name)
  *           function has value - in channels.
  *           Defaults: 1, 3, 1, 4 times Smooth(2) used when
  * \li xxxAlpha  OBIT_float (1,1,1) Spectral index to apply, 0=none
+ * \li xxxKeepSou  OBIT_bool (1,1,1) If true, keep source RP
  * \li xxxSubScanTime Obit_float scalar [Optional] if given, this is the 
  *          desired time (days) of a sub scan.  This is used by the 
  *          selector to suggest a value close to this which will
@@ -231,19 +238,21 @@ ObitUV* ObitUVFromFileInfo (gchar *prefix, ObitInfoList *inList,
 {
   ObitUV       *out = NULL;
   ObitInfoType type;
-  olong        Aseq, AIPSuser, disk, cno, i, nvis, nThreads;
+  olong        Aseq, AIPSuser, disk, cno, i, nvis, nThreads, NPIO, maxNPIO;
+  ofloat       visPGByte;
   gboolean     exist;
   gchar        *strTemp, inFile[129], stemp[256];
   gchar        Aname[13], Aclass[7], *Atype = "UV";
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gpointer     listPnt;
   gchar        *keyword=NULL, *DataTypeKey = "DataType", *DataType=NULL;
-  gchar        *parm[] = {"DoCalSelect", "Stokes", "BChan", "EChan", "BIF", "EIF",
-			  "doPol", "doCalib", "gainUse", "flagVer", "BLVer", "BPVer",
+  gchar        *parm[] = {"DoCalSelect", "Stokes", 
+			  "BChan", "EChan", "chanInc", "BIF", "EIF", "IFInc", "IFDrop",
+			  "doPol", "PDVer", "doCalib", "gainUse", "flagVer", "BLVer", "BPVer",
 			  "Subarray", "dropSubA", "FreqID", "timeRange", "UVRange",
 			  "InputAvgTime", "Sources", "souCode", "Qual", "Antennas",
-			  "corrType", "passAll", "doBand", "Smooth", "Alpha", 
-			  "SubScanTime",
+			  "corrType", "passAll", "doBand", "Smooth", 
+			  "Alpha", "AlphaRefF", "KeepSou",  "SubScanTime",
 			  NULL};
   gchar *routine = "ObiUVFromFileInfo";
 
@@ -422,6 +431,16 @@ ObitUV* ObitUVFromFileInfo (gchar *prefix, ObitInfoList *inList,
   if (exist)  ObitUVFullInstantiate (out, TRUE, err);
   if (err->error) Obit_traceback_val (err, routine, "inList", out);
 
+  /* Check that buffer not too large */
+  ObitInfoListGet (out->info, "nVisPIO", &type, dim,  (gpointer)&NPIO, err);
+  /* vis per GByte*/
+  visPGByte = (1024.0*1024.0*1024.0)/(out->myDesc->lrec*4.0);
+  /* 0.5 GByte for 64 bit else 0.1 GByte */
+  if (sizeof(olong*)==8) maxNPIO = (olong)(0.5 * visPGByte);
+  else                   maxNPIO = (olong)(0.1 * visPGByte);
+  NPIO = MIN (NPIO, maxNPIO);
+  ObitInfoListPut (out->info, "nVisPIO", type, dim,  (gpointer)&NPIO, err);
+
   return out;
 } /* end ObitUVFromFileInfo */
 
@@ -432,7 +451,9 @@ ObitUV* ObitUVFromFileInfo (gchar *prefix, ObitInfoList *inList,
  * The output will have the underlying files of the same type as in already 
  * allocated.
  * The object is defined but the underlying structures are not created.
- * \param in  The object to copy
+ * Necessary tables are copied.
+ * \param in  The object to copy,  control parameters:
+ * \li "copyCalTab" OBIT_boolean (1,1,1) If true and doCalib<=0 copy SN, CL 
  * \param err Error stack, returns if not empty.
  * \return pointer to the new object.
  */
@@ -444,8 +465,8 @@ ObitUV* newObitUVScratch (ObitUV *in, ObitErr *err)
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar *outName;
   olong NPIO;
-  /* Don't copy Cal and Soln tables */
-  /*gchar *exclude[]={"AIPS UV", "AIPS CL", "AIPS NI",
+  /* Don't copy Cal and Soln tables 
+  gchar *exclude[]={"AIPS UV", "AIPS CL", "AIPS NI",
     "AIPS SN", "AIPS NX", "AIPS HI", "AIPS PL", "AIPS SL", NULL};*/
   gchar *routine = "newObitUVScratch";
 
@@ -481,10 +502,14 @@ ObitUV* newObitUVScratch (ObitUV *in, ObitErr *err)
 
   /* Allocate underlying file */
   ObitSystemGetScratch (in->mySel->FileType, "UV", out->info, err);
-  if (err->error) Obit_traceback_val (err, routine, in->name, in);
+  if (err->error) Obit_traceback_val (err, routine, in->name, out);
   
   /* Register in the scratch file list */
   ObitSystemAddScratch ((Obit*)out, err);
+
+  /* Copy/select tables */
+  CopyTablesSelect (in, out, err);
+  if (err->error) Obit_traceback_val (err, routine,in->name, out);
 
   /* File may not be completely properly defined here, defer instantiation */
  return out;
@@ -637,7 +662,7 @@ ObitUV* ObitUVZap (ObitUV *in, ObitErr *err)
  * \li "doCalSelect" OBIT_boolean scalar if TRUE, calibrate/select/edit input data.
  * \param in  The object to copy
  * \param out An existing object pointer for output or NULL if none exists.
- * \param err Error stack, returns if not empty.
+ * \param err Error stack, returns if not empty. err->error = 10 => No data
  * \return pointer to the new object.
  */
 ObitUV* ObitUVCopy (ObitUV *in, ObitUV *out, ObitErr *err)
@@ -664,7 +689,6 @@ ObitUV* ObitUVCopy (ObitUV *in, ObitUV *out, ObitErr *err)
   Obit_retval_if_fail((in!=out), err, out,
  		      "%s: input and output are the same", routine);
   
-
   /* Create if it doesn't exist */
   oldExist = out!=NULL;
   if (!oldExist) {
@@ -692,6 +716,7 @@ ObitUV* ObitUVCopy (ObitUV *in, ObitUV *out, ObitErr *err)
     /* Output will initially have no associated tables */
     out->tableList = ObitTableListUnref(out->tableList);
     out->tableList = newObitTableList(out->name);
+    if (out->myIO) out->myIO->tableList = (Obit*)out->tableList;
     /* don't copy ObitUVSel, ObitThread */
   }
 
@@ -843,9 +868,12 @@ ObitUV* ObitUVCopy (ObitUV *in, ObitUV *out, ObitErr *err)
   if ((iretCode!=OBIT_IO_OK) || (err->error)) /* add traceback,return */
     Obit_traceback_val (err, routine,in->name, out);
   
-  /* Make sure something copied - if there is anything to copy */
-  Obit_retval_if_fail(((count>0) || (in->myDesc->nvis<=0)), err, out,
- 		      "%s: NO Data copied for %s", routine, in->name);
+  /* Make sure something copied - if there is anything to copy - err->error = 10 */
+  if (!((count>0) || (in->myDesc->nvis<=0))) {
+    Obit_log_error(err, OBIT_Error, "%s: NO Data copied for %s", routine, in->name);
+    err->error = 10;
+    return out;
+  }
   
   return out;
 } /* end ObitUVCopy */
@@ -853,7 +881,9 @@ ObitUV* ObitUVCopy (ObitUV *in, ObitUV *out, ObitErr *err)
 /**
  * Make a copy of a object but do not copy the actual data
  * This is useful to create a UV object similar to the input one.
- * \param in  The object to copy
+ * Necessary tables are copied.
+ * \param in  The object to copy, control parameters:
+ * \li "copyCalTab" OBIT_boolean (1,1,1) If true and doCalib<=0 copy SN, CL
  * \param out An existing object pointer for output or NULL if none exists.
  * \param err Error stack, returns if not empty.
  */
@@ -888,6 +918,7 @@ void ObitUVClone  (ObitUV *in, ObitUV *out, ObitErr *err)
   /* Output will initially have no associated tables */
   out->tableList = ObitTableListUnref(out->tableList);
   out->tableList = newObitTableList(out->name);
+  if (out->myIO) out->myIO->tableList = (Obit*)out->tableList;
   /* don't copy ObitUVSel, ObitThread */
 
   /* Open if needed to to fully instantiate input and see if it's OK */
@@ -976,6 +1007,9 @@ void ObitUVClone  (ObitUV *in, ObitUV *out, ObitErr *err)
  *               selector to suggest a value close to this which will
  *               evenly divided the current scan.  See #ObitUVSelSubScan
  * \param in Pointer to object to be opened.
+ *               The descriptor info (myDesc->info) may contain:
+ * \li "KeepSou" OBIT_bool (1,1,1) If present and True, keep multisource input
+ *               as multisource output even if only one source selected.
  * \param access access (OBIT_IO_ReadOnly,OBIT_IO_ReadWrite,
  *               OBIT_IO_ReadCal or OBIT_IO_WriteOnly).
  *               If OBIT_IO_WriteOnly any existing data in the output file
@@ -1016,9 +1050,10 @@ ObitIOCode ObitUVOpen (ObitUV *in, ObitIOAccess access, ObitErr *err)
   ObitUVSetupIO (in, err);
   if (err->error) Obit_traceback_val (err, routine, in->name, retCode);
 
-  /* Add reference to tableList */
-  in->myIO->tableList = (Obit*)ObitUnref(in->myIO->tableList);
-  in->myIO->tableList = (Obit*)ObitRef(in->tableList);
+  /* Add reference to tableList rebuilding if necessary*/
+  /*in->tableList = ObitUnref(in->tableList);
+    in->tableList = ObitRef(newObitTableList(in->name));*/
+  if (in->myIO) in->myIO->tableList = (Obit*)in->tableList; /* Copy of reference */
 
   in->myIO->access = access; /* save access type */
 
@@ -1271,7 +1306,7 @@ ObitIOCode ObitUVRead (ObitUV *in, ofloat *data, ObitErr *err)
     need = in->mySel->nVisPIO*in->myDesc->lrec;
     if (need > in->bufferSize) {
       Obit_log_error(err, OBIT_Error, 
-		     "IO buffer ( %d) too small, need %d for %s", 
+		     "IO buffer ( %ld) too small, need %d for %s", 
 		     in->bufferSize, need, in->name);
       return retCode;
     }
@@ -1352,7 +1387,7 @@ ObitIOCode ObitUVReadMulti (olong nBuff, ObitUV **in, ofloat **data,
       need = in[ib]->mySel->nVisPIO*in[0]->myDesc->lrec;
       if (need > in[ib]->bufferSize) {
 	Obit_log_error(err, OBIT_Error, 
-		       "IO buffer ( %d) too small, need %d for %s buff %d", 
+		       "IO buffer ( %ld) too small, need %d for %s buff %d", 
 		       in[ib]->bufferSize, need, in[ib]->name, ib);
 	return retCode;
       }
@@ -1431,7 +1466,7 @@ ObitIOCode ObitUVReReadMulti (olong nBuff, ObitUV **in, ofloat **data,
       need = in[ib]->mySel->nVisPIO*in[0]->myDesc->lrec;
       if (need > in[ib]->bufferSize) {
 	Obit_log_error(err, OBIT_Error, 
-		       "IO buffer ( %d) too small, need %d for %s buff %d", 
+		       "IO buffer ( %ld) too small, need %d for %s buff %d", 
 		       in[ib]->bufferSize, need, in[ib]->name, ib);
 	return retCode;
       }
@@ -1502,7 +1537,7 @@ ObitIOCode ObitUVReadSelect (ObitUV *in, ofloat *data, ObitErr *err)
     need = in->mySel->nVisPIO*in->myDesc->lrec;
     if (need > in->bufferSize) {
       Obit_log_error(err, OBIT_Error, 
-		     "IO buffer ( %d) too small, need %d for %s", 
+		     "IO buffer ( %ld) too small, need %d for %s", 
 		     in->bufferSize, need, in->name);
       return retCode;
     }
@@ -1582,7 +1617,7 @@ ObitIOCode ObitUVReadMultiSelect (olong nBuff, ObitUV **in, ofloat **data,
       need = in[0]->mySel->nVisPIO*in[0]->myDesc->lrec;
       if (need > in[ib]->bufferSize) {
 	Obit_log_error(err, OBIT_Error, 
-		       "IO buffer ( %d) too small, need %d for %s", 
+		       "IO buffer ( %ld) too small, need %d for %s", 
 		       in[0]->bufferSize, need, in[ib]->name);
 	return retCode;
       }
@@ -1657,7 +1692,7 @@ ObitIOCode ObitUVReReadMultiSelect (olong nBuff, ObitUV **in, ofloat **data,
       need = in[0]->mySel->nVisPIO*in[0]->myDesc->lrec;
       if (need > in[ib]->bufferSize) {
 	Obit_log_error(err, OBIT_Error, 
-		       "IO buffer ( %d) too small, need %d for %s", 
+		       "IO buffer ( %ld) too small, need %d for %s", 
 		       in[0]->bufferSize, need, in[ib]->name);
 	return retCode;
       }
@@ -1731,7 +1766,7 @@ ObitIOCode ObitUVWrite (ObitUV *in, ofloat *data, ObitErr *err)
     need = in->mySel->nVisPIO*in->myDesc->lrec;
     if (need > in->bufferSize) {
       Obit_log_error(err, OBIT_Error, 
-		     "IO buffer ( %d) too small, need %d for %s", 
+		     "IO buffer ( %ld) too small, need %d for %s", 
 		     in->bufferSize, need, in->name);
       return retCode;
     }
@@ -1996,7 +2031,7 @@ ObitIOCode ObitUVGetSubA (ObitUV *in, ObitErr *err)
 
     /* Get table */
     ANTable = 
-      newObitTableANValue (in->name, (ObitData*)in, &iANver, OBIT_IO_ReadOnly, 0, 0, err);
+      newObitTableANValue (in->name, (ObitData*)in, &iANver, OBIT_IO_ReadOnly, 0, 0, 0, err);
     /* Ignore missing table */
     if (ANTable==NULL) {
       ObitErrClear(err); 
@@ -2027,7 +2062,7 @@ ObitIOCode ObitUVGetSubA (ObitUV *in, ObitErr *err)
   /* save to I/O descriptor */
   IOdesc->maxAnt = desc->maxAnt;
 
- cleanup:ANTable = ObitTableANUnref(ANTable);
+ cleanup:
   if (err->error) Obit_traceback_val (err, routine, in->name, retCode);
 
   return retCode;
@@ -2235,6 +2270,80 @@ void  ObitUVGetRADec (ObitUV *uvdata, odouble *ra, odouble *dec,
 } /* end ObitUVGetRADec */
 
 /**
+ * Get source object.  
+ * If single source file get from uvDesc, 
+ * if multisource read from SU table
+ * Checks that only one source selected.
+ * Also fill in position like information in the descriptor 
+ * for multi-source datasets
+ * \param  src     previously existing Source or NULL
+ * \param  uvdata  Data object from which position sought
+ * \param  suId    Source ID (-1 if no Source table)
+ * \param  err     Error stack, returns if not empty.
+ * \return pointer to newly created or refilled ObitSource
+ */
+ObitSource*  ObitUVGetSource (ObitSource* src, ObitUV *uvdata, ofloat suID,  
+			      ObitErr *err)
+{
+  ObitSourceList *sList=NULL;
+  ObitSource     *source=NULL;
+  ObitTable      *tmpTable;
+  ObitTableSU    *SUTable=NULL;
+  olong i, SourID, ver;
+  gboolean found;
+  gchar  *tabType = "AIPS SU";
+  gchar *routine = "ObitUVGetSource";
+
+  /* error checks */
+  g_assert(ObitUVIsA(uvdata));
+  g_assert(ObitErrIsA(err));
+  if (err->error) return source;
+
+  SourID = (olong)(suID+0.5);  /* Which Source? */
+
+  /* descriptor ilocsu > 0 indicates multisource */
+  if ((suID>0.0) && (uvdata->myDesc->ilocsu>=0)) { /* multisource */
+
+    /* Get SU table */
+    ver = 1;
+    tmpTable = newObitUVTable (uvdata, OBIT_IO_ReadWrite, tabType, &ver, err);
+    SUTable = ObitTableSUConvert(tmpTable);
+    tmpTable = ObitTableUnref(tmpTable);
+    if (err->error) Obit_traceback_val (err, routine, uvdata->name, source);
+
+    /* Get source list */
+    sList = ObitTableSUGetList (SUTable, err);
+    SUTable = ObitTableSUUnref(SUTable);   /* Done with table */
+    if (err->error) Obit_traceback_val (err, routine, SUTable->name, source);
+
+    /* Look up source in table */
+    found = FALSE;
+    for (i=0; i<sList->number; i++) {
+      source = ObitSourceRef(sList->SUlist[i]);
+      if (source->SourID == SourID) found = TRUE;
+    }
+    sList = ObitSourceListUnref(sList);  /* Done with list */
+
+    /* Check if found */
+    if (!found) {
+      Obit_log_error(err, OBIT_Error,"%s: Selected source %d not found in list %s",
+		   routine, SourID, uvdata->name);
+      return source;
+    }
+
+  } else { /* single source */
+    if (src==NULL) source = newObitSource("Source");
+    else           source = src;
+    strncpy (source->SourceName, uvdata->myDesc->object, MIN(20,UVLEN_VALUE));
+    source->equinox = uvdata->myDesc->equinox;
+    source->RAMean  = uvdata->myDesc->crval[uvdata->myDesc->jlocr];
+    source->DecMean = uvdata->myDesc->crval[uvdata->myDesc->jlocd];
+    ObitPrecessUVJPrecessApp (uvdata->myDesc, source);
+  }
+  return source;
+} /* end ObitUVGetSource */
+
+/**
  * Get source information, position, velocity, update uv descriptor
  * If single source file get from uvDesc, 
  * if multisource read from SU table
@@ -2365,7 +2474,8 @@ void  ObitUVGetSouInfo (ObitUV *uvdata, ObitErr *err)
 	LSRVel    = source->LSRVel[iif-1];
 	uvdata->myDesc->restFreq = RestFreq;
 	uvdata->myDesc->altRef   = LSRVel;
-	uvdata->myDesc->altCrpix = uvdata->myDesc->crpix[uvdata->myDesc->jlocf];
+	if (uvdata->myDesc->altCrpix==0.0)
+	  uvdata->myDesc->altCrpix = uvdata->myDesc->crpix[uvdata->myDesc->jlocf];
 	if (!strncmp(velDef,"OPTICAL", 7))  uvdata->myDesc->VelDef = 0;
 	if (!strncmp(velDef,"RADIO", 5))    uvdata->myDesc->VelDef = 1;	
 	if (!strncmp(velRef,"LSR", 3))      uvdata->myDesc->VelReference = 1;
@@ -2451,7 +2561,7 @@ void ObitUVReadKeyword (ObitUV *in,
  * If a flag table is currently selected it is copied to a new AIPS FG
  * table on the uv data and channel selection  added.
  * If no flag table is selected then an new table is created.
- * The new flagging entries includ all channels and IFs in the range
+ * The new flagging entries include all channels and IFs in the range
  * specified in the UVSel values of BChan, EChan, BIF and EIF that are
  * NOT specified in the IChanSel array
  * \param in       UV with selection to which the new flag table is to be attached.
@@ -2840,10 +2950,11 @@ void ObitUVClear (gpointer inn)
   /* delete this class members */
   in->thread    = ObitThreadUnref(in->thread);
   in->info      = ObitInfoListUnref(in->info);
-  in->myIO      = ObitUnref(in->myIO);
   in->myDesc    = ObitUVDescUnref(in->myDesc);
   in->mySel     = ObitUVSelUnref(in->mySel);
-  in->tableList = ObitUnref(in->tableList);
+  in->tableList = ObitUnref(in->tableList);  
+  if (in->myIO) in->myIO->tableList = (Obit*)in->tableList;
+  in->myIO      = ObitUnref(in->myIO);
   if (in->buffer) ObitIOFreeBuffer(in->buffer); 
   if (in->multiBuf) g_free(in->multiBuf);
   if ((in->nParallel>0) && (in->multiBufIO)) {
@@ -2873,12 +2984,14 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   ObitInfoType type;
   gint32 i, dim[MAXINFOELEMDIM];
   olong itemp, *iptr, Qual;
-  olong iver, j, count=0;
+  olong iver, j, k, n, count=0;
+  ollong ltest;
   ofloat ftempArr[10];/* fblank = ObitMagicF();*/
+  odouble dtempArr[10];
   ObitTableSU *SUTable=NULL;
   union ObitInfoListEquiv InfoReal; 
   gchar tempStr[5], souCode[5], *sptr;
-  gboolean badChar;
+  gboolean badChar, match, noCal;
   ObitUVDesc *desc;
   gchar *routine = "ObitUVGetSelect";
 
@@ -2898,8 +3011,9 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
 		sel->name);
   }
 
-  /* Use descriptor on IO */
-  if (in->myIO && in->myIO->myDesc) desc = (ObitUVDesc*)in->myIO->myDesc;
+  /* Use descriptor on IO if valid */
+  if (in->myIO && in->myIO->myDesc && ObitUVDescIsA(in->myIO->myDesc)) 
+    desc = (ObitUVDesc*)in->myIO->myDesc;
   else  desc = in->myDesc;
 
   /* Be sure properly indexed */
@@ -2909,6 +3023,12 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   sel->nVisPIO = 100;
   ObitInfoListGetTest(info, "nVisPIO", &type, dim, &sel->nVisPIO);
   sel->nVisPIO = MAX (1, sel->nVisPIO); /* no fewer than 1 */
+  /* Make sure the size of the subsequent buffer doesn't blow a 32 bit integer */
+  ltest = (ollong)sel->nVisPIO * desc->lrec * sizeof(ofloat);
+  while (ltest>=(2L<<31)) {
+    sel->nVisPIO /= 2;
+    ltest = (ollong)sel->nVisPIO * desc->lrec * sizeof(ofloat);
+  }
 
   /* Compress output? */
   sel->Compress = FALSE;
@@ -2934,9 +3054,10 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   sel->doCalSelect = FALSE;
   ObitInfoListGetTest(info, "doCalSelect", &type, dim, &sel->doCalSelect);
 
-  /* Selection */
+  /* Selection - several variants */
   InfoReal.itg = 0; type = OBIT_oint;
-  ObitInfoListGetTest(info, "Subarray", &type, dim, &InfoReal);
+  if (!ObitInfoListGetTest(info, "Subarray", &type, dim, &InfoReal))
+    ObitInfoListGetTest(info, "subA", &type, dim, &InfoReal);
   if (type==OBIT_float) itemp = InfoReal.flt + 0.5;
   else itemp = InfoReal.itg;
   sel->SubA  = itemp;
@@ -2957,28 +3078,94 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   InfoReal.itg = 0; type = OBIT_oint;
   ObitInfoListGetTest(info, "EChan", &type, dim, &InfoReal);
   if (type==OBIT_float) itemp = InfoReal.flt + 0.5;
-  else itemp = InfoReal.itg;
+  else                  itemp = InfoReal.itg;
   if (desc->jlocf>0) itemp = MIN (itemp, desc->inaxes[desc->jlocf]);
   if (itemp>0) sel->numberChann = itemp - sel->startChann+1;
-  else  sel->numberChann = desc->inaxes[desc->jlocf] - sel->startChann+1;
+  else         sel->numberChann = desc->inaxes[desc->jlocf] - sel->startChann+1;
+  sel->numberChann = MAX (1, MIN (sel->numberChann, desc->inaxes[desc->jlocf]));
+
+  InfoReal.itg = 1; type = OBIT_oint;
+  ObitInfoListGetTest(info, "channInc", &type, dim, &InfoReal);
+  if (type==OBIT_float) itemp = InfoReal.flt + 0.5;
+  else                  itemp = InfoReal.itg;
+  if (desc->jlocf>0) itemp = MIN (itemp, desc->inaxes[desc->jlocf]);
+  if (itemp>0) sel->channInc = itemp;
+  else         sel->channInc = 1;
+  sel->channInc = MAX (1, MIN (sel->channInc, desc->inaxes[desc->jlocf]));
+  /* Reset number of channels for increment */
+  sel->numberChann = 1 + (sel->numberChann-1)/sel->channInc;
   sel->numberChann = MAX (1, MIN (sel->numberChann, desc->inaxes[desc->jlocf]));
 
   InfoReal.itg = 0; type = OBIT_oint;
   ObitInfoListGetTest(info, "BIF", &type, (gint32*)dim, &InfoReal);
   if (type==OBIT_float) itemp = InfoReal.flt + 0.5;
-  else itemp = InfoReal.itg;
+  else                  itemp = InfoReal.itg;
   if (desc->jlocf>0) itemp = MIN (itemp, desc->inaxes[desc->jlocif]);
   sel->startIF  =  MAX (1, itemp);
 
   InfoReal.itg = 0; type = OBIT_oint;
   ObitInfoListGetTest(info, "EIF", &type, dim, &InfoReal);
   if (type==OBIT_float) itemp = InfoReal.flt + 0.5;
-  else itemp = InfoReal.itg;
+  else                  itemp = InfoReal.itg;
   if (desc->jlocf>0) itemp = MIN (itemp, desc->inaxes[desc->jlocif]);
   if (itemp>0) sel->numberIF = itemp - sel->startIF+1;
-  else sel->numberIF = desc->inaxes[desc->jlocif] - sel->startIF+1;
+  else         sel->numberIF = desc->inaxes[desc->jlocif] - sel->startIF+1;
   sel->numberIF = MAX (1, MIN (sel->numberIF, desc->inaxes[desc->jlocif]));
   if (desc->jlocif<0) sel->numberIF = 1;
+
+  InfoReal.itg = 1; type = OBIT_oint;
+  ObitInfoListGetTest(info, "IFInc", &type, dim, &InfoReal);
+  if (type==OBIT_float) itemp = InfoReal.flt + 0.5;
+  else                  itemp = InfoReal.itg;
+  if (desc->jlocif>0) {
+    itemp = MIN (itemp, desc->inaxes[desc->jlocif]);
+    if (itemp>0) sel->IFInc = itemp;
+    else  sel->IFInc = 1;
+    sel->IFInc = MAX (1, MIN (sel->IFInc, desc->inaxes[desc->jlocif]));
+    /* Reset number of IF for increment */
+    sel->numberIF = 1 + (sel->numberIF-1)/sel->IFInc;
+    sel->numberIF = MAX (1, MIN (sel->numberIF, desc->inaxes[desc->jlocif]));
+  } else {
+    sel->IFInc = 1;
+  }
+
+  /* Deselected IFs */
+  if (sel->IFDrop) g_free(sel->IFDrop); sel->IFDrop=NULL;
+  if (ObitInfoListGetP(info, "IFDrop", &type, (gint32*)dim, (gpointer)&iptr)) {
+    n = 0;
+    while (iptr[n]>0) {n++;}
+    sel->IFDrop = g_malloc0((n+1)*sizeof(olong));
+    for (j=0; j<n; j++) sel->IFDrop[j] = iptr[j]; sel->IFDrop[j] = 0;
+  } else {  /* Not given */
+    sel->IFDrop = g_malloc0(sizeof(olong));
+    sel->IFDrop[0] = 0;
+  }
+
+  /* List of selected IFs */
+  if (sel->IFSel && (sel->nifsel<desc->jlocif)) /* Different number of IFs? */
+    {g_free(sel->IFSel); sel->IFSel=NULL;}
+  if (sel->IFSel==NULL) {  /* Default */
+    if (desc->jlocif>=0) sel->nifsel = desc->inaxes[desc->jlocif];
+    else                 sel->nifsel = 1;
+    sel->IFSel  = g_malloc(sel->nifsel*sizeof(gboolean));
+    for (j=0; j<sel->nifsel; j++) sel->IFSel[j] = TRUE;
+  }
+  sel->ifsel1 = -1; 
+  for (j=1; j<=sel->nifsel; j++) {
+    /* Is this in the IFDrop list? */
+    match = FALSE;
+    k = 0;
+    while(sel->IFDrop[k]>0) {
+      if (j==sel->IFDrop[k]) {match=TRUE; break;}
+      k++;
+    }
+    sel->IFSel[j-1] = (!match) && 
+      (j>=sel->startIF) && 
+      (j<=(sel->startIF+sel->numberIF-1)) && 
+      (((j-1)%(sel->IFInc))==0);
+    /* first selected */
+    if ((sel->ifsel1<0) && sel->IFSel[j-1]) sel->ifsel1 = j-1;
+  }
 
   for (i=0; i<4; i++) tempStr[i] = ' '; tempStr[4] = 0;
   ObitInfoListGetTest(info, "Stokes", &type, dim, &tempStr);
@@ -3046,9 +3233,9 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   else itemp = InfoReal.itg;
   sel->doBPCal = itemp > 0;
   sel->doBand = itemp;
-  itemp = 0;
+  InfoReal.itg = 0;
   ObitInfoListGetTest(info, "BPVer", &type, dim, &InfoReal);
-  sel->BPversion = itemp;
+  sel->BPversion = InfoReal.itg;
 
   /* Spectral smoothing */
   for (i=0; i<3; i++) ftempArr[i] = 0.0; 
@@ -3059,6 +3246,12 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   ftempArr[0] = 0.0;
   ObitInfoListGetTest(info, "Alpha", &type, dim, ftempArr);
   sel->alpha = ftempArr[0];
+
+  /* Reference frequency for Spectral index, default to data reference frequency */
+  dtempArr[0] = desc->crval[desc->jlocf];
+  ObitInfoListGetTest(info, "AlphaRefF", &type, dim, dtempArr);
+  sel->alphaRefF = dtempArr[0];
+  if (sel->alphaRefF<=0.0) sel->alphaRefF = desc->crval[desc->jlocf];
 
   /* Data averaging time */
   if (ObitInfoListGetTest(info, "InputAvgTime", &type, (gint32*)dim, 
@@ -3075,11 +3268,13 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   if ((sel->timeRange[0]==0.0) && (sel->timeRange[1]==0.0)) {
     sel->timeRange[0] = -1.0e20; sel->timeRange[1] = 1.0e20;
   }
+  /* if end < beginning take all times after beginning */
+  if (sel->timeRange[1]<sel->timeRange[0]) sel->timeRange[1] = 1.0e20;
 
   /* UV Range */
   ftempArr[0] = 0.0; ftempArr[1] = 1.0e20; 
   ObitInfoListGetTest(info, "UVRange", &type, (gint32*)dim, &ftempArr);
-  if ((ftempArr[0]<=0.0) && (ftempArr[1]<=0.0)) ftempArr[1] = 1.0e17;
+  if (ftempArr[1]<=0.0) ftempArr[1] = 1.0e17;
   for (i=0; i<2; i++) sel->UVRange[i] = ftempArr[i]*1.0e3;
 
   /* Selected antennas */
@@ -3101,13 +3296,14 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
     sel->selectAnts = FALSE;
     sel->numberAntList = 0;
   }
-
+ 
   /* Selected sources */
   Qual = -1;   /* Qualifier - default = all */
   ObitInfoListGetTest(info, "Qual", &type, dim, &Qual);
   /* Cal code */
   souCode[0] =  souCode[1] =  souCode[2] =  souCode[3] =  ' '; souCode[4] = 0; 
   ObitInfoListGetTest(info, "souCode", &type, dim, souCode);
+  noCal = !strncmp(souCode, "-CAL", 4); /* Non calibrators? */
   if (ObitInfoListGetP(info, "Sources", &type, dim, (gpointer)&sptr)) {
     sel->numberSourcesList = count;
     /* Count actual entries in source list */
@@ -3117,7 +3313,7 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
       j += dim[0];
     }
     sel->numberSourcesList = count;
-    if (count>0) {  /* Anything actually specified? */
+    if ((count>0) || noCal) {  /* Anything actually specified? */
       /* have to lookup sources - need SU table for this. */
       iver = 1;
       SUTable = newObitTableSUValue (in->name, (ObitData*)in, &iver, OBIT_IO_ReadOnly, 0, err);
@@ -3137,7 +3333,8 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
 	  sel->sources = g_malloc0(sel->numberSourcesList*sizeof(olong));
 	
 	/* Do lookup */
-	dim[1] = count;
+	if (count>0) dim[1] = count;
+	else         dim[1] = sel->numberSourcesList;
 	ObitTableSULookup (SUTable, dim, sptr, Qual, souCode, 
 			   sel->sources, &sel->selectSources, 
 			   &sel->numberSourcesList, err); 
@@ -3162,7 +3359,7 @@ static void ObitUVGetSelect (ObitUV *in, ObitInfoList *info, ObitUVSel *sel,
   sel->numberVis   = 1;
   sel->numberPoln  = MAX (1, MIN (2, desc->inaxes[desc->jlocs]));
 
-} /* end ObitUVGetSelect */
+  } /* end ObitUVGetSelect */
 
 /**
  * Do various operation that have to be done in the ObitUV class
@@ -3176,6 +3373,9 @@ static void ObitUVSetupCal (ObitUV *in, ObitErr *err)
   ObitUVSel *sel = NULL;
   ObitUVCal *cal = NULL;
   olong highVer, iVer, useVer;
+  oint numPol=0, numIF=0, numChan=0;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar *routine = "ObitUVSetupCal";
 
   /* error checks */
@@ -3216,7 +3416,7 @@ static void ObitUVSetupCal (ObitUV *in, ObitErr *err)
       /* Get table */
       useVer = iVer+1;
       cal->ANTables[iVer] =
-	(Obit*)newObitTableANValue (in->name, (ObitData*)in, &useVer, OBIT_IO_ReadOnly, 0, 0, err);
+	(Obit*)newObitTableANValue (in->name, (ObitData*)in, &useVer, OBIT_IO_ReadOnly, 0, 0, 0, err);
       if (err->error) {
 	Obit_log_error(err, OBIT_Error, 
 		       "%s: NO Antenna AN table %d for %s", routine, useVer, in->name);
@@ -3349,6 +3549,21 @@ static void ObitUVSetupCal (ObitUV *in, ObitErr *err)
   /* Need frequency information */
   ObitUVGetFreq (in, err);
 
+  /* PD table needed for poln cal? */
+  if (sel->doPolCal) {
+    cal->PDVer = -1;
+    ObitInfoListGetTest(in->info, "PDVer", &type, dim, &cal->PDVer);
+    if (cal->PDVer>=0) {  /* Channel poln cal - check PD tables */
+      highVer = ObitTableListGetHigh (in->tableList,  "AIPS PD");
+      if (highVer>=1)
+	cal->PDTable =
+	  (Obit*) newObitTablePDValue (in->name, (ObitData*)in, &cal->PDVer, OBIT_IO_ReadOnly, 
+				       numPol, numIF, numChan, err);
+      else cal->PDTable = ObitTablePDUnref(cal->PDTable);
+      if (err->error) Obit_traceback_msg (err, routine, in->name);
+    }
+  }
+
   /* Start up calibration - finish output Descriptor, and Selector */
   ObitUVCalStart ((ObitUVCal*)in->myIO->myCal, (ObitUVSel*)in->myIO->mySel, 
 		  (ObitUVDesc*)in->myIO->myDesc, in->myDesc, err);
@@ -3430,6 +3645,7 @@ static void ObitUVSetupIO (ObitUV *in, ObitErr *err)
  * Uses source dependent frequency info if available from inUV->info
  * \li "SouIFOff" OBIT_double (nif,1,1) Source frequency offset per IF
  * \li "SouBW"    OBIT_double (1,1,1)   Bandwidth
+ * \li "copyCalTab" OBIT_boolean (1,1,1) If true and doCalib<=0 copy SN, CL
  *
  * \param outUV An existing object pointer for output or NULL if none exists.
  * \param err Error stack, returns if not empty.
@@ -3442,14 +3658,17 @@ static ObitIOCode CopyTablesSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 		    "AIPS AN","AIPS CT","AIPS OB","AIPS IM","AIPS MC",
 		    "AIPS PC","AIPS NX","AIPS TY","AIPS GC","AIPS CQ",
 		    "AIPS WX","AIPS AT","AIPS NI","AIPS BP","AIPS OF",
-		    "AIPS PS",
+		    "AIPS PS","AIPS PD","AIPS SY","AIPS PT","AIPS OT",
 		    "AIPS HI","AIPS PL","AIPS SL", 
 		    NULL};
-  gboolean copySU;
+  gchar *PDTable[] = {"AIPS PD", NULL};
+  gboolean doPol, copySU, copyCalTab=FALSE;
+  olong doCalib, itemp, PDVer=-1;
   odouble *SouIFOff=NULL, SouBW=0.0;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-  gchar *sourceInclude[] = {"AIPS SU", NULL};
+  /*gchar *sourceInclude[] = {"AIPS SU", NULL};*/
+  union ObitInfoListEquiv InfoReal; 
   gchar *routine = "ObitUV:CopyTablesSelect";
 
   /* error checks */
@@ -3459,11 +3678,29 @@ static ObitIOCode CopyTablesSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   g_assert (ObitUVIsA(outUV));
 
   /* Source info available? */
-  ObitInfoListGetP    (inUV->info, "SouIFOff",  &type, dim, (gpointer)&SouIFOff);
-  ObitInfoListGetTest (inUV->info, "SouBW",     &type, dim, &SouBW);
+  ObitInfoListGetP    (inUV->info, "SouIFOff",    &type, dim, (gpointer)&SouIFOff);
+  ObitInfoListGetTest (inUV->info, "SouBW",       &type, dim, &SouBW);
+  ObitInfoListGetTest (inUV->info, "doCalib",     &type, dim, &doCalib);
+  ObitInfoListGetTest (inUV->info, "copyCalTab",  &type, dim, &copyCalTab);
   
   /* Copy standard tables */
   retCode = ObitUVCopyTables (inUV, outUV, exclude, NULL, err);
+  if ((retCode != OBIT_IO_OK) || (err->error))
+    Obit_traceback_val (err, routine, inUV->name, retCode);
+
+  /* Copy any AIPS PD tables if NONE applied */
+  InfoReal.itg = 0; type = OBIT_oint;
+  ObitInfoListGetTest(inUV->info, "doPol", &type, dim, &InfoReal);
+  if (type==OBIT_float) itemp = InfoReal.flt + 0.5;
+  else itemp = InfoReal.itg;
+  doPol = itemp > 0;
+  InfoReal.itg = -1; type = OBIT_oint;
+  if (doPol && ObitInfoListGetTest(inUV->info, "PDVer", &type, dim, &InfoReal)) {
+    if (type==OBIT_float) PDVer = InfoReal.flt + 0.5;
+    else PDVer = InfoReal.itg;
+  }
+  if ((!doPol) || PDVer<=0) 
+    retCode = ObitUVCopyTables (inUV, outUV, NULL, PDTable, err);
   if ((retCode != OBIT_IO_OK) || (err->error))
     Obit_traceback_val (err, routine, inUV->name, retCode);
 
@@ -3487,13 +3724,15 @@ static ObitIOCode CopyTablesSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if ((retCode != OBIT_IO_OK) || (err->error))
     Obit_traceback_val (err, routine, inUV->name, retCode);
 
-  /* Copy SN Tables */
-  retCode =  ObitTableSNSelect (inUV, outUV, err);
+  /* Copy SN Tables if not calibrating */
+  if (copyCalTab &&(doCalib<=0))
+    retCode =  ObitTableSNSelect (inUV, outUV, err);
   if ((retCode != OBIT_IO_OK) || (err->error))
     Obit_traceback_val (err, routine, inUV->name, retCode);
 
-  /* Copy CL Tables */
-  retCode =  ObitTableCLSelect (inUV, outUV, err);
+  /* Copy CL Tables if not calibrating  */
+  if (copyCalTab &&(doCalib<=0))
+    retCode =  ObitTableCLSelect (inUV, outUV, err);
   if ((retCode != OBIT_IO_OK) || (err->error))
     Obit_traceback_val (err, routine, inUV->name, retCode);
 

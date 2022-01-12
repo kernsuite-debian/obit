@@ -1,6 +1,6 @@
-/* $Id: ObitDConCleanVisMF.c 149 2010-01-01 18:31:02Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -38,6 +38,10 @@
 #include "ObitSkyGeom.h"
 #include "ObitDConCleanPxListMF.h"
 #include "ObitSkyModelMF.h"
+#include "ObitImageUtil.h"
+#include "ObitConvUtil.h"
+#include "ObitFeatherUtil.h"
+#include "ObitFArrayUtil.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -123,6 +127,7 @@ static void NewPxList (ObitDConCleanVis *in, ObitErr *err);
 
 /** Private: Convolve spectral CCs with a Gaussian. */
 static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, 
+			   ofloat factor, ofloat tmaj, ofloat tmin, ofloat tpa, 
 			   ObitErr *err);
 
 /** Private: Cross convolve spectral CCs with a Gaussian. */
@@ -137,6 +142,14 @@ static void GaussTaper (ObitCArray* uvGrid,  ObitImageDesc *imDesc,
 static ObitFArray* GetSpecBeamPatch (ObitDConCleanVisMF *in, ObitFArray *BP, 
 				     olong ispec, ObitImageMF* image, 
 				     ObitErr *err);
+
+/** Private: Convolve image to common resolution. */
+static void CommonRes(ObitDConCleanVisMF *in, olong field, ObitErr *err);
+
+/** Convolve by Gaussian */
+void ConvGauss (ObitImage *inImage, olong *iplane,
+		ofloat Gaumaj, ofloat Gaumin, ofloat GauPA, ofloat rescale,
+		ObitErr *err);
 /*----------------------Public functions---------------------------*/
 /**
  * Constructor.
@@ -259,12 +272,14 @@ void ObitDConCleanVisMFClone  (ObitDConCleanVis *inn, ObitDConCleanVis *outt, Ob
  * \param order  Order of the imaging, Spectral index only=1, plus curvature=2
  * \param maxFBW Max. IF center fractional bandwidth.
  * \param alpha  Spectral index correction previously applied to data.
+ * \param alphaRefF Reference frequency for alpha
  * \param err    Obit error stack object.
  * \return the new object.
  */
 ObitDConCleanVisMF* ObitDConCleanVisMFCreate (gchar* name, ObitUV *uvdata,  
 					      olong order, ofloat maxFBW, 
-					      ofloat alpha, ObitErr *err)
+					      ofloat alpha, odouble alphaRefF,
+					      ObitErr *err)
 {
   olong nfield, i;
   ObitDConCleanVisMF* out=NULL;
@@ -281,7 +296,7 @@ ObitDConCleanVisMF* ObitDConCleanVisMFCreate (gchar* name, ObitUV *uvdata,
 
   /* Create UV imager and its ImageMosaic */
   out->imager = (ObitUVImager*)ObitUVImagerMFCreate("UVImagerMF", order, maxFBW, 
-						    alpha, uvdata, err);
+						    alpha, alphaRefF, uvdata, err);
   if (err->error) Obit_traceback_val (err, routine, name, out);
 
   /* Save uv Mosaic reference */
@@ -305,6 +320,7 @@ ObitDConCleanVisMF* ObitDConCleanVisMFCreate (gchar* name, ObitUV *uvdata,
   out->factor      = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean factor");
   out->quality     = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean quality");
   out->cleanable   = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean cleanable");
+  out->fresh       = ObitMemAlloc0Name(nfield*sizeof(gboolean),"Clean fresh");
   out->maxAbsRes   = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean max res");
   out->avgRes      = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean avg res");
   out->imgRMS      = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Image RMS");
@@ -316,6 +332,7 @@ ObitDConCleanVisMF* ObitDConCleanVisMFCreate (gchar* name, ObitUV *uvdata,
     out->avgRes[i]      = -1.0;
     out->quality[i]     = -1.0;
     out->cleanable[i]   = -1.0;
+    out->fresh[i]       = FALSE;
     out->imgRMS[i]      = -1.0;
     out->imgPeakRMS[i]  = -1.0;
     out->beamPeakRMS[i] = -1.0;
@@ -338,6 +355,7 @@ ObitDConCleanVisMF* ObitDConCleanVisMFCreate (gchar* name, ObitUV *uvdata,
  * \param order    Order of the imaging, Spectral index only=1, plus curvature=2
  * \param maxFBW   Max. IF center fractional bandwidth.
  * \param alpha  Spectral index correction previously applied to data.
+ * \param alphaRefF Reference frequency for alpha
  * \param err      Obit error stack object.
  * \return the new object.
  */
@@ -345,7 +363,7 @@ ObitDConCleanVis*
 ObitDConCleanVisMFCreate2 (gchar* name, ObitUV *uvdata,  
 			   ObitUVImager *imager, ObitSkyModel *skyModel, 
 			   olong order, ofloat maxFBW, ofloat alpha, 
-			   ObitErr *err)
+			   odouble alphaRefF, ObitErr *err)
 {
   olong nfield, i;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
@@ -365,7 +383,7 @@ ObitDConCleanVisMFCreate2 (gchar* name, ObitUV *uvdata,
   /* Use or create UV imager and create its ImageMosaic */
   if (imager==NULL) {
     out->imager =(ObitUVImager*) ObitUVImagerMFCreate("UVImager", order, maxFBW, 
-						      alpha, uvdata, err);
+						      alpha, alphaRefF, uvdata, err);
     if (err->error) Obit_traceback_val (err, routine, name, (ObitDConCleanVis*)out);
   } else out->imager = ObitUVImagerRef(imager);
 
@@ -391,22 +409,24 @@ ObitDConCleanVisMFCreate2 (gchar* name, ObitUV *uvdata,
   /* Arrays per field - including those in parent classes */
   nfield =  out->mosaic->numberImages;
   out->nfield  = nfield;
-  out->gain        = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean Loop gain");
-  out->minFlux     = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean minFlux");
-  out->factor      = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean factor");
-  out->quality     = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean quality");
-  out->cleanable   = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean cleanable");
-  out->maxAbsRes   = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean max res");
-  out->avgRes      = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Clean avg res");
-  out->imgRMS      = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Image RMS");
-  out->imgPeakRMS  = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Image Peak/RMS");
-  out->beamPeakRMS = ObitMemAlloc0Name(nfield*sizeof(ofloat),"Beam Peak/RMS");
-  out->currentFields = ObitMemAlloc0Name((nfield+3)*sizeof(olong),"Current fields");
+  out->gain        = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Clean Loop gain");
+  out->minFlux     = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Clean minFlux");
+  out->factor      = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Clean factor");
+  out->quality     = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Clean quality");
+  out->cleanable   = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Clean cleanable");
+  out->fresh       = ObitMemAlloc0Name((nfield*2)*sizeof(gboolean),"Clean fresh");
+  out->maxAbsRes   = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Clean max res");
+  out->avgRes      = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Clean avg res");
+  out->imgRMS      = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Image RMS");
+  out->imgPeakRMS  = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Image Peak/RMS");
+  out->beamPeakRMS = ObitMemAlloc0Name((nfield*2)*sizeof(ofloat),"Beam Peak/RMS");
+  out->currentFields = ObitMemAlloc0Name((nfield*2)*sizeof(olong),"Current fields");
   for (i=0; i<nfield; i++) {
     out->maxAbsRes[i]   = -1.0;
     out->avgRes[i]      = -1.0;
     out->quality[i]     = -1.0;
     out->cleanable[i]   = -1.0;
+    out->fresh[i]       = FALSE;
     out->imgRMS[i]      = -1.0;
     out->imgPeakRMS[i]  = -1.0;
     out->beamPeakRMS[i] = -1.0;
@@ -483,6 +503,10 @@ void ObitDConCleanVisMFRestore(ObitDConClean *inn, ObitErr *err)
   ObitDConCleanVisMF *in = (ObitDConCleanVisMF*)inn;
   ObitFArray *convl=NULL;
   ObitImage *image=NULL;
+  ofloat factor = 1.0;
+  gboolean doComRes = FALSE;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   olong iplane, field, num, nOrd, plane[5]={1,1,1,1,1};
   gchar *routine = "ObitDConCleanVisMFRestore";
 
@@ -491,6 +515,7 @@ void ObitDConCleanVisMFRestore(ObitDConClean *inn, ObitErr *err)
   g_assert (ObitDConCleanVisMFIsA(in));
 
   /* Anything to restore? */
+  if (in->Pixels==NULL) return;
   if (in->Pixels->currentIter<=0) return;
 
   /* Tell user */
@@ -499,8 +524,15 @@ void ObitDConCleanVisMFRestore(ObitDConClean *inn, ObitErr *err)
     ObitErrLog(err);  /* Progress Report */
   }
 
+  /* Force common resolution? */
+  ObitInfoListGetTest(in->info, "doComRes", &type, dim, &doComRes);
+
   /* Loop over fields */
   for (field = 0; field<in->nfield; field++) {
+
+    /* Convolve to common resolution  */
+    if (doComRes) CommonRes(in, field, err);
+    if (err->error) Obit_traceback_msg (err, routine, in->name);
 
     /* Anything to restore? */
     if (in->Pixels->iterField[field]<=0) continue;
@@ -514,11 +546,12 @@ void ObitDConCleanVisMFRestore(ObitDConClean *inn, ObitErr *err)
     /* Restore Flux then individual channels */
     /* Convolve Gaussians */
     iplane = 0;
-    convl = ConvlCC (image, in->CCver, iplane, err);
+    convl = ConvlCC (image, in->CCver, iplane, factor, -1.0,-1.0, -1.0, err);
     /* Read image */
     plane[0] = 1;
     ObitImageGetPlane (image, NULL, plane, err);
-    /* Sum */
+    if (err->error) Obit_traceback_msg (err, routine, in->name);
+   /* Sum */
     ObitFArrayAdd (image->image, convl, image->image);
     /* Rewrite */
     ObitImagePutPlane (image, NULL, plane, err);
@@ -530,10 +563,11 @@ void ObitDConCleanVisMFRestore(ObitDConClean *inn, ObitErr *err)
     nOrd = ((ObitImageMF*)image)->maxOrder;
     for (iplane=1; iplane<=num; iplane++) {
       /* Convolve Gaussians */
-      convl = ConvlCC (image, in->CCver, iplane, err);
+      convl = ConvlCC (image, in->CCver, iplane, factor, -1.0,-1.0, -1.0, err);
       /* Read image */
       plane[0] = iplane+1 + nOrd;
       ObitImageGetPlane (image, NULL, plane, err);
+      if (err->error) Obit_traceback_msg (err, routine, in->name);
       /* Sum */
       ObitFArrayAdd (image->image, convl, image->image);
       /* Rewrite */
@@ -559,9 +593,16 @@ void ObitDConCleanVisMFRestore(ObitDConClean *inn, ObitErr *err)
  */
 void ObitDConCleanVisMFXRestore(ObitDConClean *inn, ObitErr *err)
 {
- ObitDConCleanVisMF *in = (ObitDConCleanVisMF*)inn;
+  ObitDConCleanVisMF *in = (ObitDConCleanVisMF*)inn;
   ObitImage *image1=NULL, *image2=NULL;
-  olong ifield, jfield, iplane, num, nOrd, plane[5]={1,1,1,1,1};
+  olong ifield, jfield, iplane, num, nOrd, ncomps, ver, noParms, plane[5]={1,1,1,1,1};
+  ofloat BeamTaper1=0.0, BeamTaper2=0.0, factor;
+  ofloat gparm[3]={0.0,0.0,0.0}, bmaj, bmin, bpa;
+  gboolean isAuto;
+  ObitFArray *convl=NULL, *accum=NULL;
+  gint32 dim[MAXINFOELEMDIM];
+  ObitInfoType itype;
+  ObitTableCC *inCC=NULL, *outCC=NULL;
   gchar *routine = "ObitDConCleanVisMFXRestore";
 
    /* error checks */
@@ -569,7 +610,7 @@ void ObitDConCleanVisMFXRestore(ObitDConClean *inn, ObitErr *err)
   g_assert (ObitDConCleanVisMFIsA(in));
 
   /* Anything to restore? */
-  if (in->Pixels->currentIter<=0) return;
+  if (in->Pixels->currentIter<=0) return; 
 
   /* Tell user */
   if (in->prtLv>1) {
@@ -584,12 +625,20 @@ void ObitDConCleanVisMFXRestore(ObitDConClean *inn, ObitErr *err)
     num  = ((ObitImageMF*)image1)->nSpec;
     nOrd = ((ObitImageMF*)image1)->maxOrder;
 
+    /* Get additional beam taper */
+    ObitInfoListGetTest(image1->myDesc->info, "BeamTapr", &itype, dim, &BeamTaper1);
+    /* Ignore this one if not zero */
+    if (BeamTaper1>0.0) continue;
+
+    /* Get accumulation array for image */
+    accum = ObitFArrayCreate ("Accum", 2, image1->myDesc->inaxes);
+    
     /* Restore Flux then individual channels */
     for (iplane=0; iplane<(num+1); iplane++) {
       /* Read image */
       if (iplane==0) plane[0] = 1;
       else plane[0] = 1+iplane+nOrd;
-      ObitImageGetPlane (image1, NULL, plane, err);
+      ObitImageGetPlane (image1, accum->array, plane, err);
 
       /* Loop over others */
       for (ifield = 0; ifield<in->nfield; ifield++) {
@@ -597,21 +646,71 @@ void ObitDConCleanVisMFXRestore(ObitDConClean *inn, ObitErr *err)
 	if (ifield==jfield) continue;
 
 	/* Anything to restore? */
-	if (in->Pixels->iterField[ifield]<=0) continue;
+	if (in->Pixels->iterField[ifield]<=0) continue; 
+
+	/* Diagnostics */
+	if (in->prtLv>2) {
+	  Obit_log_error(err, OBIT_InfoErr,
+			 "Cross Restoring %d components facet %d to %d, plane %d",
+			 in->Pixels->iterField[ifield], ifield+1, jfield+1, plane[0]);
+	  ObitErrLog(err);
+	}
 
 	/* which Image? */
 	image2 = in->mosaic->images[ifield];
-      
+
 	/* Cross convolve Gaussians */
-	XConvlCC (image2, in->CCver, iplane, image1, image1->image, err);
-	if (err->error) Obit_traceback_msg (err, routine, in->name);
+	/* FFT (2D, same grid) or direct convolution */
+	isAuto = (in->mosaic->isAuto[ifield]>0) || (in->mosaic->isAuto[jfield]>0);
+ 	if (!isAuto && (!image1->myDesc->do3D && !image2->myDesc->do3D) &&
+	    (fabs(image1->myDesc->crval[0]-image2->myDesc->crval[0])<0.01*fabs(image1->myDesc->cdelt[0])) &&
+	    (fabs(image1->myDesc->crval[1]-image2->myDesc->crval[1])<0.01*fabs(image1->myDesc->cdelt[1]))) {
+	  /* Can use FFT */
+	  ver     = in->CCver;
+	  noParms = 0;
+	  inCC    = newObitTableCCValue ("SelectedCC", (ObitData*)image2,
+					 &ver, OBIT_IO_ReadOnly, noParms, 
+					 err);
+	  outCC = ObitTableCCUtilCrossTable (inCC, image2->myDesc, image1, &ncomps, err);
+	  if ((ncomps>0) && (outCC!=NULL)) {
+	    /* Scaling factor  */
+	    factor = ObitDConCleanGetXRestoreBeam(image2->myDesc, image1->myDesc, 
+						  gparm, &bmaj, &bmin, &bpa);
+	    /* Get additional beam taper - use for convolution 
+	     Don't know what this was supposed to do but it's not right */
+	    ObitInfoListGetTest(image2->myDesc->info, "BeamTapr", &itype, dim, &BeamTaper2);
+	    /*??? bmaj = bmin = BeamTaper2; bpa   = 0.0;*/
+	    convl = ConvlCC (image1, outCC->tabVer, iplane, factor, bmaj, bmin, bpa, err);
+	    if (err->error) Obit_traceback_msg (err, routine, in->name);
+	    /* Sum */
+	    ObitFArrayAdd (accum, convl, accum);
+	    /* DEBUG save convl for 1=>5, 3=>5
+	    if ((jfield==5) && (ifield==15) && (iplane==0))
+	      ObitImageUtilArray2Image ("Dbug16to6.fits", 0, convl, err); 
+	      if ((jfield==3) && (ifield==13) && (iplane==0))
+	      ObitImageUtilArray2Image ("Dbug14to4.fits", 0, convl, err);  */
+
+	    convl = ObitFArrayUnref(convl);
+	  }
+	  inCC = ObitTableCCUnref(inCC);
+	  if (outCC!=NULL) {
+	    ObitImageZapTable (image1, "AIPS CC", outCC->tabVer, err);
+	    if (err->error) Obit_traceback_msg (err, routine, in->name);
+	    outCC = ObitTableCCUnref(outCC);  /* Be sure to free memory */
+	  }
+	} else { /* direct convolution */
+	  /* DEBUG 
+	  fprintf (stderr, "XConvlCC: %d %d\n",ifield,jfield);*/
+	  XConvlCC (image2, in->CCver, iplane, image1, accum, err);
+	  if (err->error) Obit_traceback_msg (err, routine, in->name);
+	}
       } /* end inner loop over fields */
       /* Rewrite */
-      ObitImagePutPlane (image1, NULL, plane, err);
+      ObitImagePutPlane (image1, accum->array, plane, err);
       if (err->error) Obit_traceback_msg (err, routine, in->name);
     } /* end loop over planes */
     
-    image1->image = ObitFArrayUnref(image1->image);
+    accum = ObitFArrayUnref(accum);
   } /* end outer loop over fields */
 } /* end ObitDConCleanVisMFXRestore */
 
@@ -666,6 +765,7 @@ void ObitDConCleanVisMFSub(ObitDConClean *inn, ObitErr *err)
   /* Mark All as not fresh */
   for (ifld=0; ifld<in->nfield; ifld++) {
     ((ObitImageMF*)in->mosaic->images[ifld])->fresh = FALSE;
+    in->fresh[ifld] = FALSE;
   }
   
   /* Most work in parent class */
@@ -763,6 +863,7 @@ void ObitDConCleanVisMFInit  (gpointer inn)
   in->doBeam    = TRUE;
   in->quality   = NULL;
   in->cleanable = NULL;
+  in->fresh     = NULL;
   in->display   = NULL;
   in->SDIdata   = NULL;
   in->peakFlux  = -1000.0;
@@ -895,18 +996,16 @@ static void SubNewCCs (ObitDConCleanVis *inn, olong *newCC, ObitFArray **pixarra
   ObitTable *tempTable = NULL;
   ObitTableCC *CCTable = NULL;
   ObitImageMF *image=NULL;
-  ObitImage *theBeam=NULL;
   ImSubFuncArg **threadArgs;
   ObitFArray **comps=NULL;
   ObitFArray **inFArrays, **bmFArrays;
   ObitImageDesc *outDesc;
   ofloat PeakIn, PeakOut, RMS,  parms[20];
-  olong i, j, l, ip, jp, ncc, ver, nThreads=0, nTh, nfield, ifield, nDo, nLeft, PeakInPos[2];
+  olong i, j, l, ip, jp, ncc, ver, nThreads=0, mThreads=0, nTh, nfield, ifield, nDo, nLeft, PeakInPos[2];
   olong ispec, naxis[2], plane[5] = {1,1,1,1,1};
   gboolean doAbs, OK;
   gchar *tabType = "AIPS CC";
   ObitDConCleanVisMF *in = (ObitDConCleanVisMF*)inn;
-  ObitImageClassInfo *imgClass;
   gchar *routine = "SubNewCCs";
 
   /* error checks */
@@ -950,7 +1049,8 @@ static void SubNewCCs (ObitDConCleanVis *inn, olong *newCC, ObitFArray **pixarra
 
   /* setup for threaded processing
      Initialize Threading */
-  nThreads = MakeImSubFuncArgs (in->thread, err, &threadArgs);
+  mThreads = MakeImSubFuncArgs (in->thread, err, &threadArgs);
+  nThreads = 1;  /* NO threading done here, it is done at a lower level */
   /* No more threads than work to spread them across */
   if (((ObitImageMF*)in->mosaic->images[0])->nSpec>1) nTh = nThreads;
   else nTh = 1;
@@ -976,8 +1076,6 @@ static void SubNewCCs (ObitDConCleanVis *inn, olong *newCC, ObitFArray **pixarra
     /* Which image? */
     image = (ObitImageMF*)in->mosaic->images[ifield-1];
     /* Which Beam? */
-    imgClass  = (ObitImageClassInfo*)image->ClassInfo;    /* Image class */
-    theBeam   = imgClass->ObitImageGetBeam((ObitImage*)image, 0, plane, err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
     
     nTh = MIN (nThreads, image->nSpec);
@@ -1062,7 +1160,7 @@ static void SubNewCCs (ObitDConCleanVis *inn, olong *newCC, ObitFArray **pixarra
  cleanup:
   g_free(inFArrays); inFArrays = NULL;
   g_free(bmFArrays); bmFArrays = NULL;
-  KillImSubFuncArgs (nThreads, threadArgs);
+  KillImSubFuncArgs (mThreads, threadArgs);
   if (comps) {
     for (i=0; i<nfield; i++) comps[i] = ObitFArrayUnref(comps[i]);
     g_free(comps);
@@ -1235,15 +1333,22 @@ static void KillImSubFuncArgs (olong nargs, ImSubFuncArg **ThreadArgs)
 
 /** 
  * Convolve a set of Clean components with a beam returning an image array
+ * Gaussian will be obtained from the CC Table unless overridden by tmaj etc.
  * 
  * \param image  Image with CC table and defines size of image grid and
  *               with beam to convolve with.
  * \param CCVer  CC table number
  * \param iterm  Select spectral term, 0=flux, higher is a spectral channel..
+ * \param factor Scaling factor
+ * \param tmaj   if > 0 then the major axis size (deg) of convolving Gaussian
+ * \param tmin   if > 0 then the minor axis size (deg) of convolving Gaussian
+ * \param tpa    Position angle (deg) of convolving Gaussian if tmaj>=0
  * \param err    Obit error stack object.
  * \return An array with the Clean components convolved
  */
-static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *err)
+static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, 
+			   ofloat factor, ofloat tmaj, ofloat tmin, ofloat tpa, 
+			   ObitErr *err)
 {
   ObitIOCode retCode;
   ObitTable *tempTable=NULL;
@@ -1253,6 +1358,7 @@ static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *
   gchar *tabType = "AIPS CC";
   ofloat gparm[3], bmaj, bmin, bpa;
   ObitFArray *grid = NULL;
+  /* ObitFArray *tempFArray=NULL; DEBUG */
   ObitCArray *uvGrid = NULL;
   ObitFFT *forFFT = NULL, *revFFT = NULL;
   gchar *routine = "ConvlCC";
@@ -1261,6 +1367,7 @@ static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *
   if (err->error) return grid;
 
   /* Open Image */
+  image->extBuffer = TRUE;   /* No need for buffer */
   retCode = ObitImageOpen (image, OBIT_IO_ReadOnly, err);
   if ((retCode != OBIT_IO_OK) || (err->error))
     Obit_traceback_val (err, routine, image->name, grid);
@@ -1275,6 +1382,7 @@ static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *
   retCode = ObitImageClose (image, err);
   if ((retCode != OBIT_IO_OK) || (err->error))
     Obit_traceback_val (err, routine, image->name, grid);
+  image->extBuffer = FALSE;   /* May need buffer later */
 
   /* Get CC table */
   ver = CCVer;
@@ -1297,11 +1405,11 @@ static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *
   /* Spectral or normal */
   if ((CCTable->noParms>4) && (iterm>0)) { /* Spectral */
     retCode = ObitTableCCUtilGridSpect (CCTable, 1, iterm, &first, &last, FALSE, 
-					1.0, 0.0, 1.0e20, imDesc, &grid, gparm, &ncomp, 
+					factor, 0.0, 1.0e20, imDesc, &grid, gparm, &ncomp, 
 					err);
   } else { /* normal */
     retCode = ObitTableCCUtilGrid (CCTable, 1, &first, &last, FALSE, 
-				   1.0, 0.0, 1.0e20, imDesc, &grid, gparm, &ncomp, 
+				   factor, 0.0, 1.0e20, imDesc, &grid, gparm, &ncomp, 
 				   err);
   }
   if ((retCode != OBIT_IO_OK) || (err->error))
@@ -1310,9 +1418,9 @@ static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *
   /* Free CC table */
   CCTable = ObitTableCCUnref(CCTable);
   
-  /* DEBUG */
-  /* ObitImageUtilArray2Image ("DbugGridCC.fits", 1, grid, err);  */
-  /* if (err->error) Obit_traceback_val (err, routine, image->name, grid);*/
+  /* DEBUG 
+  ObitImageUtilArray2Image ("DbugGridCC.fits", 1, grid, err);  */
+   if (err->error) Obit_traceback_val (err, routine, image->name, grid);
   /* END DEBUG */
   
   /* FFT to image plane */
@@ -1351,13 +1459,19 @@ static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *
     gparm[1] = gparm[1];
     gparm[2] = gparm[2] + image->myDesc->crota[image->myDesc->jlocd];
   }
+  /* Check for override in call */
+  if (tmaj>0.0) {
+    gparm[0] = tmaj;
+    gparm[1] = tmin;
+    gparm[2] = tpa + image->myDesc->crota[image->myDesc->jlocd];
+  }
   GaussTaper (uvGrid, imDesc, gparm);
   
   /* DEBUG */
-  /*tempFArray = ObitCArrayMakeF(uvGrid); */  /* Temp FArray */
-  /*ObitCArrayReal (uvGrid, tempFArray); */   /* Get real part */
-  /*ObitImageUtilArray2Image ("DbuguvGridAfter.fits", 1, tempFArray, err); */
-  /*tempFArray = ObitFArrayUnref(tempFArray); */   /* delete temporary */
+  /*tempFArray = ObitCArrayMakeF(uvGrid);*/   /* Temp FArray */
+  /*ObitCArrayReal (uvGrid, tempFArray);*/    /* Get real part */
+  /*ObitImageUtilArray2Image ("DbuguvGridAfter.fits", 1, tempFArray, err);*/ 
+  /*tempFArray = ObitFArrayUnref(tempFArray);*/    /* delete temporary */
   /* END DEBUG */
   
   /* FFT back to image */
@@ -1374,10 +1488,10 @@ static ObitFArray* ConvlCC(ObitImage *image, olong CCVer, olong iterm, ObitErr *
   /* Put the center at the center */
   ObitFArray2DCenter (grid);
   
-  /* DEBUG  
-  if (iterm==1)
-    ObitImageUtilArray2Image ("DbugRestCC.fits", 0, grid, err);
-  if (err->error) Obit_traceback_val (err, routine, image->name, grid); */
+  /* DEBUG   
+  if (iterm==0)
+    ObitImageUtilArray2Image ("DbugRestCC.fits", 0, grid, err);*/
+  if (err->error) Obit_traceback_val (err, routine, image->name, grid);
   /* END DEBUG */
   
   /* Cleanup */
@@ -1405,9 +1519,12 @@ static void XConvlCC(ObitImage *in, olong CCVer, olong iterm,
   ObitTable *tempTable=NULL;
   ObitTableCC *CCTable = NULL;
   ObitFArray *list = NULL, *tmpArray = NULL;
-  olong ver, ncomp, ndim, naxis[2];
+  olong j, ver, ncomp, ndim, naxis[2];
   ofloat gparm[3], gauss[3], bmaj, bmin, bpa, sr, cr, cellx, celly;
+  ofloat scale, BeamTaper1=0.0, BeamTaper2=0.0;
   gchar *tabType = "AIPS CC";
+  gint32 dim[MAXINFOELEMDIM];
+  ObitInfoType itype;
   gchar *routine = "ObitDConCleanVisMF:XConvlCC";
 
   /* error checks */
@@ -1419,6 +1536,14 @@ static void XConvlCC(ObitImage *in, olong CCVer, olong iterm,
   /* Any overlap? */
   if (!ObitImageDescOverlap(imDesc1, imDesc2, err)) return;
   
+  /* Get additional beam taper for output */
+  ObitInfoListGetTest(imDesc2->info, "BeamTapr", &itype, dim, &BeamTaper2);
+  /* Ignore this one if not zero */
+  if (BeamTaper2>0.0) return;
+
+  /* Get additional beam taper for input */
+  ObitInfoListGetTest(imDesc1->info, "BeamTapr", &itype, dim, &BeamTaper1);
+
   /* Get CC table */
   ver = CCVer;
   tempTable = newObitImageTable (in, OBIT_IO_ReadWrite, tabType, &ver, err);
@@ -1447,17 +1572,31 @@ static void XConvlCC(ObitImage *in, olong CCVer, olong iterm,
     tmpArray = ObitFArrayCreate ("Image for CCs", ndim, naxis);
   }
   
-  /* Set Gaussian parameters  Use beam from CC table or header? */
-  if (gparm[0]<0.0) {
+  /* get restoring beam and scaling */
+  scale = ObitDConCleanGetXRestoreBeam(imDesc1, imDesc2, gparm, &bmaj, &bmin, &bpa);
+
+  /* Scale list flux if needed */
+  if (scale!=1.0) {
+    if (iterm>0) {  /* Spectral flux density */
+      for (j=0; j<list->naxis[1]; j++)
+	list->array[2+j*list->naxis[0]] = list->array[3+j*list->naxis[0]] * scale;
+    } else {   /* Normal flux density */
+      for (j=0; j<list->naxis[1]; j++)
+	list->array[2+j*list->naxis[0]] *= scale;
+    }
+  }
+
+  /* Actually convolve with imaging taper if given */
+  if (BeamTaper1>0.0) {
+    bmaj = BeamTaper1;
+    bmin = BeamTaper1;
+    bpa  = 0.0;
+  } else {
     bmaj = imDesc1->beamMaj;
     bmin = imDesc1->beamMin;
     bpa  = imDesc1->beamPA;
-  } else {
-    bmaj = gparm[0];
-    bmin = gparm[1];
-    bpa  = gparm[2];
   }
-
+  
   cellx = imDesc1->cdelt[0];
   celly = imDesc1->cdelt[1];
   cr = cos ((bpa + imDesc1->crota[imDesc1->jlocd])*DG2RAD);
@@ -1472,6 +1611,10 @@ static void XConvlCC(ObitImage *in, olong CCVer, olong iterm,
   /* Convolve list to tmpArray */
   ObitFArrayConvGaus (tmpArray, list, ncomp, gauss);
   
+  /* DEBUG 
+  ObitImageUtilArray2Image ("DbugCrossConv.fits", 0, tmpArray, err); */
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
   /* Accumulate */
   ObitFArrayAdd (outGrid, tmpArray, outGrid);
     
@@ -1479,10 +1622,6 @@ static void XConvlCC(ObitImage *in, olong CCVer, olong iterm,
   list = ObitFArrayUnref(list);
   tmpArray = ObitFArrayUnref(tmpArray);
   
-  /* DEBUG
-  ObitImageUtilArray2Image ("DbugCrossConv.fits", 0, outGrid, err); */
-  if (err->error) Obit_traceback_msg (err, routine, in->name);
-
 } /* end XConvlCC */
 
 /**
@@ -1499,7 +1638,7 @@ static void GaussTaper (ObitCArray* uvGrid, ObitImageDesc *imDesc,
   ofloat dU, dV, UU, VV, texp;
   ofloat konst, xmaj, xmin, cpa, spa, b1, b2, b3, bb2, bb3;
   ofloat taper, norm, *grid, tx, ty;
-  olong i, j, nx, ny, ndim, naxis[2];
+  olong i, j, nx, ny, naxis[2];
 
   /* Image info - descriptor should still be valid */
   nx = imDesc->inaxes[imDesc->jlocr];
@@ -1526,7 +1665,7 @@ static void GaussTaper (ObitCArray* uvGrid, ObitImageDesc *imDesc,
   b3 = - 2.0 * spa * cpa * (xmaj*xmaj - xmin*xmin);
   
   /* pointer to complex grid */
-  ndim = 2; naxis[0] = 0; naxis[1] = 0; 
+  naxis[0] = naxis[1] = 0;
   grid = ObitCArrayIndex(uvGrid, naxis);
   
   /* loop over uv array */  
@@ -1565,9 +1704,10 @@ static ObitFArray* GetSpecBeamPatch (ObitDConCleanVisMF *in, ObitFArray *BP,
   ObitImage *theBeam;
   olong ablc[2], atrc[2], pos[2], plane[]={1,1,1,1,1};
   olong nx, ny, icenx, iceny, beamPatchSize;
-  ofloat fmax;
+  ofloat fmax, zero=0.0;
   ObitImageClassInfo *imgClass;
   ObitFArray *out=NULL, *FAtemp=NULL;
+  gboolean bad;
   gchar *routine = "GetSpecBeamPatch";
 
   /* error checks */
@@ -1602,21 +1742,261 @@ static ObitFArray* GetSpecBeamPatch (ObitDConCleanVisMF *in, ObitFArray *BP,
   if (err->error) Obit_traceback_val (err, routine, theBeam->name, out);
   fmax = ObitFArrayMax (FAtemp, pos);
   FAtemp = ObitFArrayUnref(FAtemp);
-  icenx = pos[0]+ablc[0];
-  iceny = pos[1]+ablc[1];
+
+  /* Set if Beam OK - peak>0.5 and near center */
+  bad = (fmax<0.5) || (fmax>1.0) || 
+    (abs(pos[0]+ablc[0]-icenx)>3) || (abs(pos[1]+ablc[1]-iceny)>3);
+  if (!bad) {
+    icenx = pos[0]+ablc[0];
+    iceny = pos[1]+ablc[1];
+  }
   
   /* Beam patch window as 0-rel */
   ablc[0] = icenx - beamPatchSize;
   atrc[0] = icenx + beamPatchSize;
   ablc[1] = iceny - beamPatchSize;
   atrc[1] = iceny + beamPatchSize;
-  
+
   /* Output Beam patch */
   out = ObitFArraySubArr(theBeam->image, ablc, atrc, err);
   if (err->error) Obit_traceback_val (err, routine, theBeam->name, out);
+    
+  /* If beam bad, zero */
+  if (bad) ObitFArrayFill (theBeam->image, zero);
     
   /* Free Image array? */
   theBeam->image = ObitFArrayUnref(theBeam->image);
   return out;
 } /* end GetSpecBeamPatch  */
+
+/**
+ * Convolve image to common resolution.
+ * \param in    The Clean object 
+ * \param field 0-rel field number
+ * \param err    Obit error stack object.
+ */
+static void CommonRes(ObitDConCleanVisMF *in, olong field, ObitErr *err)
+{
+  olong iplane, jplane, num, nOrd, prtLv, plane[5]={1,1,1,1,1};
+  ofloat bmaj, bmin, bpa, rescale;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitImageMF *img;
+  ObitImage *beam;
+  /* olong jj; DEBUG */
+  gchar *routine = "CommonRes";
+
+  /* which image? */
+  img  = (ObitImageMF*)in->mosaic->images[field];
+  num  = img->nSpec;      /* number of spectral planes */
+  nOrd = img->maxOrder;   /* number of orders in image spectrum */
+
+  /* Tell about it */
+  if (err->prtLv>=2) {
+    Obit_log_error(err, OBIT_InfoErr, 
+		   "Convolve residuals to %f x %f asec, PA = %f for %s", 
+		   img->myDesc->beamMaj*3600.0, img->myDesc->beamMin*3600.0, 
+		   img->myDesc->beamPA, img->name);
+  }
+  /* loop over planes */
+  beam = (ObitImage*)img->myBeam;
+  for (iplane=1; iplane<=num; iplane++) {
+    /* Fit beam */
+    jplane   = iplane+nOrd+1;
+    plane[0] = jplane;
+    dim[0]   = 1;
+    ObitInfoListAlwaysPut (beam->info, "PLANE", OBIT_long, dim, &jplane);
+    prtLv = err->prtLv;   /* Surpress message */
+    if (err->prtLv<=2) err->prtLv = 0;
+    ObitImageUtilFitBeam (beam, err);
+    err->prtLv = prtLv;
+    if (err->error) Obit_traceback_msg (err, routine, in->name);
+    /* Beam to convolve with */
+    ObitConvUtilDeconv (img->myDesc->beamMaj, img->myDesc->beamMin, img->myDesc->beamPA,
+			beam->myDesc->beamMaj, beam->myDesc->beamMin, beam->myDesc->beamPA,
+			&bmaj, &bmin, &bpa);
+    /* convolve - scale by ratio of beam areas */
+    rescale = img->myDesc->beamMaj/beam->myDesc->beamMaj * 
+      img->myDesc->beamMin/beam->myDesc->beamMin;
+    /* DEBUG 
+    fprintf (stderr,"DEBUG plane %d rescale %f\n", iplane, rescale);*/
+    /* DEBUG 
+       if ((field==0) && (iplane==5)) {
+       ObitImageGetPlane ((ObitImage*)img, NULL, plane, err);
+       if (err->error) Obit_traceback_msg (err, routine, in->name);
+       ObitFArrayFill (img->image, 0.0);
+       jj = (img->image->naxis[1]/2)*img->image->naxis[0] + img->image->naxis[0]/2;
+       img->image->array[jj] = 1.0;
+       rescale = 1.0; bmaj = bmin = 8.0/3600; bpa = 0.0;
+       ObitImagePutPlane ((ObitImage*)img, NULL, plane, err);
+       }
+       DEBUG */
+    /* Don't rescale if "new" beam has smaller area */
+    if (rescale>1.0) {
+      ConvGauss ((ObitImage*)img, plane, bmaj*3600.0, bmin*3600.0, bpa, 
+		 rescale, err);  
+      if (err->error) Obit_traceback_msg (err, routine, in->name);
+    } else {
+      Obit_log_error(err, OBIT_InfoWarn, 
+		     "%s: Output beam smaller than fitted, no convolution", routine);
+    }
+     /* DEBUG
+	if ((field==0) && (iplane==5)) {
+	ObitImageGetPlane ((ObitImage*)img, NULL, plane, err);
+	ObitImageUtilArray2Image ("DbugConvolved.fits", 0, img->image, err); 
+	if (err->error) Obit_traceback_msg (err, routine, in->name);
+	}
+	DEBUG */
+  } /* end loop over planes */
+
+  /* error checks */
+  if (err->error) return;
+
+} /* end CommonRes */
+
+/**
+ *  Convolve an Image with an FArray and write outImage  
+ *  This routine convolves all selected planes in a Gaussian
+ *  Operations are performed using FFTs
+ * \param inImage   Input ObitImage 
+ * \param plane     Plane index as 5 element vector
+ * \param Gaumaj    Major axis of Gaussian in image plane (arcsec)
+ * \param Gaumin    Minor axis of Gaussian in image plane (arcsec)
+ * \param GauPA     Position angle of Gaussian in image plane, from N thru E, (deg)
+ * \param rescale   Multiplication factor to scale output to correct units
+ * \param err       ObitErr for reporting errors.
+ */
+void ConvGauss (ObitImage *inImage, olong *plane,
+		ofloat Gaumaj, ofloat Gaumin, ofloat GauPA, ofloat rescale,
+		ObitErr *err)
+{
+  ObitIOCode   iretCode;
+  olong      ndim=2, naxis[2], blc[2], trc[2], cen[2];
+  ofloat cells[2], maprot;
+  ObitFFT    *FFTfor=NULL, *FFTrev=NULL;
+  ObitFArray *xferFn=NULL, *subXferFn=NULL, *zeroArray=NULL;
+  ObitFArray *padImage=NULL, *tmpArray=NULL;
+  ObitCArray *wtArray=NULL, *FTArray=NULL;
+  ObitImageDesc *desc=NULL;
+  gchar *routine = "ConvGauss";
+
+  if (err->error) return;  /* existing error? */
+
+  /* Input beam not less than zero */
+  if ((inImage->myDesc->beamMaj<0.0) || (inImage->myDesc->beamMin<0.0)) {
+    desc = (ObitImageDesc*)inImage->myDesc;
+    desc->beamMaj = 0.0;
+    desc->beamMin = 0.0;
+    desc->beamPA  = 0.0;
+    desc = (ObitImageDesc*)inImage->myIO->myDesc;
+      desc->beamMaj = 0.0;
+      desc->beamMin = 0.0;
+      desc->beamPA  = 0.0;
+  }
+
+  /* Create FFTs */
+  FFTfor = ObitFeatherUtilCreateFFT(inImage, OBIT_FFT_Forward);
+  FFTrev = ObitFeatherUtilCreateFFT(inImage, OBIT_FFT_Reverse);
+
+  /* Create transfer function function */
+  naxis[0] = FFTfor->dim[0];  naxis[1] = FFTfor->dim[1]; 
+  cells[0] = inImage->myDesc->cdelt[0] * 3600.0;
+  cells[1] = inImage->myDesc->cdelt[1] * 3600.0;
+  maprot   = inImage->myDesc->crota[1];
+  /* Get Gaussian for real part */
+  xferFn = ObitFArrayUtilUVGaus(naxis, &cells[0], maprot, 
+				Gaumaj, Gaumin, GauPA);
+  /* Only need half in u */
+  blc[0] = (naxis[0]/2)-1; blc[1] = 0;
+  trc[0] = naxis[0]-1;     trc[1] = naxis[1]-1;
+  subXferFn = ObitFArraySubArr (xferFn, blc, trc, err);
+  /* Array of zeroes for imaginary part */
+  naxis[0] = 1+naxis[0]/2;
+  zeroArray = ObitFArrayCreate("zeroes", 2, naxis);  
+
+  /* Convolving xfer function to wtArray */
+  wtArray = ObitFeatherUtilCreateFFTArray (FFTfor);
+  ObitCArrayComplex (subXferFn, zeroArray, wtArray);
+  ObitCArray2DCenter (wtArray);        /* Swaparoonie to FFT order */
+  xferFn    = ObitFArrayUnref(xferFn); /* Cleanup */
+  subXferFn = ObitFArrayUnref(subXferFn); /* Cleanup */
+  zeroArray = ObitFArrayUnref(zeroArray);
+
+  /* Pad array for image */
+  naxis[0] = FFTfor->dim[0];  naxis[1] = FFTfor->dim[1]; 
+  padImage = ObitFArrayCreate("Pad Image", ndim, naxis);
+  FTArray  = ObitFeatherUtilCreateFFTArray (FFTfor);
+
+  /* Open input image */
+  iretCode = ObitImageOpen (inImage, OBIT_IO_ReadWrite, err);
+  if (err->error) goto cleanup;
+
+  /* Normalize rescale for FFT */
+  rescale /= (ofloat)(FFTfor->dim[0] * FFTfor->dim[1]);
+
+  /* Read */
+  iretCode = ObitImageGetPlane (inImage, NULL, plane, err);
+  if (iretCode == OBIT_IO_EOF) goto cleanup;
+  if (err->error) goto cleanup;
+  
+  /* Pad image */
+  ObitFeatherUtilPadArray (FFTfor, inImage->image, padImage);
+  
+  /* FFT Convolving function to FTArray */
+  ObitFArray2DCenter (padImage); /* Swaparoonie to FFT order */
+  ObitFFTR2C (FFTfor, padImage, FTArray);
+  
+  /* Multiply by transfer function */
+  ObitCArrayMul (FTArray, wtArray, FTArray);
+  
+  /* Back FFT */
+  ObitFFTC2R(FFTrev, FTArray, padImage);
+  ObitFArray2DCenter (padImage);/* Swaparoonie */
+  
+  /* DEBUG 
+     ObitImageUtilArray2Image ("ConvolDebug1.fits",1,padImage, err);*/
+  
+  /* Get window to extract */
+  cen[0] = FFTfor->dim[0]/2;  cen[1] = FFTfor->dim[1]/2; 
+  blc[0] = cen[0] - inImage->image->naxis[0] / 2; 
+  /*trc[0] = cen[0] - 1 + inImage->image->naxis[0] / 2;*/
+  trc[0] = cen[0] + inImage->image->naxis[0] / 2;
+  trc[0] -= (trc[0]-blc[0]+1) - inImage->image->naxis[0];
+  blc[1] = cen[1] - inImage->image->naxis[1] / 2; 
+  /*trc[1] = cen[1] - 1 + inImage->image->naxis[1] / 2;*/
+  trc[1] = cen[1] + inImage->image->naxis[1] / 2;
+  trc[1] -= (trc[1]-blc[1]+1) - inImage->image->naxis[1];
+  
+  /* Extract */
+  tmpArray = ObitFArraySubArr(padImage, blc, trc, err);
+  if (err->error) goto cleanup;
+  
+  /* rescale units */
+  ObitFArraySMul (tmpArray, rescale);
+  
+  /* Blank output where input blanked */
+  ObitFArrayBlank (tmpArray, inImage->image, tmpArray);
+  
+  /* DEBUG
+     ObitImageUtilArray2Image ("ConvolDebug1.fits",1,tmpArray, err); */
+  
+  /* Write plane */
+  ObitImagePutPlane(inImage, tmpArray->array, plane, err);
+  if (err->error) goto cleanup;
+  tmpArray  = ObitFArrayUnref(tmpArray);
+  
+  /* Close input */
+  iretCode = ObitImageClose (inImage, err);
+  if (err->error) goto cleanup;
+  /* Free image buffer */
+  inImage->image = ObitFArrayUnref(inImage->image);
+  
+ cleanup:
+  wtArray   = ObitCArrayUnref(wtArray);
+  FTArray   = ObitCArrayUnref(FTArray);
+  padImage  = ObitFArrayUnref(padImage);
+  tmpArray  = ObitFArrayUnref(tmpArray);
+  FFTfor    = ObitFFTUnref(FFTfor);
+  FFTrev    = ObitFFTUnref(FFTrev);
+  if (err->error) Obit_traceback_msg (err, routine, inImage->name);
+} /* end ConvGauss */
 

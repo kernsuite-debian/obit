@@ -1,6 +1,6 @@
-/* $Id: ObitImageMosaic.c 195 2010-06-01 11:39:41Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2010                                          */
+/*;  Copyright (C) 2004-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -134,6 +134,8 @@ ObitImageMosaic* newObitImageMosaic (gchar* name, olong number)
  *      \li "xxxnx"           olong* Number of pixels in X for each image
  *      \li "xxxny"           olong* Number of pixels in Y for each image
  *      \li "xxxnplane"       olong* Number of planes for each image
+ *      \li "xxxinFlysEye"    gboolean* Is each facet in Fly's Eye? 
+ *      \li "xxxFacetNo"      olong* Untapered facet number - associate various taperings
  *      \li "xxxRAShift"      ofloat* RA shift (deg) for each image
  *      \li "xxxDecShift"     ofloat* Dec shift (deg) for each image
  *      \li "xxxfileType"     olong Are image OBIT_IO_AIPS or OBIT_IO_FITS?
@@ -145,11 +147,16 @@ ObitImageMosaic* newObitImageMosaic (gchar* name, olong number)
  *      \li "xxxbmaj"         ofloat Restoring beam major axis in deg.
  *      \li "xxxbmin"         ofloat Restoring beam minor axis in deg.
  *      \li "xxxbpa"          ofloat Restoring beam PA in deg.
+ *      \li "xxxisAuto"       olong Is this an autoCenter field?
+ *      \li "xxxisShift"      olong Is this an autoCenter shifted field?   
+ *      \li "xxxnumBeamTapes" olong  Number of Beam tapers (elements in BeamTapes) 
+ *      \li "xxxBeamTapes"    ofloat*  List of Beam tapers  
+ *      \li "xxxBeamTaper"    ofloat*  Beam Taper per image as FWHM in deg      
  * \param err     ObitErr for reporting errors.
  * \return the new object.
  */
 ObitImageMosaic* ObitImageMosaicFromInfo (gchar *prefix, ObitInfoList *inList, 
-				    ObitErr *err)
+					  ObitErr *err)
 { 
   ObitImageMosaic *out = NULL;
   ObitInfoType type;
@@ -262,6 +269,18 @@ ObitImageMosaic* ObitImageMosaicFromInfo (gchar *prefix, ObitInfoList *inList,
   ObitInfoListGetTest(inList, keyword, &type, dim, &out->nplane);
   g_free(keyword);
 
+  /* "xxxinFlysEye"      gboolean* Is each facet in Fly's Eye? */
+  if (prefix) keyword = g_strconcat (prefix, "inFlysEye", NULL);
+  else        keyword = g_strdup("inFlysEye");
+  ObitInfoListGetTest(inList, keyword, &type, dim, &out->inFlysEye);
+  g_free(keyword);
+
+  /* "xxxFacetNo"      olong* Untapered facet number - associate various taperings */
+  if (prefix) keyword = g_strconcat (prefix, "FacetNo", NULL);
+  else        keyword = g_strdup("FacetNo");
+  ObitInfoListGetTest(inList, keyword, &type, dim, &out->FacetNo);
+  g_free(keyword);
+
   /* "xxxRAShift"      ofloat* RA shift (deg) for each image */
   if (prefix) keyword = g_strconcat (prefix, "RAShift", NULL);
   else        keyword = g_strdup("RAShift");
@@ -340,6 +359,26 @@ ObitImageMosaic* ObitImageMosaicFromInfo (gchar *prefix, ObitInfoList *inList,
   if (prefix) keyword = g_strconcat (prefix, "isShift", NULL);
   else        keyword = g_strdup("isShift");
   ObitInfoListGetTest(inList, keyword, &type, dim, out->isShift);
+  g_free(keyword);
+
+  /* "xxxnumBeamTapes"       olong  Number of Beam tapers (elements in BeamTapes)*/
+  if (prefix) keyword = g_strconcat (prefix, "numBeamTapes", NULL);
+  else        keyword = g_strdup("numBeamTapes");
+  ObitInfoListGetTest(inList, keyword, &type, dim, &out->numBeamTapes);
+  g_free(keyword);
+
+  /* "xxxBeamTapes"    ofloat*  List of Beam tapers     */
+  /* Add taper array */
+  out->BeamTapes = ObitMemAlloc0Name(out->numBeamTapes*sizeof(ofloat),"BeamTapes");
+  if (prefix) keyword = g_strconcat (prefix, "BeamTapes", NULL);
+  else        keyword = g_strdup("BeamTapes");
+  ObitInfoListGetTest(inList, keyword, &type, dim, out->BeamTapes);
+  g_free(keyword);
+
+  /* "xxxBeamTaper"      ofloat*  Beam Taper per image as FWHM in deg */
+  if (prefix) keyword = g_strconcat (prefix, "BeamTaper", NULL);
+  else        keyword = g_strdup("BeamTaper");
+  ObitInfoListGetTest(inList, keyword, &type, dim, out->BeamTaper);
   g_free(keyword);
 
   return out;
@@ -582,7 +621,11 @@ ObitImageMosaicGetFullImage  (ObitImageMosaic *in, ObitErr *err)
   if (err->error) return NULL;
   g_assert (ObitIsA(in, &myClassInfo));
 
-  out = ObitImageRef(in->FullField);
+  /* If full field image exists, pass it otherwise the first */
+  if (in->FullField)
+    out = ObitImageRef(in->FullField);
+  else 
+    out = ObitImageRef(in->images[0]);
 
   return out;
 } /* end ObitImageMosaicGetFullImage */
@@ -678,11 +721,20 @@ ObitImageMosaic* ObitImageMosaicCopy (ObitImageMosaic *in, ObitImageMosaic *out,
     out->imDisk[i]   = in->imDisk[i];
     out->isAuto[i]   = in->isAuto[i];
     out->isShift[i]  = in->isShift[i];
+    out->inFlysEye[i]= in->inFlysEye[i];
+    out->FacetNo[i]  = in->FacetNo[i];
     out->nx[i]       = in->nx[i];
     out->ny[i]       = in->ny[i];
     out->nplane[i]   = in->nplane[i];
     out->RAShift[i]  = in->RAShift[i];
     out->DecShift[i] = in->DecShift[i];
+    out->BeamTaper[i]= in->BeamTaper[i];
+  }
+  out->numBeamTapes = in->numBeamTapes;
+  if (out->BeamTapes==NULL) 
+    out->BeamTapes = ObitMemAllocName(in->numBeamTapes*sizeof(ofloat), "BeamTapes");
+  for (i=0; i<out->numBeamTapes; i++) {
+    out->BeamTapes[i]= in->BeamTapes[i];
   }
   if (err->error) Obit_traceback_val (err, routine, in->name, out);
 
@@ -875,7 +927,7 @@ void ObitImageMosaicSetFiles  (ObitImageMosaic *in, gboolean doBeam, ObitErr *er
  * \li Catalog  =    AIPSVZ format catalog for defining outliers, 
  *                   'None'=don't use [default]
  *                   'Default' = use default catalog.
- *                   Assumed in FITSdata disk 1.
+ * \li CatDisk  =    FITS disk for Catalog [def 1]
  * \li OutlierDist = Maximum distance (deg) from center to include outlier fields
  *                   from Catalog. [default 1 deg]
  * \li OutlierFlux = Minimum estimated flux density include outlier fields
@@ -883,6 +935,8 @@ void ObitImageMosaicSetFiles  (ObitImageMosaic *in, gboolean doBeam, ObitErr *er
  * \li OutlierSI   = Spectral index to use to convert catalog flux density to observed
  *                   frequency.  [default = -0.75]
  * \li OutlierSize = Width of outlier field in pixels.  [default 50]
+ * \li numBeamTapes= Number of Beam tapers (elements in BeamTapes) 
+ * \li BeamTapes   = List of additional Beam tapers  larger than 0
  * \param err     Error stack, returns if not empty.
  * \return Newly created object.
  */
@@ -895,15 +949,16 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
   gint32 i, nf, nif, nfif, dim[MAXINFOELEMDIM];
   olong Seq, *Disk=NULL, NField, nx[MAXFLD], ny[MAXFLD], catDisk, nDisk;
   olong overlap, imsize, fldsiz[MAXFLD], flqual[MAXFLD];
-  ofloat FOV=0.0, xCells, yCells, RAShift[MAXFLD], DecShift[MAXFLD], MaxBL, MaxW, Cells;
+  ofloat FOV=0.0, xCells, yCells, RAShift[MAXFLD], DecShift[MAXFLD], Tapers[MAXFLD], 
+    MaxBL, MaxW, Cells, BeamTapes[100], diam=24.5;
   ofloat *farr, Radius = 0.0, maxScale;
   ofloat shift[2] = {0.0,0.0}, cells[2], bmaj, bmin, bpa, beam[3];
   odouble ra0, dec0, refFreq1, refFreq2;
-  gboolean doJ2B, doFull, doCalSelect;
+  gboolean doJ2B, doFull, doCalSelect, inFlysEye[MAXFLD], FacetNo[MAXFLD];
   ofloat equinox, minRad, ratio, OutlierFlux, OutlierDist, OutlierSI;
-  olong  itemp, OutlierSize=0, nFlyEye = 0, *iarr=NULL;
+  olong  itemp, OutlierSize=0, nFlyEye = 0, *iarr=NULL, numBeamTapes=0;
   union ObitInfoListEquiv InfoReal; 
-  gchar Catalog[100], Aname[100], Aclass[100];
+  gchar Catalog[132], Aname[100], Aclass[100];
   gchar *routine = "ObitImageMosaicCreate";
 
   /* Get inputs with plausible defaults */
@@ -936,6 +991,8 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
   ObitInfoListGetTest(uvData->info, "doFull", &type, dim,  &doFull);
   sprintf (Catalog, "None");
   ObitInfoListGetTest(uvData->info, "Catalog", &type, dim,  Catalog);
+  catDisk = 1;  /* FITS directory for catalog */
+  ObitInfoListGetTest(uvData->info, "CatDisk", &type, dim, &catDisk);
   if (err->error) Obit_traceback_val (err, routine, uvData->name, out);
 
   /* Get array inputs */
@@ -958,6 +1015,9 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
   bmaj = beam[0]; bmin = beam[1]; bpa = beam[2];
   /* Beam given in asec - convert to degrees */
   bmaj /= 3600.0; bmin /=3600.0;
+
+  /* Get antenna diameter for non-VLA antennas. */
+  if (!strncmp(uvData->myDesc->teles, "KAT-7",5)) diam = 12.0;  /* KAT */
 
   /* Get extrema - note: this has no selection */
   ObitUVUtilUVWExtrema (uvData, &MaxBL, &MaxW, err);
@@ -1014,6 +1074,9 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
     Radius *= ratio;  /* Correct Radius to actual cell size */
   }
 
+  /* For NCP data facets can be arbitrarily large */
+  if (ObitUVDescGetProj(uvData->myDesc)==OBIT_SkyGeom_NCP) Radius = 50000;
+
   /* Get cells spacing and maximum undistorted radius from uv data if needed */
   if ((FOV>0.0) || (xCells<=0.0) || (yCells<=0.0)) {
     if (xCells==0.0) xCells = -Cells;
@@ -1027,27 +1090,33 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
   }
      
   /* Set fly's eye if needed */
-  imsize = (olong)(2.0*Radius + 10.99);
+  overlap = 10;
+  imsize = (olong)(2.0*Radius+2*overlap+0.99);
+  imsize = MAX (64, imsize);  /* Not too small */
   
   /* Not bigger than FOV */
-  imsize = MIN (imsize, ((2.0*3600.0*FOV/fabs(xCells))+10.99));
-  overlap = 7;
+  imsize = MIN (imsize, ((2.0*3600.0*FOV/fabs(xCells))+2*overlap+0.99));
   cells[0] = xCells; cells[1] = yCells;
   ObitUVGetRADec (uvData, &ra0, &dec0, err);
   if (err->error) Obit_traceback_val (err, routine, uvData->name, out);
   /* Copy nx to fldsiz - Make image sizes FFT friendly */
   for (i=0; i<NField; i++) fldsiz[i] = ObitFFTSuggestSize (MAX(32,nx[i]));
   minRad = 0.0;
+
+  /* Get Fly's eye */
   if (FOV>0.0) minRad = FlyEye(FOV, imsize, cells, overlap, shift, ra0, dec0, 
 			       &NField, fldsiz, RAShift, DecShift, flqual, err); 
   if (err->error) Obit_traceback_val (err, routine, uvData->name, out);
   nFlyEye = NField;  /* Number in Fly's eye */
+  for (i=0; i<nFlyEye; i++) inFlysEye[i] = TRUE;  /* Mark as in fly's eye */
+  for (i=0; i<nFlyEye; i++) FacetNo[i]   = i;  /* Untapered Facet number */
+  for (i=nFlyEye; i<MAXFLD; i++) inFlysEye[i] = FALSE; /* Rest not */
+  for (i=nFlyEye; i<MAXFLD; i++) FacetNo[i]   = 0;
 
   /* Add outlyers from catalog if requested */
   /* Blank = default */
   if (!strncmp(Catalog, "    ", 4)) sprintf (Catalog, "Default");
   if (strncmp(Catalog, "None", 4)) {
-    catDisk = 1;  /* FITS directory for catalog */
     /* Set default catalog */
      if (!strncmp(Catalog, "Default", 7)) sprintf (Catalog, "NVSSVZ.FIT");
 
@@ -1070,13 +1139,20 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
      doJ2B = (equinox!=2000.0) ;  /* need to precess? */
 
      AddOutlier (Catalog, catDisk, minRad, cells, OutlierDist, OutlierFlux, OutlierSI, OutlierSize,
-		 ra0, dec0, doJ2B, uvData->myDesc->crval[uvData->myDesc->jlocf], Radius,
+		 ra0, dec0, doJ2B, uvData->myDesc->crval[uvData->myDesc->jlocf], Radius, diam, 
 		 &NField, fldsiz, RAShift, DecShift, flqual, err);
      if (err->error) Obit_traceback_val (err, routine, uvData->name, out);
+     /* Assign facet numbers */
+     for (i=nFlyEye; i<NField; i++) FacetNo[i]   = i;
   } /* end add outliers from catalog */
 
   /* Make sure some fields defined */
   Obit_retval_if_fail((NField>0), err, out, "%s: NO Fields defined", routine);
+
+  /* Add any additional tapered images */
+  AddTapers (uvData, &numBeamTapes, BeamTapes, fabs(cells[0]), Tapers, 
+	     &NField, fldsiz, RAShift, DecShift, flqual, inFlysEye, FacetNo, err);
+  if (err->error) Obit_traceback_val (err, routine, uvData->name, out);
 
   /* Copy fldsiz to nx, ny */
   for (i=0; i<NField; i++) nx[i] = ny[i] = fldsiz[i];
@@ -1084,6 +1160,9 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
       
   /* Create output object */
   out = newObitImageMosaic (name, NField);
+
+  /* Add taper array */
+  out->BeamTapes = ObitMemAlloc0Name(numBeamTapes*sizeof(ofloat),"BeamTapes");
 
   /* Set values on out */
   out->fileType= Type;
@@ -1101,6 +1180,8 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
   out->bpa     = bpa;
   out->nFlyEye = nFlyEye;
   out->OutlierSize  = OutlierSize;
+  out->numBeamTapes = numBeamTapes;
+  for (i=0; i<numBeamTapes; i++) out->BeamTapes[i] = BeamTapes[i];
   for (i=0; i<NField; i++) {
     if (i<nDisk) out->imDisk[i]   = Disk[i];
     else out->imDisk[i]   = Disk[0];
@@ -1108,8 +1189,11 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
     out->isShift[i]  = -1;
     out->nx[i]       = nx[i];
     out->ny[i]       = ny[i];
+    out->inFlysEye[i]= inFlysEye[i];
+    out->FacetNo[i]  = FacetNo[i];
     out->RAShift[i]  = RAShift[i]/3600.0;   /* to Deg */
     out->DecShift[i] = DecShift[i]/3600.0;  /* to Deg */
+    out->BeamTaper[i]= Tapers[i];
   }
 
   /* Cleanup */
@@ -1120,7 +1204,7 @@ ObitImageMosaic* ObitImageMosaicCreate (gchar *name, ObitUV *uvData, ObitErr *er
 
 /**
  * Define images in an Image Mosaic from a UV data.
- * 
+ * Saves BeamTaper (as BeamTapr) in Descriptor infoList
  * \param in     The object to create images in,  Details are defined in members:
  * \li numberImage - Number of images in Mosaic
  * \li nInit    - number of images already initialized
@@ -1161,6 +1245,7 @@ void ObitImageMosaicDefine (ObitImageMosaic *in, ObitUV *uvData, gboolean doBeam
   ofloat *farr=NULL, FOV;
   gboolean doCalSelect, *barr=NULL;
   ObitIOAccess access;
+  ObitImage *myBeam;
   ObitImageMosaicClassInfo* mosaicClass;
   gchar *routine = "ObitImageMosaicDefine";
 
@@ -1177,8 +1262,8 @@ void ObitImageMosaicDefine (ObitImageMosaic *in, ObitUV *uvData, gboolean doBeam
   ObitInfoListAlwaysPut (uvData->info, "nxBeam", OBIT_long,   dim, in->nx);
   ObitInfoListAlwaysPut (uvData->info, "ny",     OBIT_long,   dim, in->ny);
   ObitInfoListAlwaysPut (uvData->info, "nyBeam", OBIT_long,   dim, in->ny);
-  ObitInfoListAlwaysPut (uvData->info, "xShift", OBIT_float, dim, in->RAShift);
-  ObitInfoListAlwaysPut (uvData->info, "yShift", OBIT_float, dim, in->DecShift);
+  ObitInfoListAlwaysPut (uvData->info, "xShift", OBIT_float,  dim, in->RAShift);
+  ObitInfoListAlwaysPut (uvData->info, "yShift", OBIT_float,  dim, in->DecShift);
   farr = ObitMemAllocName(in->numberImages*sizeof(ofloat), routine);
   for (i=0; i<in->numberImages; i++) farr[i] = 3600.0*in->xCells;
   ObitInfoListAlwaysPut (uvData->info, "xCells", OBIT_float, dim, farr);
@@ -1191,7 +1276,6 @@ void ObitImageMosaicDefine (ObitImageMosaic *in, ObitUV *uvData, gboolean doBeam
   ObitInfoListAlwaysPut (uvData->info, "doGrid", OBIT_float, dim, barr);
   ObitMemFree(barr);
  
-
   /* Make sure UV data descriptor has proper info */
   doCalSelect = FALSE;
   ObitInfoListGetTest(uvData->info, "doCalSelect", &type, (gint32*)dim, &doCalSelect);
@@ -1212,6 +1296,13 @@ void ObitImageMosaicDefine (ObitImageMosaic *in, ObitUV *uvData, gboolean doBeam
       in->RAShift[i]  = in->images[i]->myDesc->xshift;
       in->DecShift[i] = in->images[i]->myDesc->yshift;
     }
+    /* Add BeamTaper to Descriptor InfoList - only 8 char allowed */
+    dim[0] = dim[1] = 1;
+    ObitInfoListAlwaysPut (in->images[i]->myDesc->info, "BeamTapr", OBIT_float, 
+			   dim, &in->BeamTaper[i]);
+    myBeam = (ObitImage*)(in->images[i]->myBeam);
+    ObitInfoListAlwaysPut (myBeam->myDesc->info, "BeamTapr", OBIT_float, 
+			   dim, &in->BeamTaper[i]);
   }    /* end loop over images */
 
  /* Create full field image if needed */
@@ -1260,8 +1351,9 @@ void ObitImageMosaicAddField (ObitImageMosaic *in, ObitUV *uvData,
 			      ofloat RAShift, ofloat DecShift,
 			      gboolean isAuto, ObitErr *err)
 {
-  ofloat *ftemp;
-  olong   i, *itemp;
+  ofloat    *ftemp;
+  olong     i, *itemp;
+  gboolean  *btemp;
   ObitImage **imtemp;
   gchar *routine = "ObitImageMosaicAddField";
 
@@ -1302,6 +1394,20 @@ void ObitImageMosaicAddField (ObitImageMosaic *in, ObitUV *uvData,
   in->isShift = ObitMemFree(in->isShift);
   in->isShift = itemp;
  
+  /* inFlysEye array - any new entries = FALSE */
+  btemp  = ObitMemAlloc0Name(in->numberImages*sizeof(gboolean),"ImageMosaic inFlysEye");
+  for (i=0; i<in->nInit; i++) btemp[i] = in->inFlysEye[i]; 
+  for (i=in->nInit; i<in->numberImages; i++) btemp[i] = FALSE; 
+  in->inFlysEye = ObitMemFree(in->inFlysEye);
+  in->inFlysEye = btemp;
+ 
+  /* FacetNo array - any new entries = number in mosaic */
+  itemp  = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic FacetNo");
+  for (i=0; i<in->nInit; i++) itemp[i] = in->FacetNo[i]; 
+  for (i=in->nInit; i<in->numberImages; i++) itemp[i] = i; 
+  in->FacetNo = ObitMemFree(in->FacetNo);
+  in->FacetNo = itemp;
+ 
   /* Image size */
   itemp  = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic nx");
   for (i=0; i<in->nInit; i++) itemp[i] = in->nx[i]; 
@@ -1331,6 +1437,13 @@ void ObitImageMosaicAddField (ObitImageMosaic *in, ObitUV *uvData,
   in->DecShift = ObitMemFree(in->DecShift);
   in->DecShift = ftemp;
 
+  /* BeamTaper - new full resolution */
+  ftemp  = ObitMemAlloc0Name(in->numberImages*sizeof(ofloat),"ImageMosaic BeamTaper");
+  for (i=0; i<in->nInit; i++) ftemp[i] = in->BeamTaper[i]; 
+  ftemp[i] = 0.0;
+  in->BeamTaper = ObitMemFree(in->BeamTaper);
+  in->BeamTaper = ftemp;
+
   /* Define image */
   ObitImageMosaicDefine (in, uvData, TRUE, err);
   if (err->error) Obit_traceback_msg (err, routine, in->name);
@@ -1343,15 +1456,19 @@ void ObitImageMosaicAddField (ObitImageMosaic *in, ObitUV *uvData,
 
 /**
  * Project the tiles of a Mosaic to the full field flattened image
+ * Ignore facets with BeamTaper>0
  * Routine translated from the AIPSish 4MASS/SUB/FLATEN.FOR/FLATEN  
  * \param in     The object with images
+ * Control info on info member:
+ * \li "planeNo" OBIT_long (1,1,1) plane (1-rel) in mosiac to flatten [def 1]
  * \param err     Error stack, returns if not empty.
  */
 void ObitImageMosaicFlatten (ObitImageMosaic *in, ObitErr *err)
 {
   olong   blc[IM_MAXDIM]={1,1,1,1,1}, trc[IM_MAXDIM]={0,0,0,0,0};
   olong i, j, radius, rad, plane[IM_MAXDIM] = {1,1,1,1,1}, hwidth = 2;
-  olong *naxis, pos1[IM_MAXDIM], pos2[IM_MAXDIM];
+  olong *naxis, pos1[IM_MAXDIM], pos2[IM_MAXDIM], planeNo;
+  ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitImage *out=NULL, *tout1=NULL, *tout2=NULL;
   ObitFArray *sc2=NULL, *sc1=NULL;
@@ -1359,7 +1476,11 @@ void ObitImageMosaicFlatten (ObitImageMosaic *in, ObitErr *err)
   ofloat xpos1[IM_MAXDIM], xpos2[IM_MAXDIM];
   gboolean overlap;
   gchar *routine = "ObitImageMosaicFlatten";
-
+       /* DEBUG */
+#ifdef DEBUG
+  gchar fname[257];  /* DEBUG */
+#endif
+      /* end DEBUG */
   /* error checks */
   if (err->error) return;
   g_assert (ObitIsA(in, &myClassInfo));
@@ -1370,8 +1491,23 @@ void ObitImageMosaicFlatten (ObitImageMosaic *in, ObitErr *err)
     return;
   }
 
+  /* plane number */
+  planeNo = 1;
+  ObitInfoListGetTest(in->info, "planeNo", &type, dim, &planeNo);
+  for (i=0; i<IM_MAXDIM; i++) blc[i] = 1;
+  for (i=0; i<IM_MAXDIM; i++) trc[i] = 0;
+  /* set plane */
+  blc[2] = trc[2] = planeNo;
+
+  /* Set output plane */
+  dim[0] = IM_MAXDIM;
+  ObitInfoListPut (in->FullField->info, "BLC", OBIT_long, dim, blc, err); 
+  ObitInfoListPut (in->FullField->info, "TRC", OBIT_long, dim, trc, err); 
+  dim[0] = 1;
+  ObitInfoListPut (in->FullField->info, "IOBy", OBIT_long, dim, &IOsize, err);
+  
   /* Tell user */
-  Obit_log_error(err, OBIT_InfoErr, "Flattening flys eye to single image");
+  Obit_log_error(err, OBIT_InfoErr, "Flattening flys eye to single image plane %d", planeNo);
 
   /* Copy beam parameters from first image to flattened */
   ObitImageOpen(in->images[0], OBIT_IO_ReadOnly, err);
@@ -1405,11 +1541,11 @@ void ObitImageMosaicFlatten (ObitImageMosaic *in, ObitErr *err)
   ObitFArrayFill (sc1, 0.0);
   ObitFArrayFill (sc2, 0.0);
 
-  for (i=0; i<IM_MAXDIM; i++) blc[i] = 1;
-  for (i=0; i<IM_MAXDIM; i++) trc[i] = 0;
-
   /* Loop over tiles */
   for (i= 0; i<in->numberImages; i++) { /* loop 500 */
+
+    /* Ignore if tapered */
+    if (in->BeamTaper[i]>0.0) continue;
 
     /* Open full image */
     dim[0] = IM_MAXDIM;
@@ -1436,8 +1572,10 @@ void ObitImageMosaicFlatten (ObitImageMosaic *in, ObitErr *err)
     trc[0] = MIN (naxis[0]-1, trc[0]);
     trc[1] = (naxis[1] / 2) + 1 + rad;
     trc[1] = MIN (naxis[1]-1, trc[1]);
-
-   /* Open/read sub window of image */
+    /* set plane */
+    blc[2] = trc[2] = planeNo;
+    
+    /* Open/read sub window of image */
     dim[0] = IM_MAXDIM;
     ObitInfoListPut (in->images[i]->info, "BLC", OBIT_long, dim, blc, err); 
     ObitInfoListPut (in->images[i]->info, "TRC", OBIT_long, dim, trc, err); 
@@ -1462,19 +1600,27 @@ void ObitImageMosaicFlatten (ObitImageMosaic *in, ObitErr *err)
 	
       naxis = tout1->myDesc->inaxes; /* How big is output */
   
-      /* Interpolate and weight image */
+      /* Interpolate or copy and weight image */
       /* reopen with windowing */
       ObitImageOpen (in->images[i], OBIT_IO_ReadOnly, err);
       ObitImageRead (in->images[i], NULL, err); /* Read plane */
       if (err->error) Obit_traceback_msg (err, routine, in->name);
-
-      ObitImageUtilInterpolateWeight (in->images[i], tout1, tout2, TRUE, rad, 
-				      plane, plane, hwidth, err);
+      if (ObitImageUtilNoInterWeight (in->images[i], tout1, tout2, TRUE, rad, 
+				      plane, plane, err))
+	ObitImageUtilInterpolateWeight (in->images[i], tout1, tout2, TRUE, rad, 
+					plane, plane, hwidth, err);
       if (err->error) Obit_traceback_msg (err, routine, in->name);
 
-      /* DEBUG 
-	 ObitImageUtilArray2Image ("DbugInterp.fits", 1, tout1->image, err);
-	 ObitImageUtilArray2Image ("DbugInput.fits", 1, in->images[i]->image, err);*/
+      /* DEBUG */
+#ifdef DEBUG
+      sprintf (fname, "DbugNoInput%d.fits",i);
+      ObitImageUtilFArray2FITS (in->images[i]->image, fname, 0, in->images[i]->myDesc, err);
+      sprintf (fname, "DbugNoInterp%d.fits",i);
+      ObitImageUtilFArray2FITS (tout1->image, fname, 0, tout1->myDesc, err);
+      sprintf (fname, "DbugNoWeight%d.fits",i);
+      ObitImageUtilFArray2FITS (tout2->image, fname, 0, tout2->myDesc, err);
+#endif
+      /* end DEBUG */
 
       /* Close, deallocate buffer */
       ObitImageClose(in->images[i], err);
@@ -1498,6 +1644,7 @@ void ObitImageMosaicFlatten (ObitImageMosaic *in, ObitErr *err)
 
       /* accumulate weight */
       ObitFArrayShiftAdd (sc2, pos2, tout2->image, pos1, 1.0, sc2);
+
     } /* end if overlap */
       /* reset window on image */
     dim[0] = IM_MAXDIM;
@@ -1856,7 +2003,7 @@ ObitTableCC* ObitImageMosaicCombineCC (ObitImageMosaic *mosaic, olong field,
   ObitTableCC *inCC=NULL, *outCC=NULL;
   ObitTableCCRow *CCRow = NULL;
   ObitImageDesc *imDesc1=NULL, *imDesc2=NULL;
-  olong   irow, orow, nrow, noParms, ifield, jfield, nx, ny, ver, hiVer;
+  olong   irow, orow, nrow, noParms, ifield, jfield, ver, hiVer;
   ofloat pixel1[2], pixel2[2];
   gboolean overlap;
   gchar *routine = "ObitImageMosaicCombineCC";
@@ -1876,8 +2023,7 @@ ObitTableCC* ObitImageMosaicCombineCC (ObitImageMosaic *mosaic, olong field,
   hiVer = ObitTableListGetHigh (mosaic->images[ifield]->tableList, "AIPS CC");
   ver = hiVer+1;
   outCC = newObitTableCCValue ("Comb CC", (ObitData*)mosaic->images[ifield],
-				    &ver, OBIT_IO_ReadWrite, inCC->noParms, 
-				    err);
+				    &ver, OBIT_IO_ReadWrite, inCC->noParms, err);
   ObitTableCCUtilMerge (inCC, outCC, err);
   if  (err->error) Obit_traceback_val (err, routine, mosaic->images[ifield]->name, outCC);
   inCC  = ObitTableCCUnref(inCC);
@@ -1893,8 +2039,7 @@ ObitTableCC* ObitImageMosaicCombineCC (ObitImageMosaic *mosaic, olong field,
 
   /* Loop over other fields */
   imDesc2 = (mosaic->images[ifield])->myDesc;
-  nx = imDesc2->inaxes[0];  ny = imDesc2->inaxes[1]; 
-  for (jfield = 0; jfield<mosaic->numberImages; jfield++) {
+    for (jfield = 0; jfield<mosaic->numberImages; jfield++) {
     if (jfield==ifield) continue;
     imDesc1 = (mosaic->images[jfield])->myDesc;
  
@@ -1949,6 +2094,12 @@ ObitTableCC* ObitImageMosaicCombineCC (ObitImageMosaic *mosaic, olong field,
       inCC  = ObitTableCCUnref(inCC);
     } /* end if overlap */
   } /* end loop over other fields */
+
+  /* Update number of CCs */
+  ObitImageOpen(mosaic->images[ifield], OBIT_IO_ReadWrite, err);
+  mosaic->images[ifield]->myDesc->niter = outCC->myDesc->nrow;
+  mosaic->images[ifield]->myStatus = OBIT_Modified;
+  ObitImageClose(mosaic->images[ifield], err);
   
   /* Close output table */
   ObitTableCCClose (outCC, err);
@@ -2216,28 +2367,6 @@ ObitImageMosaic* ObitImageMosaicMaxField (ObitImageMosaic *mosaic,
     saveCCTable = ObitTableCCUnref(saveCCTable);
   }
 
-  /* If 2D and autoCen copy other field CCs */
-  if ((maxField>=0) &&
-      (!mosaic->images[maxField]->myDesc->do3D) && 
-      ((mosaic->isAuto[maxField]>0) || (mosaic->isShift[maxField]>0))) {
-    other = MAX (mosaic->isAuto[maxField], mosaic->isShift[maxField]);
-    if (other>0) {
-      CCVer = 1;
-      noParms = 0;
-      inCCTable = newObitTableCCValue ("Peeled CC", (ObitData*)mosaic->images[other-1],
-				       &CCVer, OBIT_IO_ReadOnly, noParms, 
-				       err);
-      CCVer = 1;
-      outCCTable = newObitTableCCValue ("outCC", (ObitData*)out->images[0],
-					&CCVer, OBIT_IO_ReadWrite, inCCTable->noParms, 
-					err);
-     ObitTableCCUtilAppend (inCCTable, outCCTable, 0, 0, err);
-      if  (err->error) Obit_traceback_val (err, routine, mosaic->images[ifield]->name, out);
-      inCCTable   = ObitTableCCUnref(inCCTable);
-      outCCTable  = ObitTableCCUnref(outCCTable);
-    }
-  }
-
   *field = maxField+1;  /* Which field is this? */
   return out;
 } /* end of routine ObitImageMosaicMaxField */ 
@@ -2260,6 +2389,8 @@ ObitImageMosaic* ObitImageMosaicMaxField (ObitImageMosaic *mosaic,
  *      \li "xxxnx"           olong* Number of pixels in X for each image
  *      \li "xxxny"           olong* Number of pixels in Y for each image
  *      \li "xxxnplane"       olong* Number of planes for each image
+ *      \li "xxxinFlysEye"    gboolean* Is each facet in Fly's Eye? 
+ *      \li "xxxFacetNo"      olong* Untapered facet number - associate various taperings
  *      \li "xxxRAShift"      ofloat* RA shift (deg) for each image
  *      \li "xxxDecShift"     ofloat* Dec shift (deg) for each image
  *      \li "xxxfileType"     olong Are image OBIT_IO_AIPS or OBIT_IO_FITS?
@@ -2271,6 +2402,11 @@ ObitImageMosaic* ObitImageMosaicMaxField (ObitImageMosaic *mosaic,
  *      \li "xxxbmaj"         ofloat Restoring beam major axis in deg.
  *      \li "xxxbmin"         ofloat Restoring beam minor axis in deg.
  *      \li "xxxbpa"          ofloat Restoring beam PA in deg.
+ *      \li "xxxisAuto"       olong Is this an autoCenter field?
+ *      \li "xxxisShift"      olong Is this an autoCenter shifted field?   
+ *      \li "xxxnumBeamTapes" olong  Number of Beam tapers (elements in BeamTapes) 
+ *      \li "xxxBeamTapes"    ofloat*  List of Beam tapers  
+ *      \li "xxxBeamTaper"    ofloat*  Beam Taper per image as FWHM in deg      
  * \param err     ObitErr for reporting errors.
  */
 void ObitImageMosaicGetInfo (ObitImageMosaic *in, gchar *prefix, ObitInfoList *outList, 
@@ -2389,6 +2525,20 @@ void ObitImageMosaicGetInfo (ObitImageMosaic *in, gchar *prefix, ObitInfoList *o
   ObitInfoListAlwaysPut(outList, keyword, OBIT_long, dim, &in->nplane);
   g_free(keyword);
 
+  /* "xxxinFlysEye"      gboolean* Is each facet in Fly's Eye? */
+  if (prefix) keyword = g_strconcat (prefix, "inFlysEye", NULL);
+  else        keyword = g_strdup("inFlysEye");
+  dim[0] = in->numberImages; dim[1] = 1;
+  ObitInfoListAlwaysPut(outList, keyword, OBIT_bool, dim, &in->inFlysEye);
+  g_free(keyword);
+
+  /* xxxFacetNo"      olong* Untapered facet number - associate various taperings */
+  if (prefix) keyword = g_strconcat (prefix, "FacetNo", NULL);
+  else        keyword = g_strdup("FacetNo");
+  dim[0] = in->numberImages; dim[1] = 1;
+  ObitInfoListAlwaysPut(outList, keyword, OBIT_long, dim, &in->FacetNo);
+  g_free(keyword);
+
   /* "xxxRAShift"      ofloat* RA shift (deg) for each image */
   if (prefix) keyword = g_strconcat (prefix, "RAShift", NULL);
   else        keyword = g_strdup("RAShift");
@@ -2481,21 +2631,52 @@ void ObitImageMosaicGetInfo (ObitImageMosaic *in, gchar *prefix, ObitInfoList *o
   ObitInfoListAlwaysPut(outList, keyword, OBIT_long, dim, in->isShift);
   g_free(keyword);
 
+  /* "xxxnumBeamTapes"          . */
+  if (prefix) keyword = g_strconcat (prefix, "numBeamTapes", NULL);
+  else        keyword = g_strdup("numBeamTapes");
+  dim[0] = 1;
+  ObitInfoListAlwaysPut(outList, keyword, OBIT_long, dim, &in->numBeamTapes);
+  g_free(keyword);
+ 
+  /* "xxxBeamTapes"          . */
+  if (prefix) keyword = g_strconcat (prefix, "BeamTapes", NULL);
+  else        keyword = g_strdup("BeamTapes");
+  dim[0] = in->numBeamTapes; dim[1] = 1;
+  if (in->BeamTapes)
+    ObitInfoListAlwaysPut(outList, keyword, OBIT_float, dim, &in->BeamTapes);
+  g_free(keyword);
+ 
+  /* "xxxBeamTaper"          . */
+  if (prefix) keyword = g_strconcat (prefix, "BeamTaper", NULL);
+  else        keyword = g_strdup("BeamTaper");
+  dim[0] = in->numberImages; dim[1] = 1;
+  ObitInfoListAlwaysPut(outList, keyword, OBIT_float, dim, &in->BeamTaper);
+  g_free(keyword);
+ 
 } /* end ObitImageMosaicGetInfo */
 
 /**
  * Concatenate any CC files from facet images onto the FullField member
- * Uses CC version 1 in all cases.
- * \param mosaic   ImageMosaic to process
+ * Uses CC versions 1 to numPar
+ * If there are multiple tapered images, the following keywords are added to
+ * the output table descriptor list:
+ *   \li "NTAPER"   olong Number of tapers
+ *   \li "TAPEnnnn" ofloat Taper nnnn in deg.
+ * \param in   ImageMosaic to process, info member has
+ *   \li "numPar"  olong Number of parallel images, default = 1
+ * \param inUV     UV data from which image mosaic was made.
  * \param err      Error/message stack
  */
-void ObitImageMosaicCopyCC (ObitImageMosaic *in, ObitErr *err)
+void ObitImageMosaicCopyCC (ObitImageMosaic *in, ObitUV *inUV, ObitErr *err)
 {
   ObitTableCC *inCCTab=NULL, *outCCTab=NULL;
-  olong CCVer, noParms, ifield;
+  olong i, CCVer, noParms, ifield, numPar;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  gchar keyword[9];
   gchar *routine = "ObitImageMosaicCopyCC";
 
- /* error checks */
+  /* error checks */
   if (err->error) return;
   g_assert (ObitIsA(in, &myClassInfo));
 
@@ -2506,48 +2687,84 @@ void ObitImageMosaicCopyCC (ObitImageMosaic *in, ObitErr *err)
 		   routine, in->name);
   }
 
-  /* Get first input table to get structure */
-  CCVer   = 1;
-  noParms = 0;
-  inCCTab = newObitTableCCValue ("in CC", (ObitData*)in->images[0],
-				  &CCVer, OBIT_IO_ReadOnly, noParms, err);
-  if  (err->error) Obit_traceback_msg (err, routine,in->images[0]->name);
+  /* How many parallel tables? */
+  numPar = 1;
+  ObitInfoListGetTest(in->info, "numPar", &type, dim, &numPar);
+
+  for (CCVer=1; CCVer<=numPar; CCVer++) {
   
-  /* Create output CC table on in->FullField if exists */
-  if (in->FullField) {
-    CCVer    = 1;
-    noParms  = inCCTab->noParms;;
-    outCCTab = newObitTableCCValue ("out CC", (ObitData*)in->FullField,
-				    &CCVer, OBIT_IO_ReadWrite, noParms, err);
-    /* Clear any existing rows */
-    ObitTableClearRows ((ObitTable*)outCCTab, err);
-    if  (err->error) Obit_traceback_msg (err, routine, outCCTab->name);
-
-    /* Copy first */
-    ObitTableCCUtilAppend (inCCTab, outCCTab, 0, 0, err);
-    if  (err->error) Obit_traceback_msg (err, routine, inCCTab->name);
-    inCCTab = ObitTableCCUnref(inCCTab);
-  } else { /* Copy others to first image */
-    CCVer    = 1;
-    noParms  = inCCTab->noParms;;
-    outCCTab = newObitTableCCValue ("out CC", (ObitData*)in->images[0],
-				    &CCVer, OBIT_IO_ReadWrite, noParms, err);
-  }
-
-  /* Loop over other tables */
-  for (ifield=1; ifield<in->numberImages; ifield++) {
-    CCVer   = 1;
+    /* Get first input table to get structure */
     noParms = 0;
-    inCCTab = newObitTableCCValue ("in CC", (ObitData*)in->images[ifield],
+    inCCTab = newObitTableCCValue ("in CC", (ObitData*)in->images[0],
 				   &CCVer, OBIT_IO_ReadOnly, noParms, err);
-    if  (err->error) Obit_traceback_msg (err, routine, in->images[ifield]->name);
-    if (inCCTab==NULL) continue;  /* Is there one? */
-    ObitTableCCUtilAppend (inCCTab, outCCTab, 0, 0, err);
-    if  (err->error) Obit_traceback_msg (err, routine, inCCTab->name);
-    inCCTab = ObitTableCCUnref(inCCTab); /* Cleanup */
-  } /* end loop copying rest of tables */
-
-  outCCTab = ObitTableCCUnref(outCCTab); /* Cleanup */
+    if  (err->error) Obit_traceback_msg (err, routine,in->images[0]->name);
+    
+    /* Create output CC table on in->FullField if exists */
+    if (in->FullField) {
+      if (in->numBeamTapes>1) /* Promote points if tapering */
+	noParms  = MAX (4, inCCTab->noParms);
+      else
+	noParms  = inCCTab->noParms;
+      outCCTab = newObitTableCCValue ("out CC", (ObitData*)in->FullField,
+				      &CCVer, OBIT_IO_ReadWrite, noParms, err);
+      /* Clear any existing rows */
+      ObitTableClearRows ((ObitTable*)outCCTab, err);
+      if  (err->error) Obit_traceback_msg (err, routine, outCCTab->name);
+      
+      /* Copy first */
+      ObitTableCCUtilAppend (inCCTab, outCCTab, 0, 0, err);
+      if  (err->error) Obit_traceback_msg (err, routine, inCCTab->name);
+      inCCTab = ObitTableCCUnref(inCCTab);
+    } else { /* Copy others to first image */
+      noParms  = inCCTab->noParms;;
+      outCCTab = newObitTableCCValue ("out CC", (ObitData*)in->images[0],
+				      &CCVer, OBIT_IO_ReadWrite, noParms, err);
+    }
+    
+    /* Loop over other tables */
+    for (ifield=1; ifield<in->numberImages; ifield++) {
+      noParms = 0;
+      inCCTab = newObitTableCCValue ("in CC", (ObitData*)in->images[ifield],
+				     &CCVer, OBIT_IO_ReadOnly, noParms, err);
+      if  (err->error) Obit_traceback_msg (err, routine, in->images[ifield]->name);
+      if (inCCTab==NULL) continue;  /* Is there one? */
+      ObitTableCCUtilAppendShift (inCCTab, outCCTab, 
+				  inUV->myDesc, in->images[ifield]->myDesc,
+				  0, 0, err);
+      if  (err->error) Obit_traceback_msg (err, routine, inCCTab->name);
+      inCCTab = ObitTableCCUnref(inCCTab); /* Cleanup */
+    } /* end loop copying rest of tables */
+    
+    /* Add taper info if needed */
+    if (in->numBeamTapes>1) {
+      ObitTableOpen ((ObitTable*)outCCTab, OBIT_IO_ReadWrite, err);
+      if  (err->error) Obit_traceback_msg (err, routine, outCCTab->name);
+      dim[0] = dim[1] = 1;
+      /* Add to myIO as well */
+      ObitInfoListAlwaysPut (outCCTab->myDesc->info, 
+			     "NTAPER", OBIT_long, dim, &in->numBeamTapes);
+      ObitInfoListAlwaysPut (((ObitTableDesc*)outCCTab->myIO->myDesc)->info, 
+			     "NTAPER", OBIT_long, dim, &in->numBeamTapes);
+      for (i=0; i<in->numBeamTapes; i++) {
+	sprintf(keyword, "TAPE%4.4d", i+1);
+	ObitInfoListAlwaysPut (outCCTab->myDesc->info, keyword, OBIT_float, 
+			       dim, &in->BeamTaper[i]);
+	ObitInfoListAlwaysPut (((ObitTableDesc*)outCCTab->myIO->myDesc)->info, 
+			       keyword, OBIT_float, dim, &in->BeamTaper[i]);
+      }
+      outCCTab->myStatus = OBIT_Modified;
+      ObitTableClose ((ObitTable*)outCCTab, err);
+      if  (err->error) Obit_traceback_msg (err, routine, outCCTab->name);
+    }
+    
+    /* Update number of CCs */
+    ObitImageOpen(in->FullField, OBIT_IO_ReadWrite, err);
+    in->FullField->myDesc->niter = outCCTab->myDesc->nrow;
+    in->FullField->myStatus = OBIT_Modified;
+    ObitImageClose(in->FullField, err);
+    
+    outCCTab = ObitTableCCUnref(outCCTab); /* Cleanup */
+  } /* end loop over tables */
 } /* end ObitImageMosaicCopyCC */
 
 /**
@@ -2637,6 +2854,7 @@ static void ObitImageMosaicClassInfoDefFn (gpointer inClass)
   theClass->FlyEye        = (FlyEyeFP)FlyEye;
   theClass->AddField      = (AddFieldFP)AddField;
   theClass->AddOutlier    = (AddOutlierFP)AddOutlier;
+  theClass->AddTapers     = (AddTapersFP)AddTapers;
 
 } /* end ObitImageMosaicClassDefFn */
 
@@ -2669,16 +2887,23 @@ void ObitImageMosaicInit  (gpointer inn)
   in->doFull    = FALSE;
   in->images    = ObitMemAlloc0Name(in->numberImages*sizeof(ObitImage*),"ImageMosaic images");
   for (i=0; i<in->numberImages; i++) in->images[i] = NULL;
-  in->imDisk    = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic imDisk");
-  in->nx        = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic nx");
-  in->ny        = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic ny");
-  in->nplane    = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic nplane");
+  in->inFlysEye = ObitMemAlloc0Name(in->numberImages*sizeof(gboolean),  "ImageMosaic inFlysEye");
+  for (i=0; i<in->numberImages; i++) in->inFlysEye[i] = FALSE;
+  in->FacetNo   = ObitMemAlloc0Name(in->numberImages*sizeof(olong),  "ImageMosaic FacetNo");
+  in->imDisk    = ObitMemAlloc0Name(in->numberImages*sizeof(olong)," ImageMosaic imDisk");
+  in->nx        = ObitMemAlloc0Name(in->numberImages*sizeof(olong), "ImageMosaic nx");
+  in->ny        = ObitMemAlloc0Name(in->numberImages*sizeof(olong), "ImageMosaic ny");
+  in->nplane    = ObitMemAlloc0Name(in->numberImages*sizeof(olong), "ImageMosaic nplane");
   in->RAShift   = ObitMemAlloc0Name(in->numberImages*sizeof(ofloat),"ImageMosaic RAShift");
   in->DecShift  = ObitMemAlloc0Name(in->numberImages*sizeof(ofloat),"ImageMosaic DecShift");
-  in->isAuto    = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic isAuto");
-  in->isShift   = ObitMemAlloc0Name(in->numberImages*sizeof(olong),"ImageMosaic isShift");
+  in->isAuto    = ObitMemAlloc0Name(in->numberImages*sizeof(olong), "ImageMosaic isAuto");
+  in->isShift   = ObitMemAlloc0Name(in->numberImages*sizeof(olong), "ImageMosaic isShift");
+  in->BeamTaper = ObitMemAlloc0Name(in->numberImages*sizeof(ofloat),"ImageMosaic BeamTaper");
+  for (i=0; i<in->numberImages; i++) in->BeamTaper[i] = 0.0;
   in->imName    = NULL;
   in->imClass   = NULL;
+  in->numBeamTapes = 0;
+  in->BeamTapes = NULL;
   in->bmaj      = 0.0;
   in->bmin      = 0.0;
   in->bpa       = 0.0;
@@ -2711,16 +2936,20 @@ void ObitImageMosaicClear (gpointer inn)
       in->images[i] = ObitUnref(in->images[i]);
     in->images = ObitMemFree(in->images); 
   }
-  if (in->imDisk)   ObitMemFree(in->imDisk); in->imDisk = NULL;
-  if (in->nx)       ObitMemFree(in->nx);     in->nx     = NULL;
-  if (in->ny)       ObitMemFree(in->ny);     in->ny     = NULL;
-  if (in->nplane)   ObitMemFree(in->nplane); in->nplane = NULL;
-  if (in->RAShift)  ObitMemFree(in->RAShift);in->RAShift=NULL;
-  if (in->DecShift) ObitMemFree(in->DecShift);in->DecShift=NULL;
-  if (in->isAuto)   ObitMemFree(in->isAuto); in->isAuto = NULL;
-  if (in->isShift)  ObitMemFree(in->isShift);in->isShift= NULL;
-  if (in->imName)   g_free(in->imName);      in->imName = NULL;
-  if (in->imClass)  g_free(in->imClass);     in->imClass= NULL;
+  if (in->imDisk)    ObitMemFree(in->imDisk); in->imDisk = NULL;
+  if (in->nx)        ObitMemFree(in->nx);     in->nx     = NULL;
+  if (in->ny)        ObitMemFree(in->ny);     in->ny     = NULL;
+  if (in->inFlysEye) ObitMemFree(in->inFlysEye);in->inFlysEye = NULL;
+  if (in->FacetNo)   ObitMemFree(in->FacetNo);in->FacetNo = NULL;
+  if (in->nplane)    ObitMemFree(in->nplane); in->nplane = NULL;
+  if (in->RAShift)   ObitMemFree(in->RAShift);in->RAShift=NULL;
+  if (in->DecShift)  ObitMemFree(in->DecShift);in->DecShift=NULL;
+  if (in->isAuto)    ObitMemFree(in->isAuto); in->isAuto = NULL;
+  if (in->isShift)   ObitMemFree(in->isShift);in->isShift= NULL;
+  if (in->BeamTapes) ObitMemFree(in->BeamTapes);in->BeamTapes = NULL;
+  if (in->BeamTaper) ObitMemFree(in->BeamTaper);in->BeamTaper = NULL;
+  if (in->imName)    g_free(in->imName);      in->imName = NULL;
+  if (in->imClass)   g_free(in->imClass);     in->imClass= NULL;
  
   /* unlink parent class members */
   ParentClass = (ObitClassInfo*)(myClassInfo.ParentClass);
@@ -2760,13 +2989,16 @@ FlyEye (ofloat radius, olong imsize, ofloat cells[2], olong overlap,
     drad, xra, xdec, xd,  xsh[2], ll, mm, maxrad, ra0r, dec0r, dradd;
   ofloat      dist[MAXFLD], mrotat, rxsh[2];
   gboolean   this1, warn;
-  olong   ifield, mfield, ii, jj, indx[MAXFLD], i1, i2, j1, j2, jerr, nfini, mxfld;
+  olong   ifield, mfield, ii, jj, indx[MAXFLD], i1, i2, jerr, nfini, mxfld;
   gchar *routine = "FlyEye";
 
   /* error checks */
   if (err->error) return out;
 
-  for (ii=0; ii<MAXFLD; ii++) dist[ii] = -1.0;
+  for (ii=0; ii<MAXFLD; ii++) {
+    dist[ii] = -1.0;
+    ra[ii] =  dec[ii] = 0.0; 
+  }
   maxrad = 0.0;
   cosdec = cos (dec0*DG2RAD);
   sindec = sin (dec0*DG2RAD);
@@ -2780,11 +3012,13 @@ FlyEye (ofloat radius, olong imsize, ofloat cells[2], olong overlap,
   xsh[0] = shift[0] / 3.6e3 / cosdec;
 
   /* spacing of imaging region in  rad.   */
-  drad = 0.5 * AS2RAD * fabs(cells[0]) * (imsize - overlap);
+  drad = 0.5 * AS2RAD * fabs(cells[0]) * (imsize - 2*overlap);
   /* a bit less spacing to allow for sky curvature */
   drad *= 1.0 / (1. + tan(drad));
-  dx = 1.5 * drad;
-  dy = cos (30.0*DG2RAD) * drad;
+  /* Adjust grid to get overlap in the CLEAN regions - 
+     use minimal overlap solution */
+  dx = 1.5 * drad - AS2RAD * fabs(cells[0]) * overlap;
+  dy = cos (30.0*DG2RAD) * drad - AS2RAD * fabs(cells[0]) * overlap;
 
   /* field size in deg. */
   dradd = drad * RAD2DG / sqrt (2.0);
@@ -2802,8 +3036,6 @@ FlyEye (ofloat radius, olong imsize, ofloat cells[2], olong overlap,
   mfield = MIN (mfield, mxfld);
   i2 = mfield;
   i1 = -i2;
-  j2 = mfield/2 + 1;
-  j1 = -j2;
   this1 = FALSE;
 
   /* See if one field is enough? */
@@ -2906,7 +3138,7 @@ FlyEye (ofloat radius, olong imsize, ofloat cells[2], olong overlap,
 
 /**
  * Add a field the the field list if there is room and if it not within 3/4 
- * the radius of another field.
+ * the radius of another field or within 90% of minImpact
  * Translated from the AIPSish ADFLDX in $FOURMASS/SUB/ADDFIELDS.FOR
  * \param   shift    x,y shift in deg 
  * \param   dec      declination of new field (deg) 
@@ -2914,8 +3146,8 @@ FlyEye (ofloat radius, olong imsize, ofloat cells[2], olong overlap,
  * \param   cells    cell size in arc sec 
  * \param   qual     input field quality (crowding) code. 
  * \param   check    if true check if this is in another field 
- * \param  minImpact if check then MIN (minImpact, 0.75*fldsize) is the 
- *                   distance in cells to consider a match
+ * \param  minImpact if check then MIN (0.9*minImpact, 0.75*fldsize)  
+ *                   is the distance in cells to consider a match
  * \param   nfield   (output) number fields already added 
  * \param   fldsiz   (output) circular image field sizes (pixels) 
  * \param   rash     (output) ra shifts (asec) 
@@ -2950,7 +3182,7 @@ AddField (ofloat shift[2], ofloat dec, olong imsize, ofloat cells[2],
 	(cosdec * (xxsh - xsh) / cells[0]) + 
 	((yysh - ysh) / cells[1]) * ((yysh - ysh) / cells[1]);
       /* Minimum distance for a match */
-      mindist = MIN (minImpact, 0.5*0.75*fldsiz[i]);
+      mindist = MIN (0.9*minImpact, 0.5*0.75*fldsiz[i]);
       /* distance in pixel**2 to consider a match */
       maxdis = mindist*mindist;
       if (dist < maxdis) {
@@ -3050,6 +3282,7 @@ AddField (ofloat shift[2], ofloat dec, olong imsize, ofloat cells[2],
  * \param Freq         Frequency of data in Hz
  * \param minImpact    MIN (minImpact, 0.75*fldsiz) is the distance in cells to 
  *                     consider a match with a previous field
+ * \param diam         (input) Antenna diameter (m)
  * \param nfield       (output) number fields already added
  * \param fldsiz       (output) circular image field sizes (pixels) 
  * \param rash         (output) ra shifts (asec)
@@ -3057,10 +3290,11 @@ AddField (ofloat shift[2], ofloat dec, olong imsize, ofloat cells[2],
  * \param flqual       (output) field quality (crowding) code, -1 => ignore 
  * \param err          Error stack, returns if not empty.
  */
- void 
+void 
 AddOutlier (gchar *Catalog, olong catDisk, ofloat minRad, ofloat cells[2], 
 	    ofloat OutlierDist, ofloat OutlierFlux, ofloat OutlierSI, olong OutlierSize,
 	    odouble ra0, odouble dec0, gboolean doJ2B, odouble Freq, ofloat minImpact, 
+	    ofloat diam,  
 	    olong *nfield, olong *fldsiz, ofloat *rash, ofloat *decsh, olong *flqual, 
 	    ObitErr *err) 
 {
@@ -3073,7 +3307,6 @@ AddOutlier (gchar *Catalog, olong catDisk, ofloat minRad, ofloat cells[2],
   olong blc[IM_MAXDIM] = {1,1,1,1,1};
   olong trc[IM_MAXDIM] = {0,0,0,0,0};
   olong ver, nrows, irow;
-  ObitIOCode retCode;
   ObitImage *VZImage=NULL;
   ObitTableVZ *VZTable=NULL;
   ObitTableVZRow *VZRow=NULL;
@@ -3092,7 +3325,7 @@ AddOutlier (gchar *Catalog, olong catDisk, ofloat minRad, ofloat cells[2],
   alpha  = OutlierSI;
   imsize = OutlierSize;
   if (imsize <= 0) imsize = 50;
-  asize = 25.0;      /* antenna diameter in meters */
+  asize = diam;      /* antenna diameter in meters */
   nfini = *nfield;
   warn = TRUE;
 
@@ -3139,7 +3372,7 @@ AddOutlier (gchar *Catalog, olong catDisk, ofloat minRad, ofloat cells[2],
   warn = FALSE;
   for (irow= 1; irow<=nrows; irow++) { /* loop 500 */
     /* read */
-    retCode = ObitTableVZReadRow (VZTable, irow, VZRow, err);
+    ObitTableVZReadRow (VZTable, irow, VZRow, err);
     if (err->error) Obit_traceback_msg (err, routine, VZTable->name);
    
     /* spectral scaling of flux density */
@@ -3202,7 +3435,7 @@ AddOutlier (gchar *Catalog, olong catDisk, ofloat minRad, ofloat cells[2],
 					routine);
   /* Close up */
   ObitImageClose(VZImage, err);
-  retCode = ObitTableVZClose(VZTable, err);
+  ObitTableVZClose(VZTable, err);
   if (err->error) Obit_traceback_msg (err, routine, VZTable->name);
   
   /* clean up */
@@ -3211,4 +3444,81 @@ AddOutlier (gchar *Catalog, olong catDisk, ofloat minRad, ofloat cells[2],
   VZRow   = ObitTableRowUnref(VZRow);
   
 } /* end of routine AddOutlier */ 
+/**
+ * Checks if additional tapers are requested for images and if so
+ * duplicates all previoiusly defined facets
+ * \param uvData  The object to create images in,  Details are defined in info members:
+ * \li numBeamTapes= Number of Beam tapers (elements in BeamTapes) 
+ * \li BeamTapes   = List of Beam tapers  larger than 0
+ * \param numBeamTapes (output) Total number of beam tapers including no taper
+ * \param BeamTapes    (output) List of additional (nonzero) beam tapers in x pixels
+ * \param cells        Image x pixel size in asec.
+ * \param Tapers       (output) Beam taper per facet;  input initial facet 
+ *                        values are zeroed
+ * \param nfield       (in/output) number fields already added
+ * \param fldsiz       (in/output) circular image field sizes (pixels) 
+ * \param rash         (in/output) ra shifts (asec)
+ * \param decsh        (in/output) declination shifts (asec) 
+ * \param flqual       (in/output) field quality (crowding) code, -1 => ignore 
+ * \param inFlysEye    (in/output) number fields already added
+ * \param FacetNo      (in/output) Untapered facet number
+ * \param err          Error stack, returns if not empty.
+ */
+void 
+AddTapers (ObitUV *uvData, 
+	   olong *numBeamTapes, ofloat *BeamTapes, ofloat cells, ofloat *Tapers, 
+	   olong *nfield, olong *fldsiz, ofloat *rash, ofloat *decsh, 
+	   olong *flqual, gboolean *inFlysEye, olong *FacetNo, ObitErr *err) 
+{
+  olong i, j, indx, nf, nt=0;
+  gboolean blewIt;
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  gchar *routine = "AddTapers";
 
+  if (err->error) return;  /* previous error? */
+
+  /* Initial previous facets */
+  for (i=0; i<(*nfield); i++) Tapers[i] = 0.0;
+  *numBeamTapes = 1;
+  BeamTapes[0]  = 0.0;
+
+  /* Get requests for new */
+  if (!ObitInfoListGetTest(uvData->info, "numBeamTapes", &type, dim, &nt))
+    return;
+  *numBeamTapes = nt + 1;
+  if (!ObitInfoListGetTest(uvData->info, "BeamTapes", &type, dim, &BeamTapes[1]))
+    return;
+  
+  /* Loop over additional Tapers */
+  nf = *nfield;
+  blewIt = FALSE;  /* OK */
+  for (j=0; j<nt; j++) {
+    /* Loop over previously defined images */
+    for (i=0; i<nf; i++) {
+      indx = *nfield;
+      fldsiz[indx]    = fldsiz[i];
+      rash[indx]      = rash[i];
+      decsh[indx]     = decsh[i];
+      flqual[indx]    = flqual[i];
+      inFlysEye[indx] = inFlysEye[i];
+      FacetNo[indx]   = FacetNo[i];
+      Tapers[indx]    = (cells/3600.0)*BeamTapes[j+1];
+      if ((*nfield) < MAXFLD) {
+	(*nfield)++;  /* Count of total facets */
+      } else {  /* Blew array */
+	blewIt = TRUE;
+      }
+    } /* end loop over previously defined image  */
+  } /* end loop over additional tapers */
+
+  /* too many? */
+  if (blewIt) 
+    Obit_log_error(err, OBIT_InfoWarn, 
+		   "%s: Exceeded field limit - not all tapers will be included", 
+		   routine);
+
+  /* tell how many tapers added */
+  Obit_log_error(err, OBIT_InfoErr, "%s: Added %d beam tapers", routine, nt);
+
+} /* end AddTapers */

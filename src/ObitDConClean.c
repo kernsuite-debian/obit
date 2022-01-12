@@ -1,6 +1,6 @@
-/* $Id: ObitDConClean.c 159 2010-02-26 17:54:34Z bill.cotton $     */
+/* $Id$     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2010                                          */
+/*;  Copyright (C) 2004-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -32,6 +32,8 @@
 #include "ObitTableCCUtil.h"
 #include "ObitImageUtil.h"
 #include "ObitThread.h"
+#include "ObitConvUtil.h"
+#include "ObitFile.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -117,6 +119,9 @@ static olong MakeStatsFuncArgs (ObitThread *thread,
 
 /** Private: Delete Threaded Image statistics args */
 static void KillStatsFuncArgs (olong nargs, StatsFuncArg **ThreadArgs);
+
+/** Private: Add Clean Windows from CLEANFile */
+static void  AddCleanFileWindow(ObitDConClean *in, gchar *Cfile, ObitErr *err);
 /*----------------------Public functions---------------------------*/
 /**
  * Constructor.
@@ -423,7 +428,7 @@ ObitDConClean* ObitDConCleanCreate (gchar* name, ObitImageMosaic *mosaic,
 void ObitDConCleanDeconvolve (ObitDCon *inn, ObitErr *err)
 {
   ObitDConClean *in;
-  gboolean done, newWin;
+  gboolean done;
   olong jtemp;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   const ObitDConCleanClassInfo *inClass;
@@ -471,7 +476,7 @@ void ObitDConCleanDeconvolve (ObitDCon *inn, ObitErr *err)
   done = FALSE;
   while (!done) {
     /* Get image/beam statistics needed for this cycle, decide CLEAN type */
-    newWin = inClass->ObitDConCleanPixelStats(in, NULL, err);
+    inClass->ObitDConCleanPixelStats(in, NULL, err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
 
     /* Pick components for this major cycle, tells if finished CLEAN */
@@ -639,7 +644,13 @@ void  ObitDConCleanGetParms (ObitDCon *inn, ObitErr *err)
  * Any previously existing Windows will be lost.
  * \param in   The CLEAN object, info may have CLEAN Boxes:
  * \li "CLEANBox"   OBIT_long [4,?]  = Array of Clean boxes for field 1
+ * \li "CLEANFile"  OBIT_char  = if present and nonblank, the name of a file 
+ *                  giving celestial positions and sizes of windows to add:
+ *                    hh mm ss.s dd mm ss.s radius
+ *                    where radius is radius of round box in pixels,
+ *                     negative radius -> unbox
  *    Any entries with first element=0 are ignored.
+ *    If round and position<=0 then center 
  *
  * \param err Obit error stack object.
  */
@@ -649,7 +660,9 @@ void ObitDConCleanDefWindow(ObitDConClean *in, ObitErr *err)
   ObitDConCleanWindowType type;
   gint32 dim[MAXINFOELEMDIM];
   ObitInfoType itype;
-  olong  *winArray;
+  olong  *winArray, delta;
+  gchar *CLEANFile=NULL;
+  gboolean doFile=FALSE;
   gchar *routine = "ObitDConCleanDefWindow";
 
   /* error checks */
@@ -667,14 +680,18 @@ void ObitDConCleanDefWindow(ObitDConClean *in, ObitErr *err)
   /* Set on window object */
   in->window->autoWindow = in->autoWindow;
 
+  /* See if CLEANFile given and exists */
+  ObitInfoListGetP (in->info, "CLEANFile", &itype, dim, (gpointer)&CLEANFile);
+  doFile =  (CLEANFile && strncmp (CLEANFile,  "     ", 5) && ObitFileExist(CLEANFile, err));
+
   /* See if CLEANBox given */
   if (ObitInfoListGetP (in->info, "CLEANBox", &itype, dim, (gpointer)&winArray)) {
     if (dim[1]>0) {
       j = 0;
       for (i=0; i<dim[1]; i++) {
 	/* Default if all zero */
-	if ((winArray[j]!=0) && (winArray[j+1]!=0) && 
-	    (winArray[j+2]!=0) && (winArray[j+2]!=0)) {
+	if (!((winArray[j]==0) && (winArray[j+1]==0) && 
+	      (winArray[j+2]==0) && (winArray[j+2]==0))) {
 	  /* Round or rectangular? ignore if first element = 0 */
 	  if (winArray[j]>0) { /* rectangular */
 	    type = OBIT_DConCleanWindow_rectangle;
@@ -687,15 +704,45 @@ void ObitDConCleanDefWindow(ObitDConClean *in, ObitErr *err)
 	  } else if (winArray[j]<0){        /* round */
 	    type = OBIT_DConCleanWindow_round;
 	    window[0] = winArray[j+1];
-	    window[1] = winArray[j+2];
-	    window[2] = winArray[j+3];
+	    /* If pos=[0,0] center */
+	    if ((winArray[j+2]<=0) && (winArray[j+2]<=0)) {
+	      window[1] = (olong)(in->mosaic->images[0]->myDesc->crpix[0]-
+				  in->mosaic->images[0]->myDesc->xPxOff);
+	      window[2] = (olong)(in->mosaic->images[0]->myDesc->crpix[1]-
+				  in->mosaic->images[0]->myDesc->yPxOff);
+	    } else {  /* Position given */
+	      window[1] = winArray[j+2];
+	      window[2] = winArray[j+3];
+	    }
 	    ObitDConCleanWindowAdd (in->window, 1, type, window, err);
 	    sfield = 2;  /* Done 1 already */
 	  }
 	  if (err->error) Obit_traceback_msg (err, routine, in->name);
 	} /* end if window fully specified */
 	j += 4;   /* loop through window array */
-      }
+      } /* end loop over CLEANBox */
+
+      /* Add outer window if CLEAN box gotten from CLEANBox */
+      if (sfield>=2) {
+	field = 1;
+	if (in->mosaic->Radius>0.0) {  /* Use round box of radius Radius */
+	  type = OBIT_DConCleanWindow_round;
+	  window[0] = (olong)(in->mosaic->Radius);
+	  window[1] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[0]-
+			      in->mosaic->images[field-1]->myDesc->xPxOff);
+	  window[2] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[1]-
+			      in->mosaic->images[field-1]->myDesc->yPxOff);
+	} else { /* Use rectangle */
+	  type = OBIT_DConCleanWindow_rectangle;
+	  window[0] = 5;
+	  window[1] = 5;
+	  window[2] = in->mosaic->images[field-1]->myDesc->inaxes[0]-5;
+	  window[3] = in->mosaic->images[field-1]->myDesc->inaxes[1]-5;
+	}
+	
+	ObitDConCleanWindowOuter (in->window, 1, type, window, err);
+	if (err->error) Obit_traceback_msg (err, routine, in->name);
+      } /* End add outer box */
     }
   } /* End of use CLEANBox for field 1 */
 
@@ -703,68 +750,78 @@ void ObitDConCleanDefWindow(ObitDConClean *in, ObitErr *err)
     if (in->mosaic->Radius>0.0) {  /* Use round box of radius Radius */
       type = OBIT_DConCleanWindow_round;
       window[0] = (olong)(in->mosaic->Radius);
-      for (field=sfield; field<=in->mosaic->nFlyEye; field++) {
-	window[1] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[0]-
-			    in->mosaic->images[field-1]->myDesc->xPxOff);
-	window[2] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[1]-
-                            in->mosaic->images[field-1]->myDesc->yPxOff);
-	/* Add inner if CLEANBox not specified */
-	if ((field>=sfield) && (!in->autoWindow))
-	  ObitDConCleanWindowAdd (in->window, field, type, window, err);
-	/* Add outer window */
-	ObitDConCleanWindowOuter (in->window, field, type, window, err);
-	if (err->error) Obit_traceback_msg (err, routine, in->name);
+      for (field=sfield; field<=in->mosaic->numberImages; field++) {
+	if (in->mosaic->inFlysEye[field-1]) {
+	  window[1] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[0]-
+			      in->mosaic->images[field-1]->myDesc->xPxOff);
+	  window[2] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[1]-
+			      in->mosaic->images[field-1]->myDesc->yPxOff);
+	  /* Add inner if CLEANBox and CLEANFile not specified */
+	  if ((field>=sfield) && (!in->autoWindow) && (!doFile))
+	    ObitDConCleanWindowAdd (in->window, field, type, window, err);
+	  /* Add outer window */
+	  ObitDConCleanWindowOuter (in->window, field, type, window, err);
+	  if (err->error) Obit_traceback_msg (err, routine, in->name);
+	} /* End if in Fly's eye */
      }
     } else { /* Use rectangle */
       type = OBIT_DConCleanWindow_rectangle;
       window[0] = 5;
       window[1] = 5;
-      for (field=sfield; field<=in->mosaic->nFlyEye; field++) {
-	window[2] = in->mosaic->images[field-1]->myDesc->inaxes[0]-5;
-	window[3] = in->mosaic->images[field-1]->myDesc->inaxes[1]-5;
-	/* Add inner if CLEANBox not specified */
-	if ((field>=sfield)  && (!in->autoWindow))
-	  ObitDConCleanWindowAdd (in->window, field, type, window, err);
-	/* Add outer window */
-	ObitDConCleanWindowOuter (in->window, field, type, window, err);
-	if (err->error) Obit_traceback_msg (err, routine, in->name);
+      for (field=sfield; field<=in->mosaic->numberImages; field++) {
+	if (in->mosaic->inFlysEye[field-1]) {
+	  window[2] = in->mosaic->images[field-1]->myDesc->inaxes[0]-5;
+	  window[3] = in->mosaic->images[field-1]->myDesc->inaxes[1]-5;
+	  /* Add inner if CLEANBox and CLEANFile not specified */
+	  if ((field>=sfield)  && (!in->autoWindow) && (!doFile))
+	    ObitDConCleanWindowAdd (in->window, field, type, window, err);
+	  /* Add outer window */
+	  ObitDConCleanWindowOuter (in->window, field, type, window, err);
+	  if (err->error) Obit_traceback_msg (err, routine, in->name);
+	}  /* End if in Fly's eye */
      }
     }  /* End Fly's Eye */
     /* Do outliers */
     type = OBIT_DConCleanWindow_rectangle;
     if (in->mosaic->OutlierSize) {
-      for (field=in->mosaic->nFlyEye+1; field<=in->mosaic->numberImages; field++) {
-	window[0] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[0]-
-			    in->mosaic->images[field-1]->myDesc->xPxOff) - 
-	  in->mosaic->OutlierSize/2;
-	window[1] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[1]-
-                            in->mosaic->images[field-1]->myDesc->yPxOff) - 
-	  in->mosaic->OutlierSize/2;
-	window[2] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[0]-
-                            in->mosaic->images[field-1]->myDesc->xPxOff) +
-	  in->mosaic->OutlierSize/2;
-	window[3] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[1]-
-                            in->mosaic->images[field-1]->myDesc->yPxOff) + 
-	  in->mosaic->OutlierSize/2;
-	/* Only use if not autoWindow */
-	if (!in->autoWindow) ObitDConCleanWindowAdd (in->window, field, type, window, err);
-	/* Add outer window */
-	ObitDConCleanWindowOuter (in->window, field, type, window, err);
-	if (err->error) Obit_traceback_msg (err, routine, in->name);
-     }
+      delta = (in->mosaic->OutlierSize/2) - 5;
+      for (field=sfield; field<=in->mosaic->numberImages; field++) {
+	if (!in->mosaic->inFlysEye[field-1]) {
+	  window[0] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[0]-
+			      in->mosaic->images[field-1]->myDesc->xPxOff) - delta;
+	  window[1] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[1]-
+			      in->mosaic->images[field-1]->myDesc->yPxOff) -  delta;
+	  window[2] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[0]-
+			      in->mosaic->images[field-1]->myDesc->xPxOff) + delta;
+	  window[3] = (olong)(in->mosaic->images[field-1]->myDesc->crpix[1]-
+			      in->mosaic->images[field-1]->myDesc->yPxOff) +  delta;
+	  window[0] = MAX (5, window[0]);
+	  window[1] = MAX (5, window[1]);
+	  window[2] = MIN ((in->mosaic->images[field-1]->myDesc->inaxes[0]-5), window[2]);
+	  window[3] = MIN ((in->mosaic->images[field-1]->myDesc->inaxes[1]-5), window[3]);
+	  /* Only use if not autoWindow or CLEANFile */
+	  if ((!in->autoWindow) && (!doFile)) 
+	    ObitDConCleanWindowAdd (in->window, field, type, window, err);
+	  /* Add outer window */
+	  ObitDConCleanWindowOuter (in->window, field, type, window, err);
+	  if (err->error) Obit_traceback_msg (err, routine, in->name);
+	} /* End if not in Fly's eye */
+      } /* End loop over fields */
     } else {  /* Default for outliers */
       window[0] = 5;
       window[1] = 5;
-      for (field=in->mosaic->nFlyEye+1; field<=in->mosaic->numberImages; field++) {
-	window[2] = in->mosaic->images[field-1]->myDesc->inaxes[0]-5;
-	window[3] = in->mosaic->images[field-1]->myDesc->inaxes[1]-5;
-	if (!in->autoWindow) 
-	  ObitDConCleanWindowAdd (in->window, field, type, window, err);
-	/* Add outer window */
-	ObitDConCleanWindowOuter (in->window, field, type, window, err);
-	if (err->error) Obit_traceback_msg (err, routine, in->name);
-     }
-   }
+      for (field=sfield; field<=in->mosaic->numberImages; field++) {
+	if (!in->mosaic->inFlysEye[field-1]) {
+	  window[2] = in->mosaic->images[field-1]->myDesc->inaxes[0]-5;
+	  window[3] = in->mosaic->images[field-1]->myDesc->inaxes[1]-5;
+	  if (!in->autoWindow) 
+	    ObitDConCleanWindowAdd (in->window, field, type, window, err);
+	  /* Add outer window */
+	  ObitDConCleanWindowOuter (in->window, field, type, window, err);
+	  if (err->error) Obit_traceback_msg (err, routine, in->name);
+	} /* End if not in Fly's eye */
+      } /* End loop over fields */
+    }
   } else { /* No Fly's eye - rectangular boxes for all */
     type = OBIT_DConCleanWindow_rectangle;
     window[0] = 5;
@@ -772,13 +829,16 @@ void ObitDConCleanDefWindow(ObitDConClean *in, ObitErr *err)
     for (field=sfield; field<=in->mosaic->numberImages; field++) {
       window[2] = in->mosaic->images[field-1]->myDesc->inaxes[0]-5;
       window[3] = in->mosaic->images[field-1]->myDesc->inaxes[1]-5;
-      if (!in->autoWindow) 
+      if ((!in->autoWindow) && (!doFile)) 
 	ObitDConCleanWindowAdd (in->window, field, type, window, err);
       /* Add outer window */
       ObitDConCleanWindowOuter (in->window, field, type, window, err);
       if (err->error) Obit_traceback_msg (err, routine, in->name);
     }
   }
+
+  /* Add windows from CLEANFile */
+  if (doFile) AddCleanFileWindow(in, CLEANFile, err);
 
 } /* end ObitDConCleanDefWindow */
 
@@ -822,6 +882,11 @@ gboolean ObitDConCleanPixelStats(ObitDConClean *in, ObitFArray **pixarray,
   if (err->error) Obit_traceback_val (err, routine, in->name, newWin);
 
   /* Get Beam histogram from first field */
+  if (in->mosaic->FullField && in->mosaic->FullField->myBeam) 
+    Beam = (ObitImage*)in->mosaic->FullField->myBeam;
+  if (Beam==NULL) Beam = (ObitImage*)in->mosaic->images[0]->myBeam;
+  Obit_retval_if_fail(ObitImageIsA(Beam), err, newWin,
+		      "%s: No Beam available", routine);
   if (in->BeamHist->field != in->currentFields[0])
     ObitDConCleanBmHistUpdate(in->BeamHist, Beam, in->plane, err);
   in->BeamHist->field = in->currentFields[0];
@@ -867,12 +932,13 @@ gboolean ObitDConCleanPixelStats(ObitDConClean *in, ObitFArray **pixarray,
 void ObitDConCleanImageStats(ObitDConClean *in, olong field, gboolean doBeam, 
 			     ObitErr *err)
 {
-  ObitIOCode retCode;
   ObitImage *image=NULL;
   ObitDConCleanWindow *theWindow=NULL;
   ObitIOSize IOsize = OBIT_IO_byPlane;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-  olong  blc[IM_MAXDIM], trc[IM_MAXDIM];
+  ObitInfoType type;
+  olong  blc[IM_MAXDIM]={1,1,1,1,1,1,1},  trc[IM_MAXDIM]={0,0,0,0,0,0,0}, 
+	oblc[IM_MAXDIM]={1,1,1,1,1,1,1}, otrc[IM_MAXDIM]={0,0,0,0,0,0,0};
   olong nThreads, i, it, nTh, nrow, nrowPerThread, hirow, lorow, count;
   olong  lo, hi;
   ofloat tmax, tmax2, sum, sum2;
@@ -919,6 +985,10 @@ void ObitDConCleanImageStats(ObitDConClean *in, olong field, gboolean doBeam,
     else
       image = in->mosaic->images[i];
 
+    /* Get existing BLC, TRC */
+    ObitInfoListGetTest (image->info, "BLC", &type, dim, oblc); 
+    ObitInfoListGetTest (image->info, "TRC", &type, dim, otrc); 
+
     /* Set output to full image, plane at a time */
     dim[0] = IM_MAXDIM;
     ObitInfoListPut (image->info, "BLC", OBIT_long, dim, blc, err); 
@@ -926,10 +996,10 @@ void ObitDConCleanImageStats(ObitDConClean *in, olong field, gboolean doBeam,
     dim[0] = 1;
     ObitInfoListPut (image->info, "IOBy", OBIT_long, dim, &IOsize, err);
  
-    retCode = ObitImageOpen (image, OBIT_IO_ReadOnly, err);
+    ObitImageOpen (image, OBIT_IO_ReadOnly, err);
     if (err->error) Obit_traceback_msg (err, routine, image->name);
 
-    retCode = ObitImageRead (image, image->image->array, err);
+    ObitImageRead (image, image->image->array, err);
     if (err->error) Obit_traceback_msg (err, routine, image->name);
 
     /* Divide up work */
@@ -1001,12 +1071,22 @@ void ObitDConCleanImageStats(ObitDConClean *in, olong field, gboolean doBeam,
 
     /* Save max residual on image */
     dim[0] = 1;
-    ObitInfoListPut (image->info, "maxAbsResid", OBIT_long, dim, &tmax, err); 
+    ObitInfoListPut (image->info, "maxAbsResid", OBIT_float, dim, &tmax, err); 
 
-    retCode = ObitImageClose (image, err);
+    ObitImageClose (image, err);
     if (err->error) Obit_traceback_msg (err, routine, image->name);
-    
-    /* Free Image array? */
+
+    /* Restore BLC, TRC */    
+    dim[0] = IM_MAXDIM;    
+    ObitInfoListPut (image->info, "BLC", OBIT_long, dim, oblc, err); 
+    ObitInfoListPut (image->info, "TRC", OBIT_long, dim, otrc, err); 
+    ObitImageOpen (image, OBIT_IO_ReadOnly, err);
+    ObitImageClose (image, err);
+    if (err->error) Obit_traceback_msg (err, routine, image->name);
+
+    /* Free Image array and work references */
+    for (it=0; it<nTh; it++) 
+      if (threadArgs[it]->inData)  ObitFArrayUnref(threadArgs[it]->inData);
     image->image = ObitFArrayUnref(image->image);
     
   } /* end loop over fields */
@@ -1036,6 +1116,9 @@ gboolean ObitDConCleanSelect(ObitDConClean *in, ObitFArray **pixarray,
   /* error checks */
   if (err->error) return done;
   g_assert (ObitDConCleanIsA(in));
+
+  /* Anything to do? */
+  if (in->currentFields[0]==0) return done;
 
   /* Read beam Patch(es) */
   inClass = (ObitDConCleanClassInfo*)in->ClassInfo; /* class structure */
@@ -1093,11 +1176,12 @@ void ObitDConCleanRestore(ObitDConClean *in, ObitErr *err)
   ObitImage *image=NULL;
   ObitImageDesc *imDesc = NULL;
   ObitIOSize IOsize = OBIT_IO_byPlane;
+  ObitInfoType itype;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   olong  blc[IM_MAXDIM], trc[IM_MAXDIM], ddim[2];
   olong i, field, first, last, ncomp, ver, ndim, naxis[2];
   gchar *tabType = "AIPS CC";
-  ofloat gparm[3], bmaj, bmin, bpa;
+  ofloat gparm[3], bmaj, bmin, bpa, BeamTaper=0.0;
   ObitFArray *grid = NULL;
   ObitCArray *uvGrid = NULL;
   ObitFFT *forFFT = NULL, *revFFT = NULL;
@@ -1143,7 +1227,9 @@ void ObitDConCleanRestore(ObitDConClean *in, ObitErr *err)
 
     /* Restoring beam, use value on image if given (else bmaj==0)
        or the value in the image header */
-    if (in->bmaj>0.0) { /* value on CLEAN */
+    /* This a tapered image? */
+    ObitInfoListGetTest(image->myDesc->info, "BeamTapr", &itype, dim, &BeamTaper);
+    if ((in->bmaj>0.0) && (BeamTaper<=0.0)){ /* value on CLEAN and not a tapered image */
       bmaj = in->bmaj;
       bmin = in->bmin;
       bpa  = in->bpa;
@@ -1154,7 +1240,11 @@ void ObitDConCleanRestore(ObitDConClean *in, ObitErr *err)
       bmaj = image->myDesc->beamMaj;
       bmin = image->myDesc->beamMin;
       bpa  = image->myDesc->beamPA;
-    }
+      /* Use first for any others */
+      if ((in->bmaj<=0.0) && (bmaj>0.0)) in->bmaj = bmaj;
+      if ((in->bmin<=0.0) && (bmin>0.0)) in->bmin = bmin;
+      in->bpa  = bpa;
+   }
     
     /* Get CC table */
     ver = in->CCver;
@@ -1322,7 +1412,7 @@ void ObitDConCleanFlatten(ObitDConClean *in, ObitErr *err)
  */
 void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
 {
-  olong i, ifield, jfield, ncomp, ver, ndim, naxis[2];
+  olong i, j, ifield, jfield, ncomp, ver, ndim, naxis[2];
   ObitImage *image=NULL;
   ObitImageDesc *imDesc1=NULL, *imDesc2=NULL;
   ObitTable *tempTable=NULL;
@@ -1331,13 +1421,16 @@ void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
   ObitIOSize IOsize = OBIT_IO_byPlane;
   ObitIOCode retCode;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitInfoType itype;
   olong  blc[IM_MAXDIM], trc[IM_MAXDIM];
   ofloat gparm[3], gauss[3], bmaj, bmin, bpa, sr, cr, cellx, celly;
+  ofloat scale, BeamTaper1=0.0, BeamTaper2=0.0;
   gchar *tabType = "AIPS CC";
   gboolean gotSome;
   gchar *routine = "ObitDConCleanXRestore";
+  /* gchar DBGname[100]; DEBUG */
 
- /* error checks */
+  /* error checks */
   g_assert (ObitErrIsA(err));
   if (err->error) return;
   g_assert (ObitDConCleanIsA(in));
@@ -1355,6 +1448,11 @@ void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
   for (ifield = 0; ifield<in->nfield; ifield++) {
     imDesc2 = (in->mosaic->images[ifield])->myDesc;
 
+    /* Get additional beam taper */
+    ObitInfoListGetTest(imDesc2->info, "BeamTapr", &itype, dim, &BeamTaper2);
+    /* Ignore this one if not zero */
+    if (BeamTaper2>0.0) continue;
+
     gotSome = FALSE; /* until proven otherwise */
     for (jfield = 0; jfield<in->nfield; jfield++) {
       if (ifield==jfield) continue; /* don't do same field */
@@ -1362,6 +1460,9 @@ void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
 
       /* Any overlap? */
       if (ObitImageDescOverlap(imDesc1, imDesc2, err)) {
+
+	/* Get additional beam taper */
+	ObitInfoListGetTest(imDesc1->info, "BeamTapr", &itype, dim, &BeamTaper1);
 
 	/* Get CC table */
 	ver = in->CCver;
@@ -1395,20 +1496,31 @@ void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
 	    tmpArray = ObitFArrayCreate ("Image for CCs", ndim, naxis);
 	  }
 
-	  /* Set Gaussian parameters  Use beam from CC table or header? */
-	  if (gparm[0]<0.0) {
-	    bmaj = imDesc1->beamMaj;
-	    bmin = imDesc1->beamMin;
-	    bpa  = imDesc1->beamPA;
-	  } else {
-	    bmaj = gparm[0];
-	    bmin = gparm[1];
-	    bpa  = gparm[2];
+	  /* get restoring beam and scaling */
+	  scale = ObitDConCleanGetXRestoreBeam(imDesc1, imDesc2, gparm, &bmaj, &bmin, &bpa);
+
+	  /* Scale list flux if needed */
+	  if (scale!=1.0) {
+	    for (j=0; j<list->naxis[1]; j++)
+	      list->array[2+j*list->naxis[0]] *= scale;
 	  }
+
+	  /* Get Gaussian parameters in units of cells */
 	  cellx = imDesc1->cdelt[0];
 	  celly = imDesc1->cdelt[1];
 	  cr = cos ((bpa + imDesc1->crota[imDesc1->jlocd])*DG2RAD);
 	  sr = sin ((bpa + imDesc1->crota[imDesc1->jlocd])*DG2RAD);
+
+	  if (BeamTaper1>0.0) {
+	    /* Actually convolve with imaging taper if any */
+	    bmaj = BeamTaper1;
+	    bmin = BeamTaper1;
+	    bpa  = 0.0;
+	  }
+	  if ((in->prtLv>2) && (ncomp>0)) {
+	    Obit_log_error(err, OBIT_InfoErr,"Field %d to %d scale %f beam %f %f %f",
+			   jfield+1, ifield+1, scale, 3600.0*bmaj, 3600.0*bmin, bpa);
+	  }
 	  gauss[0] = ((cr*cr)/(bmin*bmin) + (sr*sr)/(bmaj*bmaj)) *
 	    cellx*cellx*4.0*log(2.0);
 	  gauss[1] =  ((sr*sr)/(bmin*bmin) + (cr*cr)/(bmaj*bmaj)) *
@@ -1416,9 +1528,17 @@ void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
 	  gauss[2] = (1.0/(bmin*bmin) - 1.0/(bmaj*bmaj)) *
 	    sr*cr*fabs(celly*celly)*8.0*log(2.0);
 
-	  /* Convolve list to tmpArray */
+	  /* Convolve list to tmpArray  */
+	  /* DEBUG - only this one - this will destroy the output 
+	     ObitFArrayFill(tmpArray,0.0);*/
 	  ObitFArrayConvGaus (tmpArray, list, ncomp, gauss);
 
+	  /* DEBUG 
+	     sprintf (DBGname, "DbugXRestCC%3.3d_%3.3d.fits", 
+	     ifield, jfield);
+	     ObitImageUtilArray2Image (DBGname, 0, tmpArray, err); */
+	  
+	  
 	} /* end of Anything to do? */
 
 	/* Free list */
@@ -1453,7 +1573,11 @@ void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
       /* read image */
       retCode = ObitImageRead (image, image->image->array, err);
       if (err->error) Obit_traceback_msg (err, routine, image->name);
-      
+
+      /* DEBUG Zero old 
+      fprintf (stderr, "DEBUG: zero old pixels\n");
+      ObitFArrayFill (image->image, 0.0);*/
+    
       /* Add restored components */
       ObitFArrayAdd (image->image, tmpArray, tmpArray);
       
@@ -1490,7 +1614,8 @@ void ObitDConCleanXRestore(ObitDConClean *in, ObitErr *err)
  * inner window and > 5 sigma, a new round box  is added 
  * to the window.  Cleaning in each cycle will stop when the peak residual 
  * drops to the level of the highest value outside the CLEAN window.
- * Only the field with the highest peak inside the outer window is modified.
+ * Facets might have a window added iff 1) it is the facet with the highest 
+ * in window pixel, or 2) it has a cleanable, out of window pixel within 30% of the peak.
  * \param in       The object to restore
  * \param fields   Field numbers (1-rel) in ImageMosaic
  *                 zero terminated list, no longer than in->numCurrentField
@@ -1505,13 +1630,12 @@ gboolean ObitDConCleanAutoWindow(ObitDConClean *in, olong *fields, ObitFArray **
   gboolean newWin = FALSE;
   ObitImage *image=NULL;
   ObitFArray *usePixels;
-  ObitIOCode retCode;
   ObitIOSize IOsize = OBIT_IO_byPlane;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-  olong  i, field, best, blc[IM_MAXDIM], trc[IM_MAXDIM];
+  olong  i, j, field, best, blc[IM_MAXDIM], trc[IM_MAXDIM];
   ofloat PeakIn, PeakOut, RMS, bestPeak, *FieldPeak=NULL;
   olong PeakInPos[2] = {0,0};
-  gboolean doAbs;
+  gboolean doAbs, tnewWin;
   gchar *routine = "ObitDConCleanAutoWindow";
 
  /* error checks */
@@ -1544,9 +1668,9 @@ gboolean ObitDConCleanAutoWindow(ObitDConClean *in, olong *fields, ObitFArray **
       dim[0] = 1;
       ObitInfoListAlwaysPut (image->info, "IOBy", OBIT_long, dim, &IOsize);
       
-      retCode = ObitImageOpen (image, OBIT_IO_ReadOnly, err);
-      retCode = ObitImageRead (image, image->image->array, err);
-      retCode = ObitImageClose (image, err);
+      ObitImageOpen (image, OBIT_IO_ReadOnly, err);
+      ObitImageRead (image, image->image->array, err);
+      ObitImageClose (image, err);
       if (err->error) Obit_traceback_val (err, routine, image->name, newWin);
       usePixels = image->image;  /* Pointer to image buffer */
       
@@ -1574,45 +1698,61 @@ gboolean ObitDConCleanAutoWindow(ObitDConClean *in, olong *fields, ObitFArray **
     }
   } /* end loop gathering statistics */
 
-  /* Use best field */
-  field = fields[best];
+  /* Loop over potential fields */
+  for (j=0; j<in->numCurrentField; j++) {
+    if (fields[j]==0) break;  /* List terminated? */
+    /* Use fields within 30% of best Peak in window - or best */
+    if ((FieldPeak[j]<0.7*bestPeak) && (j!=best)) continue;
+    field = fields[j];
 
-  /* Use passed pixel array or get image */
-  image = in->mosaic->images[field-1];
-  if (pixarray==NULL) {
+    /* Use passed pixel array or get image */
+    image = in->mosaic->images[field-1];
+    if (pixarray==NULL) {
+      
+      /* Set input to full image, plane at a time */
+      dim[0] = IM_MAXDIM;
+      ObitInfoListAlwaysPut (image->info, "BLC", OBIT_long, dim, blc); 
+      ObitInfoListAlwaysPut (image->info, "TRC", OBIT_long, dim, trc); 
+      dim[0] = 1;
+      ObitInfoListAlwaysPut (image->info, "IOBy", OBIT_long, dim, &IOsize);
+      
+      ObitImageOpen (image, OBIT_IO_ReadOnly, err);
+      ObitImageRead (image, image->image->array, err);
+      ObitImageClose (image, err);
+      if (err->error) Obit_traceback_val (err, routine, image->name, newWin);
+      usePixels = image->image;  /* Pointer to image buffer */
+      
+    } else { /* Use array passed */
+      usePixels = ObitFArrayRef(pixarray[field]);
+    }
     
-    /* Set input to full image, plane at a time */
-    dim[0] = IM_MAXDIM;
-    ObitInfoListAlwaysPut (image->info, "BLC", OBIT_long, dim, blc); 
-    ObitInfoListAlwaysPut (image->info, "TRC", OBIT_long, dim, trc); 
-    dim[0] = 1;
-    ObitInfoListAlwaysPut (image->info, "IOBy", OBIT_long, dim, &IOsize);
+    /* Allow negative for Stokes other than I */
+    doAbs = fabs (image->myDesc->crval[image->myDesc->jlocs]-1.0) > 0.1;
     
-    retCode = ObitImageOpen (image, OBIT_IO_ReadOnly, err);
-    retCode = ObitImageRead (image, image->image->array, err);
-    retCode = ObitImageClose (image, err);
+    /* Get field info - set new box if needed */
+    tnewWin = ObitDConCleanWindowAutoWindow (in->window, field, usePixels,
+					    doAbs,
+					    &PeakIn, &PeakInPos[0], &PeakOut, 
+					    &RMS, err);
     if (err->error) Obit_traceback_val (err, routine, image->name, newWin);
-    usePixels = image->image;  /* Pointer to image buffer */
-
-  } else { /* Use array passed */
-    usePixels = ObitFArrayRef(pixarray[field]);
-  }
+    newWin = newWin || tnewWin;
     
-  /* Allow negative for Stokes other than I */
-  doAbs = fabs (image->myDesc->crval[image->myDesc->jlocs]-1.0) > 0.1;
-  
-  /* Get field info - set new box if needed */
-  newWin = ObitDConCleanWindowAutoWindow (in->window, field, usePixels,
-					  doAbs,
-					  &PeakIn, &PeakInPos[0], &PeakOut, 
-					  &RMS, err);
-  if (err->error) Obit_traceback_val (err, routine, image->name, newWin);
+    /* If window added, redo statistics */
+    if (tnewWin) {
+      ObitDConCleanWindowStats (in->window, fields[field], usePixels,
+				doAbs,
+				&PeakIn, &PeakInPos[0], &PeakOut, 
+				&RMS, err);
+      if (err->error) Obit_traceback_val (err, routine, image->name, newWin);
+      FieldPeak[j] = PeakOut;
+    }
 
-  /* Free Image array? */
-  if (usePixels==image->image) 
-    image->image = ObitFArrayUnref(image->image);
-  else
-    usePixels = ObitFArrayUnref(usePixels);
+    /* Free Image array? */
+    if (usePixels==image->image) 
+      image->image = ObitFArrayUnref(image->image);
+    else
+      usePixels = ObitFArrayUnref(usePixels);
+  } /* end loop over fields */
   
   /* Determine max. cleanable pixel value not in a window */
   for (field=0; field<in->numCurrentField; field++) {
@@ -1642,6 +1782,50 @@ gboolean ObitDConCleanAutoWindow(ObitDConClean *in, olong *fields, ObitFArray **
   }
   return newWin;
 } /* end ObitDConCleanAutoWindow */
+
+/**
+ * Get cross restoring beam parameters
+ * If the beams on imDesc1 and imDesc2 are significantly different then the 
+ * resultant beam is the beam in imDesc1  and scale is set.
+ * Otherwise the beam on imDesc1 (defaulting to gparm) is returned
+ * \param imDesc1  Descriptor of field whose components are being restored
+ * \param imDesc2  Descriptor of field being restored to
+ * \param gparm    Array of beam parameters from the CC table related to imDesc1
+ * \param bmaj     [out] Beam major axis (deg)
+ * \param bmin     [out] Beam minor axis (deg)
+ * \param bpa      [out] Beam position (deg)
+ * \return scale factor to get units correct
+ */
+ofloat ObitDConCleanGetXRestoreBeam(ObitImageDesc *imDesc1, ObitImageDesc *imDesc2, 
+				    ofloat *gparm, ofloat *bmaj, ofloat *bmin, ofloat *bpa)
+{
+  ofloat scale, rat1, rat2;
+
+  /* If Beam not given in imDesc1 - use gparm */
+  if (imDesc1->beamMaj<=0.0) {
+    imDesc1->beamMaj = gparm[0];
+    imDesc1->beamMin = gparm[1];
+    imDesc1->beamPA  = gparm[2];
+  }
+  
+  /* Get Beam */
+  *bmaj = imDesc1->beamMaj;
+  *bmin = imDesc1->beamMin;
+  *bpa  = imDesc1->beamPA;
+  
+   /* Are they more or less the same (within factor of 2) */
+  rat1 = imDesc2->beamMaj / imDesc1->beamMaj;
+  rat2 = imDesc2->beamMin / imDesc1->beamMin;
+  if ((rat1>0.5) && (rat1<2.0) && (rat2>0.5) && (rat2<2.0)) {
+    scale = 1.0;
+    return scale;
+  }
+
+  /* Get scaling for change of resolution */
+  scale = ((imDesc2->beamMaj) * (imDesc2->beamMin))/ ((*bmaj)*(*bmin));
+
+  return scale;
+} /* end ObitDConCleanGetXRestoreBeam */
 
 /**
  * Initialize global ClassInfo Structure.
@@ -1848,9 +2032,15 @@ void ObitDConCleanDecide (ObitDConClean* in, ObitErr *err)
     if (err->error) Obit_traceback_msg (err, routine, in->name);
     if (ObitDConCleanPxHistNumber(in->PixelHist, minFlux, err) < 
 	in->maxPixel) {  /* this fits */
+      if (minFlux>in->PixelHist->histMax) {
+	fprintf (stderr,"DEBUG bad minFlux %f peak %f  Number %d\n",  minFlux, 
+		 ObitDConCleanBmHistPeak (in->BeamHist, i, err), 
+		 ObitDConCleanPxHistNumber(in->PixelHist, minFlux, err));
+	continue;
+      }
       Patch = i;
       /* diagnostics */
-      if (in->prtLv>2) {
+      if (in->prtLv>0) {
 	Obit_log_error(err, OBIT_InfoErr, "%s field %d min %f Patch %d bmPeak %f pxMax %f",
 		       routine, in->currentFields[0], minFlux, Patch, 
 		       ObitDConCleanBmHistPeak (in->BeamHist, i, err), in->PixelHist->histMax);
@@ -1923,6 +2113,11 @@ void ObitDConCleanDecide (ObitDConClean* in, ObitErr *err)
   if ((in->numberSkip>=1) && (in->prtLv>0)) 
     Obit_log_error(err, OBIT_InfoWarn,"%s: Too many residuals, taking 1 of every  %d",
 		   routine, in->numberSkip+1);
+  /* DEBUG */
+  if (in->minFluxLoad>0.5) {
+    fprintf (stderr,"BAD DECIDE skip %d minPatch %d min %f max %f ccflim %f\n",
+	     in->numberSkip,minPatch, in->PixelHist->histMax, in->PixelHist->histMin, in->ccfLim);
+  }
 
 } /* end  ObitDConCleanDecide */
 
@@ -1937,7 +2132,6 @@ void ObitDConCleanDecide (ObitDConClean* in, ObitErr *err)
  */
 void ReadBP (ObitDConClean* in, ObitErr *err)
 {
-  ObitIOCode retCode;
   ObitIOSize IOsize = OBIT_IO_byPlane;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   olong  blc[IM_MAXDIM], trc[IM_MAXDIM];
@@ -1976,18 +2170,21 @@ void ReadBP (ObitDConClean* in, ObitErr *err)
     dim[0] = IM_MAXDIM;
     for (j=0; j<IM_MAXDIM; j++) blc[j] = 1;
     for (j=0; j<IM_MAXDIM; j++) trc[j] = 0;
+    /* Select plane */
+    blc[2] = trc[2] = in->plane[0];
+    blc[3] = trc[3] = in->plane[1];
+    blc[4] = trc[4] = in->plane[2];
     ObitInfoListPut (Beam->info, "BLC", OBIT_long, dim, blc, err); 
     ObitInfoListPut (Beam->info, "TRC", OBIT_long, dim, trc, err); 
     dim[0] = 1;
     ObitInfoListPut (Beam->info, "IOBy", OBIT_long, dim, &IOsize, err);
     
-    retCode = ObitImageOpen (Beam, OBIT_IO_ReadOnly, err);
+    ObitImageOpen (Beam, OBIT_IO_ReadOnly, err);
     if (err->error) Obit_traceback_msg (err, routine, Beam->name);
     
-    retCode = ObitImageRead (Beam, Beam->image->array, err);
+    ObitImageRead (Beam, Beam->image->array, err);
     if (err->error) Obit_traceback_msg (err, routine, Beam->name);
-    
-    /* Compute region of image to take */
+        /* Compute region of image to take */
     /* Center pixel - make 0-rel */
     nx = Beam->myDesc->inaxes[0];
     ny = Beam->myDesc->inaxes[1];
@@ -2031,7 +2228,7 @@ void ReadBP (ObitDConClean* in, ObitErr *err)
     in->BeamPatches[field-1] = ObitFArraySubArr(Beam->image, ablc, atrc, err);
     if (err->error) Obit_traceback_msg (err, routine, Beam->name);
     
-    retCode = ObitImageClose (Beam, err);
+    ObitImageClose (Beam, err);
     if (err->error) Obit_traceback_msg (err, routine, Beam->name);
     
     /* Free Image array? */
@@ -2053,7 +2250,7 @@ static void GaussTaper (ObitCArray* uvGrid, ObitImageDesc *imDesc,
   ofloat dU, dV, UU, VV, texp;
   ofloat konst, xmaj, xmin, cpa, spa, b1, b2, b3, bb2, bb3;
   ofloat taper, norm, *grid, tx, ty;
-  olong i, j, nx, ny, ndim, naxis[2];
+  olong i, j, nx, ny, naxis[2];
 
   /* Image info - descriptor should still be valid */
   nx = imDesc->inaxes[imDesc->jlocr];
@@ -2080,7 +2277,7 @@ static void GaussTaper (ObitCArray* uvGrid, ObitImageDesc *imDesc,
   b3 = - 2.0 * spa * cpa * (xmaj*xmaj - xmin*xmin);
   
   /* pointer to complex grid */
-  ndim = 2; naxis[0] = 0; naxis[1] = 0; 
+  naxis[0] = 0; naxis[1] = 0; 
   grid = ObitCArrayIndex(uvGrid, naxis);
   
   /* loop over uv array */  
@@ -2105,6 +2302,7 @@ static void GaussTaper (ObitCArray* uvGrid, ObitImageDesc *imDesc,
 
 /**
  * Get image statistics for portion of an image in a thread
+ * Allows blanked images
  * \param arg Pointer to StatsFuncArg argument with elements:
  * \li inData   ObitFArray with input plane pixel data
  * \li window   Clean Window
@@ -2128,8 +2326,8 @@ static gpointer ThreadImageStats (gpointer args)
   ObitErr    *err       = largs->err;
   ObitThread *thread    = largs->thread;
   /* local */
-  olong ix, iy, nx, ny, count, pos[2];
-  ofloat *data, tmax, tmax2, sum, sum2;
+  olong ix, iy, nx, count, pos[2];
+  ofloat *data, tmax, tmax2, sum, sum2, fblank = ObitMagicF();
   gboolean *umask=NULL, *mask=NULL, *innerMask=NULL, isUnbox;
   /*gchar *routine = "ThreadImageStats";*/
 
@@ -2139,7 +2337,6 @@ static gpointer ThreadImageStats (gpointer args)
 
   /* init */
   nx = inData->naxis[0];
-  ny = inData->naxis[1];
   count = 0;
   sum   = 0.0;
   sum2  = 0.0;
@@ -2154,7 +2351,7 @@ static gpointer ThreadImageStats (gpointer args)
       if (ObitDConCleanWindowOuterRow(window, field, iy+1, &mask, err)) {
 	if (isUnbox) {
 	  for (ix=0; ix<nx; ix++) {
-	    if (mask[ix] && (!umask[ix])) {
+	    if (mask[ix] && (!umask[ix]) && (data[ix]!=fblank)) {
 	      count++;
 	      sum  += data[ix];
 	      sum2 += data[ix]*data[ix];
@@ -2163,14 +2360,14 @@ static gpointer ThreadImageStats (gpointer args)
 	  } /* end loop over columns - now inner window */
 	  if (ObitDConCleanWindowInnerRow(window, field, iy+1, &innerMask, err)) {
 	    for (ix=0; ix<nx; ix++) {
-	      if (innerMask[ix] && (!umask[ix])) {
+	      if (innerMask[ix] && (!umask[ix]) && (data[ix]!=fblank)) {
 		tmax2 = MAX (tmax2, fabs(data[ix]));
 	      }
 	    }
 	  } /* End if inner window */
 	} else { /* no unboxes */
 	  for (ix=0; ix<nx; ix++) {
-	    if (mask[ix]) {
+	    if (mask[ix] && (data[ix]!=fblank)) {
 	      count++;
 	      sum  += data[ix];
 	      sum2 += data[ix]*data[ix];
@@ -2180,17 +2377,20 @@ static gpointer ThreadImageStats (gpointer args)
 	  /* get inner max */
 	  if (ObitDConCleanWindowInnerRow(window, field, iy+1, &innerMask, err)) {
 	    for (ix=0; ix<nx; ix++) {
-	      if (innerMask[ix]) tmax2 = MAX (tmax2, fabs(data[ix]));
+	      if (innerMask[ix] && (data[ix]!=fblank)) 
+		tmax2 = MAX (tmax2, fabs(data[ix]));
 	    }
 	  } /* End if inner window */
 	} /* end no unboxes */
       }
     } else { /* No - no window - do everything */
       for (ix=0; ix<nx; ix++) {
-	count++;
-	sum  += data[ix];
-	sum2 += data[ix]*data[ix];
-	tmax  = MAX (tmax, fabs(data[ix]));
+	if  (data[ix]!=fblank) {
+	  count++;
+	  sum  += data[ix];
+	  sum2 += data[ix]*data[ix];
+	  tmax  = MAX (tmax, fabs(data[ix]));
+	}
       }
       tmax2 = tmax;
     }
@@ -2275,3 +2475,115 @@ static void KillStatsFuncArgs (olong nargs, StatsFuncArg **ThreadArgs)
   }
   g_free(ThreadArgs);
 } /*  end KillStatsFuncArgs */
+
+gboolean hmsra(olong h, olong m, ofloat s, odouble *ra)
+/* convert RA in hours min and seconds to degrees*/
+/* returns TRUE if in 0-24 hours else FALSE */
+{
+ *ra = h + m/60.0 + s/3600.0;
+ *ra = *ra * 15.0;
+ if (*ra<0.0) return FALSE;
+ if (*ra>360.0) return FALSE;
+ return TRUE;
+ } /* End of hmsra */
+
+gboolean dmsdec(olong d, olong m, ofloat s, odouble *dec)
+/* convert dec in degrees, min, sec  to degrees*/
+/* Note: this is also used for longitudes */
+/* returns TRUE if in range +/-360 else FALSE */
+{
+ olong absdec = d;
+ if (absdec<0) absdec = -absdec;
+ *dec = absdec + m/60.0 + s/3600.0;
+ if (d<0) *dec = -(*dec);
+ if (*dec<-360.0) return FALSE;
+ if (*dec>360.0) return FALSE;
+ return TRUE;
+} /* End of dmsdec */
+
+/**
+ * Add Clean Windows from CLEANFile 
+ * \param in    The CLEAN object, info may have CLEAN Boxes:
+ * \param Cfile Name of file with list of positions/sizes in form
+ *              hh mm ss.s dd mm ss.s radius
+ *              where radius is radius of round box in pixels,
+ *              negative radius -> unbox
+ * \param err   Obit error stack object.
+ */
+static void AddCleanFileWindow(ObitDConClean *in, gchar *Cfile, ObitErr *err)
+{
+  ObitFile *Cf=NULL;
+  ObitIOCode retCode;
+  gchar line[201];
+  olong i, h, d, rm, dm, iNumRead, iRad, cnt = 0;
+  ofloat rs, ds, dx, dy, dist, pixel[2];
+  odouble pos[2];
+  gboolean negDec, bad=FALSE;
+  olong field, sfield = 1, window[4];
+  ObitDConCleanWindowType type;
+  gchar *routine = "ObitDConClean:AddCleanFileWindow";
+
+  /* error checks */
+  if (err->error) return;
+  if (Cfile==NULL) return;
+  ObitTrimTrail (Cfile);
+  if (!ObitFileExist(Cfile, err)) return;
+
+  /* Open */
+  Cf = newObitFile("pos");
+  retCode = ObitFileOpen (Cf, Cfile, OBIT_IO_ReadOnly, OBIT_IO_Text, 0, err);
+  window[3] = 0;
+  /* Loop over file */
+  while (retCode==OBIT_IO_OK) {
+    retCode = ObitFileReadLine (Cf, line, 200, err);
+    if (retCode!=OBIT_IO_OK)  break;
+    /* Parse */
+    iNumRead = sscanf (line, "%d %d %f %d %d %f %d", 
+		       &h, &rm, &rs, &d, &dm, &ds, &iRad);
+    bad = iNumRead<7;  /* Read what expected? */
+    bad = bad || !hmsra(h, rm, rs, &pos[0]);
+    bad = bad || !dmsdec(d, dm, ds, &pos[1]);
+    bad = bad || (abs(iRad>50));
+    if (bad) {
+      Obit_log_error(err, OBIT_InfoWarn,"%s: BAD CLEAN File entry %s",routine, line);
+      continue;
+    }
+    /* Look for negative dec sign */
+    negDec = FALSE;
+    for (i=0; i<strlen(line); i++) {
+      if (line[i]=='-') {negDec = TRUE; break;}
+    }
+    if (negDec) pos[1] = -fabs(pos[1]);
+
+    /* Loop over images in mosaic */
+    if (iRad>0) { /* Box */
+      type = OBIT_DConCleanWindow_round;
+      window[0] = iRad;
+    } else {   /* Unbox */
+      type = OBIT_DConCleanWindow_unround;
+      window[0] = -iRad;
+    }
+    for (field=sfield; field<=in->mosaic->numberImages; field++) {
+      if (in->mosaic->inFlysEye[field-1]) {
+	/* Get pixel location */
+ 	ObitImageDescGetPixel(in->mosaic->images[field-1]->myDesc, pos, pixel, err);
+	/* Ignore error and continue */
+	if (err->error) {ObitErrClear(err); continue;}
+	/* Is this within outer box */
+	dx = pixel[0] - in->mosaic->images[field-1]->myDesc->inaxes[0]/2.;
+	dy = pixel[1] - in->mosaic->images[field-1]->myDesc->inaxes[1]/2.;
+	dist = sqrt(dx*dx + dy*dy);
+	if (dist<in->mosaic->Radius) {
+	  cnt++;
+	  window[1] = (olong)(pixel[0]+0.5);
+	  window[2] = (olong)(pixel[1]+0.5);
+	  ObitDConCleanWindowAdd (in->window, field, type, window, err);
+	}
+	if (err->error) Obit_traceback_msg (err, routine, in->name);
+      } /* End if in Fly's eye */
+    } /* end loop over facets */
+  } /* end loop over file */
+  /* Tell about it */
+  Obit_log_error(err, OBIT_InfoErr,"Added %d windows from %s", cnt,Cfile);
+
+} /* end AddCleanFileWindow */

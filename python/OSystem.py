@@ -1,6 +1,6 @@
-# $Id: OSystem.py 16 2008-08-15 14:13:27Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2004-2008
+#  Copyright (C) 2004-2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -27,24 +27,10 @@
 #-----------------------------------------------------------------------
 
 # Python shadow class to ObitSystem class
-import Obit
+from __future__ import absolute_import
+import Obit, _Obit
 
-# I don't exist until created
-#ObitSys = None
-#
-
-class OSystemPtr :
-    def __init__(self,this):
-        self.this = this
-    def __setattr__(self,name,value):
-        self.__dict__[name] = value
-    def __getattr__(self,name):
-        if name == "me" :
-            return Obit.OSystem_me_get(self.this)
-        raise AttributeError,name
-    def __repr__(self):
-        return "<C OSystem instance>"
-class OSystem(OSystemPtr):
+class OSystem(Obit.OSystem):
     """ Obit System Object class
 
     An Obit system is needed to access persistent forms of data objects.
@@ -81,11 +67,12 @@ class OSystem(OSystemPtr):
     """
     def __init__(self,pgmName, pgmNumber, AIPSuser,
                  numberAIPSdisk, AIPSdir, numberFITSdisk, FITSdir,
-                 F_TRUE, F_FALSE, err) :
-        self.this = Obit.new_OSystem(pgmName, pgmNumber, AIPSuser,
-                                     numberAIPSdisk, AIPSdir,
-                                     numberFITSdisk, FITSdir,
-                                     F_TRUE, F_FALSE, err.me)
+                 F_TRUE, F_FALSE, err):
+        super(OSystem, self).__init__()
+        Obit.CreateOSystem(self.this, pgmName, pgmNumber, AIPSuser,
+                          numberAIPSdisk, AIPSdir,
+                          numberFITSdisk, FITSdir,
+                          F_TRUE, F_FALSE, err.me)
         if err.isErr:
             printErrMsg(err, "Error in Obit initialization")
         # save info visible to python
@@ -93,21 +80,30 @@ class OSystem(OSystemPtr):
         self.pgmNumber = pgmNumber
         # Rember who I am - can be only one
         OSystem.ObitSys = self
-    def __del__(self):
+    def __del__(self, DeleteOSystem=_Obit.DeleteOSystem):
         # Better not shutdown?
-        if Obit!=None and self!=None:
-            Obit.delete_OSystem(self.this)
+        if _Obit!=None and self!=None:
+            DeleteOSystem(self.this)
+    def __setattr__(self,name,value):
+        self.__dict__[name] = value
+    def __getattr__(self,name):
+        if name == "me" :
+            return Obit.OSystem_Get_me(self.this)
+        raise AttributeError(name)
+    def __repr__(self):
+        return "<C OSystem instance>"
     # End class definitions
 
         
 def Shutdown (inObj=None):
-    """ Shuts down Obit in all known IO related modules
+    """
+    Shuts down Obit in all known IO related modules
 
-    inObj   = Python Obit System object, defaults to OSystem.ObitSys
+    * inObj   = Python Obit System object, defaults to OSystem.ObitSys
     """
     ################################################################
     #  Use default if none given
-    if inObj.__class__ != OSystem:
+    if not isinstance(inObj, OSystem):
         obj = OSystem.ObitSys
     else:
         obj = inObj
@@ -116,8 +112,9 @@ def Shutdown (inObj=None):
     # end Shutdown
 
 def PIsInit ():
-    """ Tells if Obit initialized
-
+    """
+    Tells if Obit initialized
+    
     returns True if Obit initialized else False
     """
     ################################################################
@@ -126,8 +123,9 @@ def PIsInit ():
     # end PIsInit
 
 def PGetAIPSuser ():
-    """ Tells AIPS user number
-
+    """
+    Tells AIPS user number
+    
     returns AIPS user number
     """
     ################################################################
@@ -135,17 +133,19 @@ def PGetAIPSuser ():
     # end PGetAIPSuser
 
 def PSetAIPSuser (user):
-    """ Sets  AIPS user number
+    """
+    Sets  AIPS user number
 
-    user = AIPS user number
+    * user = AIPS user number
     """
     ################################################################
     Obit.SystemSetAIPSuser(user)
     # end PSetAIPSuser
 
 def PGetPgmName ():
-    """ Tells Program name 
-
+    """
+    Tells Program name 
+    
     returns name as character string
     """
     ################################################################
@@ -153,8 +153,9 @@ def PGetPgmName ():
     # end PGetPgmName
 
 def PToday ():
-    """ Get today's date in string suitable for descriptors
-
+    """
+    Get today's date in string suitable for descriptors
+    
     returns date as character string
     """
     ################################################################
@@ -162,17 +163,19 @@ def PToday ():
     # end PToday
 
 def PSetPgmName (pgmName):
-    """ Sets Program name
+    """
+    Sets Program name
 
-    pgmName = new program name
+    * pgmName = new program name
     """
     ################################################################
     Obit.SystemSetPgmName(pgmName)
     # end PSetPgmName
 
 def PGetPgmNumber ():
-    """ Tells Program number 
-
+    """
+    Tells Program number 
+    
     returns number
     """
     ################################################################
@@ -180,16 +183,18 @@ def PGetPgmNumber ():
     # end PGetPgmNumber
 
 def PSetPgmNumber (pgmNumber):
-    """ Sets Program number
+    """
+    Sets Program number
 
-    pgmNumber = new program number
+    * pgmNumber = new program number
     """
     ################################################################
     Obit.SystemSetPgmNumber(pgmNumber)
     # end PSetPgmNumber
 
 def PMemPrint ():
-    """ Prints contents of Obit Memory allocation on stdout
+    """
+    Prints contents of Obit Memory allocation on stdout
     """
     ################################################################
     #
@@ -197,7 +202,8 @@ def PMemPrint ():
     # end PMemPrint
 
 def PAllowThreads (nThreads):
-    """ Sets maximum number of threads in an Obit thread pool
+    """
+    Sets maximum number of threads in an Obit thread pool
     
     nThreads maximum number of threads in an Obit thread pool
     """
@@ -206,8 +212,9 @@ def PAllowThreads (nThreads):
     # end PAllowThreads
 
 def PGetNoThreads ():
-    """ Tells Number of Threads enabled in Obit
-
+    """
+    Tells Number of Threads enabled in Obit
+    
     returns number
     """
     ################################################################

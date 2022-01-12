@@ -1,6 +1,6 @@
-/* $Id: ObitInfoElem.c 2 2008-06-10 15:32:27Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2008                                          */
+/*;  Copyright (C) 2002-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -82,6 +82,9 @@ ObitInfoElem* ObitInfoElemCopy (ObitInfoElem *in)
   olong i;
   gchar *name;
  
+  /* error checks */
+  g_assert (in->iname != NULL);
+
   name =  g_strconcat ("IElem:", in->iname, NULL);
   out =  ObitMemAlloc0Name(sizeof(ObitInfoElem), name);
   g_free(name);
@@ -171,12 +174,13 @@ gboolean ObitInfoElemComp (ObitInfoElem *me, ObitInfoType type,
  * \return TRUE if OK, FALSE if object incompatable with request.
  */
 gboolean ObitInfoElemUpdate (ObitInfoElem *me, gint32 type, 
-			 gint32 *dim, gconstpointer data, gboolean warn)
+			     gint32 *dim, gconstpointer data, gboolean warn)
 { 
   gboolean OK=FALSE;
 
- /* error checks */
+  /* error checks */
   g_assert (me != NULL);
+  g_assert (me->iname != NULL);
   g_assert (dim != NULL);
   g_assert (data != NULL);
 
@@ -211,6 +215,7 @@ void ObitInfoElemSave (ObitInfoElem *me, gconstpointer data)
 
   /* error checks */
   g_assert (me != NULL);
+  g_assert (me->iname != NULL);
   g_assert (data != NULL);
    
   /* Strings are (always) different - an extra byte is allocated for final NULL */
@@ -259,6 +264,10 @@ void ObitInfoElemResize  (ObitInfoElem *me, ObitInfoType type,
   gint32 i, size; 
   gchar *name;
   
+  /* Error check */
+  g_assert (me != NULL);
+  g_assert (me->iname != NULL);
+
   me->itype = type; /* reset type */
 
   for (i=0; i<MAXINFOELEMDIM; i++)
@@ -308,6 +317,9 @@ olong ObitInfoElemSize  (ObitInfoType type, gint32 *dim)
       break;
     case OBIT_long:
       size = sizeof(olong);
+      break;
+    case OBIT_llong:
+      size = sizeof(ollong);
       break;
     case OBIT_ubyte:
       size = sizeof(guint8);
@@ -362,13 +374,15 @@ olong ObitInfoElemSize  (ObitInfoType type, gint32 *dim)
  */
 void  ObitInfoElemPrint(ObitInfoElem *me, FILE *file)
 {
+  /* Should match order of enum obitInfoType in ObitTypes.h */
   gchar *infoType[] = {"byte", "short", "int", "oint", "long",  
-		       "ubyte", "ushort", "uint", "ulong", 
+		       "ubyte", "ushort", "uint", "ulong", "llong",
 		       "float", "double", "complex", "dcomplex",
 		       "string", "bool", "bits"};
   olong        *ldata, i, j, more, indx, ltemp, lstr, size;
+  ollong       *lldata, lltemp;
   gboolean     *bdata;
-  olong         *idata;
+  olong        *idata;
   oint         *odata;
   ofloat       *fdata;
   odouble      *ddata;
@@ -424,6 +438,24 @@ void  ObitInfoElemPrint(ObitInfoElem *me, FILE *file)
       for (j=0; j<20; j++) {
 	ltemp = (olong)(*ldata++);
 	g_snprintf (&line[indx], 80-indx, " %d ", ltemp);
+	indx = strlen (line);
+	more--;                    /* finished? */
+	if (more<=0) break;
+	if (indx>60) break;        /* Line full? */
+      }
+      fprintf (file, "%s\n", line);
+      g_snprintf (line, 80, "    ");
+      indx = strlen (line);
+    }
+    break;
+    
+  case OBIT_llong:
+    lldata = (ollong*)me->data;
+    more = size;
+    while (more>0) {
+      for (j=0; j<20; j++) {
+	lltemp = (ollong)(*lldata++);
+	g_snprintf (&line[indx], 80-indx, " %ld ", (long)lltemp);
 	indx = strlen (line);
 	more--;                    /* finished? */
 	if (more<=0) break;

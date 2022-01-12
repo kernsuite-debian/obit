@@ -1,4 +1,4 @@
-/* $Id: ObitFeatherUtil.h 2 2008-06-10 15:32:27Z bill.cotton $   */
+/* $Id$   */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2005-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

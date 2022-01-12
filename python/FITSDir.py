@@ -1,8 +1,8 @@
 """ Python Obit FITS file directory utilities
 """
-# $Id: FITSDir.py 47 2008-11-03 20:06:40Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2006
+#  Copyright (C) 2006,2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -29,7 +29,9 @@
 #-----------------------------------------------------------------------
 
 # Python interface to FITS directory utilities
+from __future__ import absolute_import
 import Obit, OSystem, OErr, os, pydoc, string
+from six.moves import range
 
 global FITSdisks, nFITS
 FITSdisks = []
@@ -55,11 +57,12 @@ else:
 
         
 def PListDir(disk, dir=None):
-    """ List files in FITS directory
+    """
+    List files in FITS directory
 
-    disk     = FITS disk number, <=0 -> current directory
-    dir       = relative or abs. path of directory, def. = cwd
-                Only used if disk == 0
+    * disk = FITS disk number, <=0 -> current directory
+    * dir  = relative or abs. path of directory, def. = cwd
+      Only used if disk == 0
     """
     ################################################################
     if disk>0:
@@ -80,18 +83,20 @@ def PListDir(disk, dir=None):
     # end PListDir
 
 def PAddDir(newDir, err, URL=None):
-    """ Add a new FITS directory
-
+    """
+    Add a new FITS directory
+    
     returns FITS disk number
-    newDir   = new directory path
-    err      = Python Obit Error/message stack
-    URL      = URL if on a remote host (Only if using OTObit/ParselTongue)
+
+    * newDir   = new directory path
+    * err      = Python Obit Error/message stack
+    * URL      = URL if on a remote host (Only if using OTObit/ParselTongue)
     """
     ################################################################
     global FITSdisks, nFITS
     # Checks
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     retDisk = Obit.FITSAddDir(newDir, err.me)
     FITSdisks.append(newDir)
@@ -111,18 +116,20 @@ def PAddDir(newDir, err, URL=None):
 
 
 def PSetDir(newDir, disk, err, URL=None):
-    """ replace FITS directory
-
+    """
+    replace FITS directory
+    
     returns FITS disk number
-    newDir   = new directory path
-    err      = Python Obit Error/message stack
-    URL      = URL if on a remote host (Only if using OTObit/ParselTongue)
+
+    * newDir   = new directory path
+    * err      = Python Obit Error/message stack
+    * URL      = URL if on a remote host (Only if using OTObit/ParselTongue)
     """
     ################################################################
     global FITSdisks, nFITS
     # Checks
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     retDisk = Obit.FITSSetDir(newDir, disk, err.me)
     FITSdisks[disk] = newDir
@@ -141,11 +148,12 @@ def PSetDir(newDir, disk, err, URL=None):
 
 
 def PGetDir(disk, dir=None):
-    """ Returns list of files in FITS directory
+    """
+    Returns list of files in FITS directory
 
-    disk     = FITS disk number <=0 -> current directory
-    dir       = relative or abs. path of directory, def. = cwd
-                Only used if disk == 0
+    * disk = FITS disk number <=0 -> current directory
+    * dir  = relative or abs. path of directory, def. = cwd
+      Only used if disk == 0
     """
     ################################################################
     if disk>0:
@@ -159,11 +167,13 @@ def PGetDir(disk, dir=None):
 
 
 def PExist(file, disk, err):
-    """ Tests if FITS file exists
-
+    """
+    Tests if FITS file exists
+    
     return True if exists, else False
-    file     = FITS file name
-    disk     = FITS disk number
+
+    * file     = FITS file name
+    * disk     = FITS disk number
     """
     ################################################################
     exist = Obit.FITSFileExist(disk, file, err.me)

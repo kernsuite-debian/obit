@@ -1,4 +1,4 @@
-; $Id: HGeom.TDF 199 2010-06-15 11:39:58Z bill.cotton $
+; $Id$
 ; HGeom
 ;---------------------------------------------------------------
 ;! interpolates image to different gridding and/or geometry

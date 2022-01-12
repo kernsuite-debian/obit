@@ -3,7 +3,7 @@
 ;!  Obit Radio interferometry software
 ;# Task Obit UV Calibration
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2007-2010
+;;  Copyright (C) 2007-2015
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -48,9 +48,11 @@ Sources                            Source list
 **PARAM** int 1 **DEF** -1
 Qual             -1.0              Source qualifier -1=>all
 **PARAM** str 4
-calCode                            Calibrator code '    '=>all
+souCode                            Calibrator code '    '=>all
 **PARAM** float 2
 timeRange                          Time range to copy
+**PARAM** float 2
+UVRange         0.                 Min & max baseline (klambda)
 **PARAM** str 4
 Stokes                             Stokes type to pass.
 **PARAM** int 1 **DEF** -1
@@ -60,9 +62,9 @@ BIF               0.0      100.0   Lowest IF number 0=>all
 **PARAM** int 1
 EIF               0.0      100.0   Highest IF number 0=>all
 **PARAM** int 1 **DEF** 1
-BChan             0.0     2048.0   Lowest channel number 0=>all
+BChan             0.0    65536.0   Lowest channel number 0=>all
 **PARAM** int 1
-EChan             0.0     2048.0   Highest channel number
+EChan             0.0    65536.0   Highest channel number
 **PARAM** int 1
 subA          0.0     1000.0       Subarray, 0=>all
 **PARAM** int 1
@@ -72,6 +74,9 @@ doCalib          -1.0        2.0   If >0 calibrate data
 gainUse                            CL (or SN) table to apply
 **PARAM** boo 1 **DEF** F
 doPol            -1.0       10.0   If >0 correct polarization.
+**PARAM** int 1 **DEF** 1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
 **PARAM** int 1
 flagVer                            Flag table version
 **PARAM** int 1
@@ -119,11 +124,13 @@ ChanSel                            Array of channel start, stop,
 dropSubA                           Drop Subarray info?
 **PARAM** boo 1 
 doCalWt                            Calibrate weights?
-**PARAM** int 1
+**PARAM** int 1  **DEF** 1
 corrType                           Cross or auto correlations
                                      0 pass only xc data
                                      1 pass xc and ac data
                                      2 pass only ac data
+**PARAM** int 1 **DEF** 1
+nThreads            1               Number of threads to use
 **PARAM** str 128
 taskLog                            Logfile to write task messages to
 ----------------------------------------------------------------
@@ -154,18 +161,19 @@ Adverbs:
              all qualifiers will be written.  These qualifiers will be
              written to separate output files.  Note that outSeq must be
              zero in this case.
-  calCode....Sources may be selected on the basis of the calibrator code
+  souCode....Sources may be selected on the basis of the calibrator code
              given in the SU table.
                   '    ' => any calibrator code selected
                   '*   ' => any non blank code (cal. only)
                   '-CAL' => blank codes only (no calibrators)
                   anything else = calibrator code to select.
-             NB: The calCode test is applied in addition to the other
+             NB: The souCode test is applied in addition to the other
              tests, i.e. Sources and Qual, in the selection of sources to
              process.
   timeRange..Time range of the data to be copied. In order:
              Start and end times in days relative to ref.date.  
              Use  dhms2day to convert from human readable form
+  UVRange....(Minimum,Maximum) baseline (kilo-lambda) to process. 
   Stokes.....The desired Stokes type of the output data:
              'I','V','Q','U','IQU','IQUV','IV','RR','LL','RL',
              'LR','HALF' (=RR,LL), 'FULL' (=RR,LL,RL,LR)
@@ -192,9 +200,11 @@ Adverbs:
              files or the SN table for single-source files.
              0 => highest.
   doPol......If > 0 then correct data for instrumental polarization as
-             represented in the AN table.  This correction is only
-             useful if PCAL has been run or feed polarization parameters
-             have been otherwise obtained. 
+             This correction is only useful if PCAL has been run or 
+             feed polarization parameters have been otherwise obtained. 
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   flagVer....specifies the version of the flagging table to be applied.
              0 => highest numbered table. <0 => no flagging to be
              applied.
@@ -309,9 +319,14 @@ Adverbs:
              If corr=1 then both cross-power and total-power data 
              will be passed; 
              if corr=2 then only total-power data will be passed.
+  nThreads...If the Obit libraries are compiled with multiple
+             thread operation enabled, this parameter sets the 
+             number of threads that can be used for parallel 
+             operations. 
+             NB: This only improves performance if there are 
+             multiple processors and/or cores in the host.
   taskLog....Log file to write messages to INSTEAD of the terminal
-             This is useful in long runs or batch files where
-             a bug in the ObitTalk message handling may cause
-             tasks to hang.  Path is absolute or relative to where
-             the task executes.
+             This is useful in long runs or batch files.
+             Path is absolute or relative to where the task 
+             executes.
 ----------------------------------------------------------------

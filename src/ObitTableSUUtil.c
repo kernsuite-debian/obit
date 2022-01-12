@@ -1,6 +1,6 @@
-/* $Id: ObitTableSUUtil.c 149 2010-01-01 18:31:02Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -27,6 +27,7 @@
 /*--------------------------------------------------------------------*/
 
 #include "ObitTableSUUtil.h"
+#include "ObitPrecess.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -64,8 +65,8 @@ ObitIOCode ObitTableSULookup (ObitTableSU *in, gint32 *dim, gchar *inlist,
 {
   ObitIOCode retCode = OBIT_IO_SpecErr;
   ObitTableSURow *row;
-  olong i, j, l, maxNum, ncheck, *cross;
-  gboolean select, gotSome, want, match;
+  olong i, j, l, maxNum, ncheck, *cross, size;
+  gboolean select, gotSome=FALSE, someBad=FALSE, want, match, noCal;
   gchar tempName[101], temp2Name[101]; /* should always be big enough */
   gchar *routine = "ObitTableSULookup";
 
@@ -91,8 +92,10 @@ ObitIOCode ObitTableSULookup (ObitTableSU *in, gint32 *dim, gchar *inlist,
   row = newObitTableSURow (in);
 
   /* Cross list of sources */
-  cross = g_malloc0(maxNum*sizeof(olong));
-  for (i=0; i<MIN (maxNum,dim[1]); i++) cross[i] = -1;
+  size  = MIN (maxNum,dim[1]);
+  size  = MAX (size, in->myDesc->nrow);
+  cross = g_malloc0((size+5)*sizeof(olong));
+  for (i=0; i<size; i++) cross[i] = -1;
 
   /* loop over table */
   while (retCode==OBIT_IO_OK) {
@@ -175,29 +178,34 @@ ObitIOCode ObitTableSULookup (ObitTableSU *in, gint32 *dim, gchar *inlist,
     Obit_traceback_val (err, routine,in->name, retCode);
   }
 
-  /* Be sure all nonblank entries found else issue warning */
-  gotSome = FALSE;  /* Any matches */
-  for (i=0; i<dim[1]; i++) {
-    gotSome = gotSome || (outlist[i]>=0);
-    if (cross[i]<0) {/* Not found */
-      /* get name from list */
-      for (j=0; j<dim[0]; j++) tempName[j] = inlist[i*dim[0]+j]; tempName[j] = 0;
-      /* Have an initial '-'? */
-      if (tempName[0]=='-') for (j=0; j<dim[0]; j++) tempName[j]= tempName[j+1]; /* remove '-' */
-
-      /* all blank is OK */
-      if (strncmp(tempName, "                ", dim[0])) {
-	ObitTrimTrail(tempName);
-	Obit_log_error(err, OBIT_InfoWarn, 
-		       "%s: Source %s :%4.4d not found in source table or dup in list", 
-		       routine, tempName, Qual);
+  /* Be sure all nonblank entries found else issue warning - unless noCal */
+  noCal = !strncmp(souCode, "-CAL", 4); /* Non calibrators? */
+  if (!noCal) {
+    gotSome = FALSE;  /* Any matches */
+    for (i=0; i<dim[1]; i++) {
+      gotSome = gotSome || (outlist[i]>=0);
+      if (cross[i]<0) {/* Not found */
+	/* get name from list */
+	for (j=0; j<dim[0]; j++) tempName[j] = inlist[i*dim[0]+j]; tempName[j] = 0;
+	/* Have an initial '-'? */
+	if (tempName[0]=='-') for (j=0; j<dim[0]; j++) tempName[j]= tempName[j+1]; /* remove '-' */
+	
+	/* all blank is OK */
+	if (strncmp(tempName, "                ", dim[0])) {
+	  ObitTrimTrail(tempName);
+	  Obit_log_error(err, OBIT_Error, 
+			 "Source %s :%4.4d code %s not found in source table or dup in list", 
+			 tempName, Qual, souCode);
+	  someBad = TRUE;
+	}
       }
     }
-  }
-
+  } /* end if not no cal */
   /* Anything selected? */
-  if (!gotSome) *xselect = FALSE;
+  if ((!gotSome) && !noCal) *xselect = FALSE;
   g_free(cross);  /* Free */
+	
+  if (someBad) retCode = OBIT_IO_SpecErr;  /* Bad specification? */
 
   return retCode;
 } /* end ObitTableSULookup */
@@ -242,7 +250,7 @@ ObitSourceList* ObitTableSUGetList (ObitTableSU *in, ObitErr *err) {
       Obit_traceback_val (err, routine, in->name, out);
     
     maxSUid = MAX (maxSUid, row->SourID);
-    nsid++;
+    if (row->SourID>0) nsid++;
   } /* end loop over file */
   
   /* check for errors */
@@ -269,15 +277,26 @@ ObitSourceList* ObitTableSUGetList (ObitTableSU *in, ObitErr *err) {
     if (row->RAApp<0.0)    row->RAApp  += 360.0;
     if (row->RAApp>360.0)  row->RAApp  -= 360.0;
 
+    /* Check for corruption by GMRT */
+    if ((row->SourID==0) && (row->Qual==0) && (row->Epoch==0.0) && 
+	(row->RAMean==0.0)) continue;
+
     sid = row->SourID - 1;
     out->SUlist[sid]->SourID  = row->SourID;
     out->SUlist[sid]->Qual    = row->Qual;
     out->SUlist[sid]->numIF   = in->numIF;
     out->SUlist[sid]->equinox = row->Epoch;   /* correct AIPS misnaming */
     out->SUlist[sid]->RAMean  = row->RAMean;
+    /* Patch AIPS++ corruption */
+    if (out->SUlist[sid]->RAMean<0.0) out->SUlist[sid]->RAMean += 360.0;
     out->SUlist[sid]->DecMean = row->DecMean;
     out->SUlist[sid]->RAApp   = row->RAApp;
+    /* Patch AIPS++ corruption */
+    if (out->SUlist[sid]->RAApp<0.0) out->SUlist[sid]->RAApp += 360.0;
     out->SUlist[sid]->DecApp  = row->DecApp;
+    /* More Patch AIPS++ corruption */
+    if ((out->SUlist[sid]->RAApp==0.0) && (out->SUlist[sid]->DecApp==0.0))
+      ObitPrecessUVJPrecessApp (((ObitUV*)in->myHost)->myDesc, out->SUlist[sid]);
     out->SUlist[sid]->Bandwidth  = row->Bandwidth;
     strncpy (out->SUlist[sid]->SourceName, row->Source, 17);
     out->SUlist[sid]->SourceName[16] = 0;  /* to be sure */
@@ -353,6 +372,7 @@ ObitIOCode ObitTableSUSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   ObitIOCode retCode = OBIT_IO_SpecErr;
   ObitTableSU    *inTab=NULL, *outTab=NULL;
   ObitTableSURow *inRow=NULL, *outRow=NULL;
+  ObitSource *source=NULL;
   olong i, iif, oif;
   olong highSUver, iSUver, inSURow, outSURow;
   oint numIF;
@@ -438,10 +458,24 @@ ObitIOCode ObitTableSUSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
     outRow->Qual      = inRow->Qual;
     outRow->Bandwidth = inRow->Bandwidth;
     outRow->RAMean    = inRow->RAMean;
+    if (outRow->RAMean<0.0) outRow->RAMean += 360.0; /* Patch AIPS++ corruption */
     outRow->DecMean   = inRow->DecMean;
     outRow->Epoch     = inRow->Epoch;
     outRow->RAApp     = inRow->RAApp;
+    if (outRow->RAApp<0.0) outRow->RAApp += 360.0; /* Patch AIPS++ corruption */
     outRow->DecApp    = inRow->DecApp;
+    /* Patch AIPS++ bug */
+    if ((outRow->RAApp==0.0) && (outRow->DecApp==0.0)) {
+      source = newObitSource("Temp");
+      source->equinox = outUV->myDesc->equinox;
+      source->RAMean  = outUV->myDesc->crval[outUV->myDesc->jlocr];
+      source->DecMean = outUV->myDesc->crval[outUV->myDesc->jlocd];
+      /* Compute apparent position */
+      ObitPrecessUVJPrecessApp (outUV->myDesc, source);
+      outRow->RAApp  = source->RAApp;
+      outRow->DecApp = source->DecApp;
+      source = ObitSourceUnref(source);
+    }
     outRow->PMRa      = inRow->PMDec;
     for (i=0; i<inTab->myDesc->repeat[inTab->SourceCol]; i++) 
       outRow->Source[i] = inRow->Source[i];

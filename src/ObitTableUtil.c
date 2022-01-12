@@ -1,6 +1,6 @@
-/* $Id: ObitTableUtil.c 167 2010-03-19 14:33:04Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2010                                          */
+/*;  Copyright (C) 2004-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -28,6 +28,7 @@
 
 #include <math.h>
 #include <string.h>
+/*#include "glib/gqsort.h"*/
 #include "ObitTableUtil.h"
 #include "ObitImage.h"
 #include "ObitInfoElem.h"
@@ -140,7 +141,7 @@ ObitIOCode ObitTableUtilSort (ObitTable *in, gchar *colName, gboolean desc,
   g_assert (ObitErrIsA(err));
   if (err->error) return retCode;
   g_assert (ObitTableIsA(in));
-
+  
   /* Open table */
   retCode = ObitTableOpen (in, OBIT_IO_ReadWrite, err);
   if ((retCode != OBIT_IO_OK) || (err->error))
@@ -212,7 +213,7 @@ ObitIOCode ObitTableUtilSort (ObitTable *in, gchar *colName, gboolean desc,
   /* Reorder table */
   retCode = ReorderTable (in, SortStruct, size, number, colNo+1, 0, err);
   if ((retCode != OBIT_IO_OK) || (err->error)) goto cleanup;
-  
+ 
   /* Cleanup */
   cleanup: if (SortStruct) g_free(SortStruct);
   if (err->error) Obit_traceback_val (err, routine, in->name, retCode);
@@ -517,7 +518,8 @@ MakeSortStruct (ObitTable *in, olong which[2], gboolean desc,
   gpointer out = NULL;
   ObitTableRow *row;
   ObitSortStruct *entry;
-  olong irow, nrow, tsize, count, col, cell, byteOffset, i;
+  olong irow, nrow, ttsize, col, cell, byteOffset, i;
+  ollong tsize, count;
   ObitInfoType itype;
   gint32 dim[MAXINFOELEMDIM];
   /* Pointers for row data */
@@ -562,13 +564,23 @@ MakeSortStruct (ObitTable *in, olong which[2], gboolean desc,
 
   /* element size */
   dim[0] = 1; dim[1] = 1;dim[2] = 1;dim[3] = 1;dim[4] = 1;
-  /* string size - one element of everything else */
-  if (*type == OBIT_string) 
+  /* string size - one element of everything else 
+   64 bit OS does something wierd here */
+  ttsize = sizeof(ObitSortStruct);
+  if (*type == OBIT_string) {
     dim[0] = MIN(8,in->myDesc->dim[col][0]);
-  *size = sizeof(olong) + ObitInfoElemSize(*type, dim);
+    ttsize += dim[0];
+  }
+  *size = MAX ((sizeof(olong) + ObitInfoElemSize(*type, dim)), ttsize);
+
 
   /* Total size of structure in case all rows valid */
-  tsize = (*size) * (nrow+10);
+  tsize = (*size);
+  tsize *= (nrow+10);
+
+  /* If 32 bit check range */
+  Obit_retval_if_fail(((sizeof(olong*)>4) || (tsize<1000000000)), err, out, 
+		      "%s: Too many records to sort on 32 bit system", routine);
   out = g_malloc(tsize);   /* create output structure */
   
   /* Compare 1 except for strings */
@@ -657,8 +669,8 @@ MakeSortStruct (ObitTable *in, olong which[2], gboolean desc,
       break;
     case OBIT_ulong:
       ptrulong = (gulong*)(row->myRowData+byteOffset);
-      if (desc) entry->key.itg = -(olong)ptrlong[cell];
-      else entry->key.itg      =  (olong)ptrlong[cell];
+      if (desc) entry->key.itg = -(olong)ptrulong[cell];
+      else entry->key.itg      =  (olong)ptrulong[cell];
       break;
     case OBIT_complex:
     case OBIT_dcomplex:
@@ -734,7 +746,7 @@ MakeSortStruct2f (ObitTable *in, olong which[4], gboolean desc1,
   /* error checks */
   g_assert (ObitErrIsA(err));
   if (err->error) return out;
-  g_assert (ObitTableIsA(in));
+  g_assert (ObitTableIsA(in)); 
 
   /* Get table info */
   nrow = in->myDesc->nrow;
@@ -856,8 +868,8 @@ MakeSortStruct2f (ObitTable *in, olong which[4], gboolean desc1,
       break;
     case OBIT_ulong:
       ptrulong = (gulong*)(row->myRowData+byteOffset1);
-      if (desc1) entry->key.flt2[0] = -(ofloat)ptrlong[cell1];
-      else entry->key.flt2[0]       =  (ofloat)ptrlong[cell1];
+      if (desc1) entry->key.flt2[0] = -(ofloat)ptrulong[cell1];
+      else entry->key.flt2[0]       =  (ofloat)ptrulong[cell1];
       break;
     case OBIT_complex:
     case OBIT_dcomplex:
@@ -1327,7 +1339,8 @@ ReorderTable(ObitTable *in, gpointer base, olong size, olong number,
   ObitTableRow *row = NULL;
   ObitSortStruct *entry;
   ObitIOStatus saveStatus;
-  olong count, irow, orow, tabVer;
+  olong irow, orow, tabVer;
+  ollong count;
   gchar *routine = "ReorderTable";
 
   /* error checks */
@@ -1357,7 +1370,7 @@ ReorderTable(ObitTable *in, gpointer base, olong size, olong number,
   /* Clone input table */
   scrTable = ObitTableClone (in, scrTable);
  
- /* need independent descriptors */
+  /* need independent descriptors */
   scrTable->myDesc = ObitUnref(scrTable->myDesc); /* release old */
   scrTable->myDesc = ObitTableDescCopy(in->myDesc, scrTable->myDesc, err);
   if (err->error) goto cleanup;
@@ -1371,6 +1384,11 @@ ReorderTable(ObitTable *in, gpointer base, olong size, olong number,
 
   retCode = ObitTableOpen (scrTable, OBIT_IO_WriteOnly, err);
   if ((retCode != OBIT_IO_OK) || (err->error)) goto cleanup;
+
+  /* Attach row to output buffer */
+  ObitTableSetRow (scrTable, row, err);
+  if (err->error) goto cleanup;
+
   /* loop over table */
   irow = 0;
   count = 0;
@@ -1411,8 +1429,7 @@ ReorderTable(ObitTable *in, gpointer base, olong size, olong number,
 
   /* Cleanup */
   cleanup: row = ObitTableRowUnref (row); /* Release table row */
-  scrTable = ObitTableUnref(scrTable);
-  scrData  = ObitDataZap (scrData, err);
+  scrData = ObitDataZap (scrData, err);
   scrData = ObitDataUnref (scrData);
   if (err->error) Obit_traceback_val (err, routine, in->name, retCode);
  

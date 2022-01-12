@@ -627,6 +627,13 @@ am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
 GTHREAD_LIBS
+WVR_LIBS
+WVR_LDFLAGS
+WVR_CFLAGS
+PYTHON_LIBS
+PYTHON_LDFLAGS
+PYTHON_CPPFLAGS
+PYTHON
 PGPLOT_LIBS
 PGPLOT_LDFLAGS
 PGPLOT_CFLAGS
@@ -688,15 +695,6 @@ EGREP
 GREP
 CPP
 SWIG
-pkgpyexecdir
-pyexecdir
-pkgpythondir
-pythondir
-PYTHON_PLATFORM
-PYTHON_EXEC_PREFIX
-PYTHON_PREFIX
-PYTHON_VERSION
-PYTHON
 RANLIB
 am__fastdepCC_FALSE
 am__fastdepCC_TRUE
@@ -761,6 +759,7 @@ infodir
 docdir
 oldincludedir
 includedir
+runstatedir
 localstatedir
 sharedstatedir
 sysconfdir
@@ -802,6 +801,11 @@ with_zlib
 with_zlib_includes
 with_plplot
 with_x
+with_pgplot
+with_python
+with_python_includes
+with_wvr
+with_wvr_includes
 enable_largefile
 '
       ac_precious_vars='build_alias
@@ -812,7 +816,6 @@ CFLAGS
 LDFLAGS
 LIBS
 CPPFLAGS
-PYTHON
 CPP
 F77
 FFLAGS
@@ -855,6 +858,7 @@ datadir='${datarootdir}'
 sysconfdir='${prefix}/etc'
 sharedstatedir='${prefix}/com'
 localstatedir='${prefix}/var'
+runstatedir='${localstatedir}/run'
 includedir='${prefix}/include'
 oldincludedir='/usr/include'
 docdir='${datarootdir}/doc/${PACKAGE_TARNAME}'
@@ -1107,6 +1111,15 @@ do
   | -silent | --silent | --silen | --sile | --sil)
     silent=yes ;;
 
+  -runstatedir | --runstatedir | --runstatedi | --runstated \
+  | --runstate | --runstat | --runsta | --runst | --runs \
+  | --run | --ru | --r)
+    ac_prev=runstatedir ;;
+  -runstatedir=* | --runstatedir=* | --runstatedi=* | --runstated=* \
+  | --runstate=* | --runstat=* | --runsta=* | --runst=* | --runs=* \
+  | --run=* | --ru=* | --r=*)
+    runstatedir=$ac_optarg ;;
+
   -sbindir | --sbindir | --sbindi | --sbind | --sbin | --sbi | --sb)
     ac_prev=sbindir ;;
   -sbindir=* | --sbindir=* | --sbindi=* | --sbind=* | --sbin=* \
@@ -1244,7 +1257,7 @@ fi
 for ac_var in	exec_prefix prefix bindir sbindir libexecdir datarootdir \
 		datadir sysconfdir sharedstatedir localstatedir includedir \
 		oldincludedir docdir infodir htmldir dvidir pdfdir psdir \
-		libdir localedir mandir
+		libdir localedir mandir runstatedir
 do
   eval ac_val=\$$ac_var
   # Remove trailing slashes.
@@ -1397,6 +1410,7 @@ Fine tuning of the installation directories:
   --sysconfdir=DIR        read-only single-machine data [PREFIX/etc]
   --sharedstatedir=DIR    modifiable architecture-independent data [PREFIX/com]
   --localstatedir=DIR     modifiable single-machine data [PREFIX/var]
+  --runstatedir=DIR       modifiable per-process data [LOCALSTATEDIR/run]
   --libdir=DIR            object code libraries [EPREFIX/lib]
   --includedir=DIR        C header files [PREFIX/include]
   --oldincludedir=DIR     C header files for non-gcc [/usr/include]
@@ -1472,6 +1486,12 @@ Optional Packages:
                           search for ZLIB includes in DIR
   --with-plplot=DIR       search for PLPLOT in DIR
   --with-x                use the X Window System
+  --with-pgplot=DIR       search for PGPLOT in DIR
+  --with-python=DIR       search for PYTHON in DIR/include and DIR/lib
+  --with-python-includes=DIR
+                          search for PYTHON includes in DIR
+  --with-wvr=DIR          search for WVR in DIR/include and DIR/lib
+  --with-wvr-includes=DIR search for WVR includes in DIR
 
 Some influential environment variables:
   CC          C compiler command
@@ -1481,7 +1501,6 @@ Some influential environment variables:
   LIBS        libraries to pass to the linker, e.g. -l<library>
   CPPFLAGS    (Objective) C/C++ preprocessor flags, e.g. -I<include dir> if
               you have headers in a nonstandard directory <include dir>
-  PYTHON      the Python interpreter
   CPP         C preprocessor
   F77         Fortran 77 compiler command
   FFLAGS      Fortran 77 compiler flags
@@ -2973,7 +2992,6 @@ fi
 
 
 # Checks for programs.
-CFLAGS="-g -O3"
 ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
 ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
@@ -4105,267 +4123,7 @@ else
   RANLIB="$ac_cv_prog_RANLIB"
 fi
 
-
-
-
-
-
-
-        if test -n "$PYTHON"; then
-      # If the user set $PYTHON, use it and don't search something else.
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether $PYTHON version is >= 2.5" >&5
-$as_echo_n "checking whether $PYTHON version is >= 2.5... " >&6; }
-      prog="import sys
-# split strings by '.' and convert to numeric.  Append some zeros
-# because we need at least 4 digits for the hex conversion.
-# map returns an iterator in Python 3.0 and a list in 2.x
-minver = list(map(int, '2.5'.split('.'))) + [0, 0, 0]
-minverhex = 0
-# xrange is not present in Python 3.0 and range returns an iterator
-for i in list(range(0, 4)): minverhex = (minverhex << 8) + minver[i]
-sys.exit(sys.hexversion < minverhex)"
-  if { echo "$as_me:$LINENO: $PYTHON -c "$prog"" >&5
-   ($PYTHON -c "$prog") >&5 2>&5
-   ac_status=$?
-   echo "$as_me:$LINENO: \$? = $ac_status" >&5
-   (exit $ac_status); }; then :
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-$as_echo "yes" >&6; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-			       as_fn_error $? "Python interpreter is too old" "$LINENO" 5
-fi
-      am_display_PYTHON=$PYTHON
-    else
-      # Otherwise, try each interpreter until we find one that satisfies
-      # VERSION.
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for a Python interpreter with version >= 2.5" >&5
-$as_echo_n "checking for a Python interpreter with version >= 2.5... " >&6; }
-if ${am_cv_pathless_PYTHON+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-
-	for am_cv_pathless_PYTHON in python python2 python3 python3.3 python3.2 python3.1 python3.0 python2.7  python2.6 python2.5 python2.4 python2.3 python2.2 python2.1 python2.0 none; do
-	  test "$am_cv_pathless_PYTHON" = none && break
-	  prog="import sys
-# split strings by '.' and convert to numeric.  Append some zeros
-# because we need at least 4 digits for the hex conversion.
-# map returns an iterator in Python 3.0 and a list in 2.x
-minver = list(map(int, '2.5'.split('.'))) + [0, 0, 0]
-minverhex = 0
-# xrange is not present in Python 3.0 and range returns an iterator
-for i in list(range(0, 4)): minverhex = (minverhex << 8) + minver[i]
-sys.exit(sys.hexversion < minverhex)"
-  if { echo "$as_me:$LINENO: $am_cv_pathless_PYTHON -c "$prog"" >&5
-   ($am_cv_pathless_PYTHON -c "$prog") >&5 2>&5
-   ac_status=$?
-   echo "$as_me:$LINENO: \$? = $ac_status" >&5
-   (exit $ac_status); }; then :
-  break
-fi
-	done
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $am_cv_pathless_PYTHON" >&5
-$as_echo "$am_cv_pathless_PYTHON" >&6; }
-      # Set $PYTHON to the absolute path of $am_cv_pathless_PYTHON.
-      if test "$am_cv_pathless_PYTHON" = none; then
-	PYTHON=:
-      else
-        # Extract the first word of "$am_cv_pathless_PYTHON", so it can be a program name with args.
-set dummy $am_cv_pathless_PYTHON; ac_word=$2
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
-$as_echo_n "checking for $ac_word... " >&6; }
-if ${ac_cv_path_PYTHON+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  case $PYTHON in
-  [\\/]* | ?:[\\/]*)
-  ac_cv_path_PYTHON="$PYTHON" # Let the user override the test with a path.
-  ;;
-  *)
-  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
-for as_dir in $PATH
-do
-  IFS=$as_save_IFS
-  test -z "$as_dir" && as_dir=.
-    for ac_exec_ext in '' $ac_executable_extensions; do
-  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
-    ac_cv_path_PYTHON="$as_dir/$ac_word$ac_exec_ext"
-    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
-    break 2
-  fi
-done
-  done
-IFS=$as_save_IFS
-
-  ;;
-esac
-fi
-PYTHON=$ac_cv_path_PYTHON
-if test -n "$PYTHON"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PYTHON" >&5
-$as_echo "$PYTHON" >&6; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-fi
-
-
-      fi
-      am_display_PYTHON=$am_cv_pathless_PYTHON
-    fi
-
-
-  if test "$PYTHON" = :; then
-      as_fn_error $? "no suitable Python interpreter found" "$LINENO" 5
-  else
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for $am_display_PYTHON version" >&5
-$as_echo_n "checking for $am_display_PYTHON version... " >&6; }
-if ${am_cv_python_version+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  am_cv_python_version=`$PYTHON -c "import sys; sys.stdout.write(sys.version[:3])"`
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $am_cv_python_version" >&5
-$as_echo "$am_cv_python_version" >&6; }
-  PYTHON_VERSION=$am_cv_python_version
-
-
-
-  PYTHON_PREFIX='${prefix}'
-
-  PYTHON_EXEC_PREFIX='${exec_prefix}'
-
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for $am_display_PYTHON platform" >&5
-$as_echo_n "checking for $am_display_PYTHON platform... " >&6; }
-if ${am_cv_python_platform+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  am_cv_python_platform=`$PYTHON -c "import sys; sys.stdout.write(sys.platform)"`
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $am_cv_python_platform" >&5
-$as_echo "$am_cv_python_platform" >&6; }
-  PYTHON_PLATFORM=$am_cv_python_platform
-
-
-  # Just factor out some code duplication.
-  am_python_setup_sysconfig="\
-import sys
-# Prefer sysconfig over distutils.sysconfig, for better compatibility
-# with python 3.x.  See automake bug#10227.
-try:
-    import sysconfig
-except ImportError:
-    can_use_sysconfig = 0
-else:
-    can_use_sysconfig = 1
-# Can't use sysconfig in CPython 2.7, since it's broken in virtualenvs:
-# <https://github.com/pypa/virtualenv/issues/118>
-try:
-    from platform import python_implementation
-    if python_implementation() == 'CPython' and sys.version[:3] == '2.7':
-        can_use_sysconfig = 0
-except ImportError:
-    pass"
-
-
-            { $as_echo "$as_me:${as_lineno-$LINENO}: checking for $am_display_PYTHON script directory" >&5
-$as_echo_n "checking for $am_display_PYTHON script directory... " >&6; }
-if ${am_cv_python_pythondir+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  if test "x$prefix" = xNONE
-     then
-       am_py_prefix=$ac_default_prefix
-     else
-       am_py_prefix=$prefix
-     fi
-     am_cv_python_pythondir=`$PYTHON -c "
-$am_python_setup_sysconfig
-if can_use_sysconfig:
-    sitedir = sysconfig.get_path('purelib', vars={'base':'$am_py_prefix'})
-else:
-    from distutils import sysconfig
-    sitedir = sysconfig.get_python_lib(0, 0, prefix='$am_py_prefix')
-sys.stdout.write(sitedir)"`
-     case $am_cv_python_pythondir in
-     $am_py_prefix*)
-       am__strip_prefix=`echo "$am_py_prefix" | sed 's|.|.|g'`
-       am_cv_python_pythondir=`echo "$am_cv_python_pythondir" | sed "s,^$am__strip_prefix,$PYTHON_PREFIX,"`
-       ;;
-     *)
-       case $am_py_prefix in
-         /usr|/System*) ;;
-         *)
-	  am_cv_python_pythondir=$PYTHON_PREFIX/lib/python$PYTHON_VERSION/site-packages
-	  ;;
-       esac
-       ;;
-     esac
-
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $am_cv_python_pythondir" >&5
-$as_echo "$am_cv_python_pythondir" >&6; }
-  pythondir=$am_cv_python_pythondir
-
-
-
-  pkgpythondir=\${pythondir}/$PACKAGE
-
-
-        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for $am_display_PYTHON extension module directory" >&5
-$as_echo_n "checking for $am_display_PYTHON extension module directory... " >&6; }
-if ${am_cv_python_pyexecdir+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  if test "x$exec_prefix" = xNONE
-     then
-       am_py_exec_prefix=$am_py_prefix
-     else
-       am_py_exec_prefix=$exec_prefix
-     fi
-     am_cv_python_pyexecdir=`$PYTHON -c "
-$am_python_setup_sysconfig
-if can_use_sysconfig:
-    sitedir = sysconfig.get_path('platlib', vars={'platbase':'$am_py_prefix'})
-else:
-    from distutils import sysconfig
-    sitedir = sysconfig.get_python_lib(1, 0, prefix='$am_py_prefix')
-sys.stdout.write(sitedir)"`
-     case $am_cv_python_pyexecdir in
-     $am_py_exec_prefix*)
-       am__strip_prefix=`echo "$am_py_exec_prefix" | sed 's|.|.|g'`
-       am_cv_python_pyexecdir=`echo "$am_cv_python_pyexecdir" | sed "s,^$am__strip_prefix,$PYTHON_EXEC_PREFIX,"`
-       ;;
-     *)
-       case $am_py_exec_prefix in
-         /usr|/System*) ;;
-         *)
-	   am_cv_python_pyexecdir=$PYTHON_EXEC_PREFIX/lib/python$PYTHON_VERSION/site-packages
-	   ;;
-       esac
-       ;;
-     esac
-
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $am_cv_python_pyexecdir" >&5
-$as_echo "$am_cv_python_pyexecdir" >&6; }
-  pyexecdir=$am_cv_python_pyexecdir
-
-
-
-  pkgpyexecdir=\${pyexecdir}/$PACKAGE
-
-
-
-  fi
-
-
+#AM_PATH_PYTHON(2.5)
 # Extract the first word of "swig", so it can be a program name with args.
 set dummy swig; ac_word=$2
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
@@ -6939,10 +6697,13 @@ ac_plplot_saved_CPPFLAGS="$CPPFLAGS"
 ac_plplot_saved_CFLAGS="$CFLAGS"
 ac_plplot_saved_LDFLAGS="$LDFLAGS"
 ac_plplot_saved_LIBS="$LIBS"
-if ! test PLPLOT_CFLAGS; then
-    PLPLOT_CFLAGS="`plplot-config --cflags`"
+if test "x$PLPLOT_CFLAGS" = x; then
+    PLPLOT_CFLAGS="`pkg-config plplot --cflags`"
 fi
-PLPLOT_LIBS="`plplot-config --libs`"
+if test "x$PLPLOT_CPPFLAGS" = x; then
+    PLPLOT_CPPFLAGS="`pkg-config plplot-c++ --cflags`"
+fi
+PLPLOT_LIBS="`pkg-config plplot --libs`"
 CPPFLAGS="$CPPFLAGS $PLPLOT_CPPFLAGS"
 CFLAGS="$CFLAGS $PLPLOT_CFLAGS"
 LDFLAGS="$LDFLAGS $PLPLOT_LDFLAGS"
@@ -7117,7 +6878,7 @@ $as_echo "#define HAVE_PLPLOT 1" >>confdefs.h
 fi
 CPPFLAGS="$ac_plplot_saved_CPPFLAGS"
 CFLAGS="$ac_plplot_saved_CFLAGS"
-LDFLAGS="$LDFLAGS $PLPLOT_LDFLAGS"
+LDFLAGS="$ac_plplot_saved_LDFLAGS"
 LIBS="$ac_plplot_saved_LIBS"
 
 
@@ -8439,12 +8200,831 @@ fi
 
 
 
+
+# Check whether --with-pgplot was given.
+if test "${with_pgplot+set}" = set; then :
+  withval=$with_pgplot; for dir in `echo "$withval" | tr : ' '`; do
+    if test -d $dir; then
+      PGPLOT_CPPFLAGS="$PGPLOT_CPPFLAGS -I$dir"
+      PGPLOT_LDFLAGS="$PGPLOT_LDFLAGS -L$dir"
+    fi
+  done
+fi
+
+ac_pgplot_saved_CPPFLAGS="$CPPFLAGS"
+ac_pgplot_saved_CFLAGS="$CFLAGS"
+ac_pgplot_saved_LDFLAGS="$LDFLAGS"
+ac_pgplot_saved_LIBS="$LIBS"
+PGPLOT_CFLAGS="$PGPLOT_CFLAGS $X_CFLAGS"
+PGPLOT_LIBS="$PGPLOT_LIBS $X_LIBS $X_PRE_LIBS -lX11 $X_EXTRA_LIBS"
+CPPFLAGS="$CPPFLAGS $PGPLOT_CPPFLAGS"
+CFLAGS="$CFLAGS $PGPLOT_CFLAGS"
+LDFLAGS="$LDFLAGS $PGPLOT_LDFLAGS"
+LIBS="$PGPLOT_LIBS $FLIBS"
+ac_have_pgplot=no
+ac_have_pgploth=no
+  	touch /tmp/dummy1_pgplot.h
+	ac_fn_c_check_header_compile "$LINENO" "/tmp/dummy1_pgplot.h" "ac_cv_header__tmp_dummy1_pgplot_h" "#include \"cpgplot.h\"
+"
+if test "x$ac_cv_header__tmp_dummy1_pgplot_h" = xyes; then :
+  ac_have_pgploth=yes
+else
+  ac_have_pgploth=no
+fi
+
+
+	rm /tmp/dummy1_pgplot.h
+ 	if test $ac_have_pgploth = yes; then
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for main in -lpgplot" >&5
+$as_echo_n "checking for main in -lpgplot... " >&6; }
+if ${ac_cv_lib_pgplot_main+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lpgplot  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+
+int
+main ()
+{
+return main ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_pgplot_main=yes
+else
+  ac_cv_lib_pgplot_main=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pgplot_main" >&5
+$as_echo "$ac_cv_lib_pgplot_main" >&6; }
+if test "x$ac_cv_lib_pgplot_main" = xyes; then :
+  ac_have_pgplot=yes
+else
+  ac_have_pgplot=no
+fi
+
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for cpgenv in -lcpgplot" >&5
+$as_echo_n "checking for cpgenv in -lcpgplot... " >&6; }
+if ${ac_cv_lib_cpgplot_cpgenv+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcpgplot -lpgplot $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char cpgenv ();
+int
+main ()
+{
+return cpgenv ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_cpgplot_cpgenv=yes
+else
+  ac_cv_lib_cpgplot_cpgenv=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_cpgplot_cpgenv" >&5
+$as_echo "$ac_cv_lib_cpgplot_cpgenv" >&6; }
+if test "x$ac_cv_lib_cpgplot_cpgenv" = xyes; then :
+  ac_have_pgplot=yes
+else
+  ac_have_pgplot=no
+fi
+
+	fi
+# List of places to try
+testdirs="$HOME/opt/pgplot $OBITINSTALL/other"
+for dir in $testdirs; do
+	if test $ac_have_pgplot = no; then
+		if  test -f $dir/include/cpgplot.h; then
+			PGPLOT_CFLAGS="-I$dir/include"
+			CPPFLAGS="$ac_pgplot_saved_CPPFLAGS $PGPLOT_CFLAGS"
+			PGPLOT_LDFLAGS="-L$dir/lib"
+			LDFLAGS="$ac_pgplot_saved_LDFLAGS $PGPLOT_LDFLAGS"
+  			touch /tmp/dummy3_pgplot.h
+			ac_fn_c_check_header_compile "$LINENO" "/tmp/dummy3_pgplot.h" "ac_cv_header__tmp_dummy3_pgplot_h" "#include \"cpgplot.h\"
+"
+if test "x$ac_cv_header__tmp_dummy3_pgplot_h" = xyes; then :
+  ac_have_pgploth=yes
+else
+  ac_have_pgploth=no
+fi
+
+
+			rm /tmp/dummy3_pgplot.h
+			if test $ac_have_pgploth = yes; then
+				# Force check
+				ac_cv_search_main="  "
+				ac_cv_search_cpgenv="  "
+				{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for main in -lpgplot" >&5
+$as_echo_n "checking for main in -lpgplot... " >&6; }
+if ${ac_cv_lib_pgplot_main+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lpgplot  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+
+int
+main ()
+{
+return main ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_pgplot_main=yes
+else
+  ac_cv_lib_pgplot_main=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_pgplot_main" >&5
+$as_echo "$ac_cv_lib_pgplot_main" >&6; }
+if test "x$ac_cv_lib_pgplot_main" = xyes; then :
+  ac_have_pgplot=yes
+else
+  ac_have_pgplot=no
+fi
+
+				{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for cpgenv in -lcpgplot" >&5
+$as_echo_n "checking for cpgenv in -lcpgplot... " >&6; }
+if ${ac_cv_lib_cpgplot_cpgenv+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcpgplot -lpgplot $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char cpgenv ();
+int
+main ()
+{
+return cpgenv ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_cpgplot_cpgenv=yes
+else
+  ac_cv_lib_cpgplot_cpgenv=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_cpgplot_cpgenv" >&5
+$as_echo "$ac_cv_lib_cpgplot_cpgenv" >&6; }
+if test "x$ac_cv_lib_cpgplot_cpgenv" = xyes; then :
+  ac_have_pgplot=yes
+else
+  ac_have_pgplot=no
+fi
+
+			fi
+			if test $ac_have_pgplot = yes ; then
+				if test $ac_have_pgploth = yes ; then
+					break;
+				fi
+			fi
+		fi
+	fi
+done
+PGPLOT_LIBS="-lcpgplot -lpgplot $PGPLOT_LIBS"
+if test $ac_have_pgploth = no; then
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: cannot find PGPLOT headers" >&5
+$as_echo "$as_me: WARNING: cannot find PGPLOT headers" >&2;}
+	ac_have_pgplot=no
+	PGPLOT_CPPFLAGS=""
+	PGPLOT_CFLAGS=""
+fi
+if test $ac_have_pgplot = no; then
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: cannot find PGPLOT C library" >&5
+$as_echo "$as_me: WARNING: cannot find PGPLOT C library" >&2;}
+	PGPLOT_LIBS=""
+	PGPLOT_LDFLAGS=""
+fi
+# Use plplot in preference to pgplot
+if test $ac_have_plplot = yes; then
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Using PLPLOT C library in preference to PGPLOT" >&5
+$as_echo "$as_me: WARNING: Using PLPLOT C library in preference to PGPLOT" >&2;}
 	ac_have_pgplot=no
 	PGPLOT_CPPFLAGS=""
 	PGPLOT_CFLAGS=""
 	PGPLOT_LIBS=""
 	PGPLOT_LDFLAGS=""
+fi
+if test $ac_have_pgplot = yes; then
 
+$as_echo "#define HAVE_PGPLOT 1" >>confdefs.h
+
+fi
+CPPFLAGS="$ac_pgplot_saved_CPPFLAGS"
+CFLAGS="$ac_pgplot_saved_CFLAGS"
+LDFLAGS="$ac_pgplot_saved_LDFLAGS"
+LIBS="$ac_pgplot_saved_LIBS"
+
+
+
+
+
+
+
+# Check whether --with-python was given.
+if test "${with_python+set}" = set; then :
+  withval=$with_python; for dir in `echo "$withval" | tr : ' '`; do
+    if test -d $dir/include/; then
+      PYTHON_CPPFLAGS="$PYTHON_CPPFLAGS -I$dir/include/"
+    fi
+    if test -d $dir/lib; then
+      PYTHON_LDFLAGS="$PYTHON_LDFLAGS -L$dir/lib"
+    fi
+  done
+fi
+
+
+
+# Check whether --with-python-includes was given.
+if test "${with_python_includes+set}" = set; then :
+  withval=$with_python_includes; for dir in `echo "$withval" | tr : ' '`; do
+    if test -d $dir; then
+      PYTHON_CPPFLAGS="$PYTHON_CPPFLAGS -I$dir"
+    fi
+  done
+fi
+
+
+# If not given, look in standard places
+# Includes
+if test "x$PYTHON_CPPFLAGS" = x; then
+    if test "x$PYTHON" = x; then
+        # Extract the first word of "python", so it can be a program name with args.
+set dummy python; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if ${ac_cv_path_PYTHON+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  case $PYTHON in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_PYTHON="$PYTHON" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in `pwd`/../../bin$PATH_SEPARATOR$PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+    ac_cv_path_PYTHON="$as_dir/$ac_word$ac_exec_ext"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+PYTHON=$ac_cv_path_PYTHON
+if test -n "$PYTHON"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PYTHON" >&5
+$as_echo "$PYTHON" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
+        # old PYTHON=`pwd`/../../bin/python
+    fi
+cat <<_ACEOF >conftest.py
+import distutils.sysconfig
+print distutils.sysconfig.get_python_inc()
+_ACEOF
+    ac_python_inc=`$PYTHON conftest.py`
+    # Use python installed in other to
+    PYTHON_CPPFLAGS="-I$ac_python_inc"
+fi
+
+# Python libs
+if test "x$PYTHON_LD_FLAGS" = x; then
+    if test "x$PYTHON" = x; then
+        # Extract the first word of "python", so it can be a program name with args.
+set dummy python; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if ${ac_cv_path_PYTHON+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  case $PYTHON in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_PYTHON="$PYTHON" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in `pwd`/../../bin$PATH_SEPARATOR$PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+    ac_cv_path_PYTHON="$as_dir/$ac_word$ac_exec_ext"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+PYTHON=$ac_cv_path_PYTHON
+if test -n "$PYTHON"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PYTHON" >&5
+$as_echo "$PYTHON" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
+        # old PYTHON=`pwd`/../../bin/python
+    fi
+cat <<_ACEOF >conftest.py
+import distutils.sysconfig
+print distutils.sysconfig.get_python_lib()
+_ACEOF
+    ac_python_lib=`$PYTHON conftest.py`
+    PYTHON_LDFLAGS="-L$ac_python_lib"
+fi
+
+# Found it?
+ac_have_pythonh=yes
+if test "x$PYTHON_CPPFLAGS" = x; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: cannot find PYTHON headers" >&5
+$as_echo "$as_me: WARNING: cannot find PYTHON headers" >&2;}
+  ac_have_pythonh=no
+fi
+ac_have_python=yes
+if test "x$PYTHON_LDFLAGS" = x; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: cannot find PYTHON library" >&5
+$as_echo "$as_me: WARNING: cannot find PYTHON library" >&2;}
+  ac_have_python=no
+fi
+
+ac_python_saved_CPPFLAGS="$CPPFLAGS"
+ac_python_saved_LDFLAGS="$LDFLAGS"
+ac_python_saved_LIBS="$LIBS"
+CPPFLAGS="$CPPFLAGS $PYTHON_CPPFLAGS"
+LDFLAGS="$LDFLAGS $PYTHON_LDFLAGS"
+PYTHON_LIBS="$LIBS"
+
+if test $ac_have_pythonh = no; then
+	ac_have_python=no
+fi
+if test $ac_have_python = no; then
+	ac_have_python=no
+	PYTHON_CPPFLAGS=""
+	PYTHON_LDFLAGS=""
+	PYTHON_LIBS=""
+fi
+if test $ac_have_python = yes; then
+
+$as_echo "#define HAVE_PYTHON 1" >>confdefs.h
+
+fi
+CPPFLAGS="$ac_python_saved_CPPFLAGS"
+LDFLAGS="$ac_python_saved_LDFLAGS"
+LIBS="$ac_python_saved_LIBS"
+
+
+
+
+
+	WVR_CFLAGS=""
+	WVR_LDFLAGS=""
+
+# Check whether --with-wvr was given.
+if test "${with_wvr+set}" = set; then :
+  withval=$with_wvr; for dir in `echo "$withval" | tr : ' '`; do
+    if test -d $dir/include; then
+      WVR_CFLAGS="$WVR_CFLAGS -I$dir/include"
+    fi
+    if test -d $dir/lib; then
+      WVR_LDFLAGS="$WVR_LDFLAGS -L$dir/lib"
+    fi
+  done
+fi
+
+
+
+# Check whether --with-wvr-includes was given.
+if test "${with_wvr_includes+set}" = set; then :
+  withval=$with_wvr_includes; for dir in `echo "$withval" | tr : ' '`; do
+    if test -d $dir; then
+      WVR_CFLAGS="$WVR_CFLAGS -I$dir"
+    fi
+  done
+fi
+
+
+# echo "WVR CFLAGs $WVR_CFLAGS LDFLAGs $WVR_LDFLAGS"
+ac_wvr_saved_CFLAGS="$CFLAGS"
+ac_wvr_saved_LDFLAGS="$LDFLAGS"
+ac_wvr_saved_LIBS="$LIBS"
+CFLAGS="$CFLAGS $WVR_CFLAGS"
+LDFLAGS="$LDFLAGS $WVR_LDFLAGS"
+# old if ! test WVR_CFLAGS; then
+# old     WVR_CFLAGS="`--cflags`"
+if test "x$WVR_CFLAGS" = x; then
+    WVR_CFLAGS="`pkg-config libair --cflags`"
+fi
+# not there WVR_LIBS="`wvr-config --libs`"
+WVR_LIBS="`pkg-config libair --libs`"
+echo "WVR CFLAGs: $WVR_CFLAGS LDFLAGs: $WVR_LDFLAGS"
+
+ac_have_wvr=no
+ac_have_wvrh=no
+  	touch /tmp/dummy1_wvr.h
+        for ac_header in /tmp/dummy1_wvr.h
+do :
+  ac_fn_c_check_header_compile "$LINENO" "/tmp/dummy1_wvr.h" "ac_cv_header__tmp_dummy1_wvr_h" "#include <almawvr/almaabs_c.h>
+"
+if test "x$ac_cv_header__tmp_dummy1_wvr_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE__TMP_DUMMY1_WVR_H 1
+_ACEOF
+ ac_have_wvrh=yes
+else
+  ac_have_wvrh=no
+fi
+
+done
+
+	rm /tmp/dummy1_wvr.h
+ 	if test $ac_have_wvrh = yes; then
+	        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing almaabs_ret" >&5
+$as_echo_n "checking for library containing almaabs_ret... " >&6; }
+if ${ac_cv_search_almaabs_ret+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char almaabs_ret ();
+int
+main ()
+{
+return almaabs_ret ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' almawvr; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib -lm $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_almaabs_ret=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_almaabs_ret+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_almaabs_ret+:} false; then :
+
+else
+  ac_cv_search_almaabs_ret=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_almaabs_ret" >&5
+$as_echo "$ac_cv_search_almaabs_ret" >&6; }
+ac_res=$ac_cv_search_almaabs_ret
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+  ac_have_wvr=yes
+else
+  ac_have_wvr=no
+fi
+
+		if test $ac_have_wvr = yes; then
+			echo "WVR found1 $LIBS"
+			OTHERLIB="-lalmawvr "
+		fi
+		if test $ac_have_wvr = no; then
+			# try other possibility
+			ac_cv_search_wvr_almaabs_ret="  "
+        		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing wvr_almaabs_ret" >&5
+$as_echo_n "checking for library containing wvr_almaabs_ret... " >&6; }
+if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char wvr_almaabs_ret ();
+int
+main ()
+{
+return wvr_almaabs_ret ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' air_cbind; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib -lm -lair -lairapps $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_wvr_almaabs_ret=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+
+else
+  ac_cv_search_wvr_almaabs_ret=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_wvr_almaabs_ret" >&5
+$as_echo "$ac_cv_search_wvr_almaabs_ret" >&6; }
+ac_res=$ac_cv_search_wvr_almaabs_ret
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+  ac_have_wvr=yes
+else
+  ac_have_wvr=no
+fi
+
+			if test $ac_have_wvr = yes; then
+				OTHERLIB="-lair_cbind -lair -lairapps "
+				echo "WVR found2 $LIBS"
+			fi
+		fi
+	fi
+echo "WVR Test1 $ac_have_wvrh $ac_have_wvr"
+# List of places to try
+testdirs="$OBITINSTALL/other $HOME/opt/almawvr"
+for dir in $testdirs; do
+	if test $ac_have_wvr = yes ; then
+		if test $ac_have_wvrh = yes ; then
+			break;
+		fi
+	fi
+	if test $ac_have_wvr = no; then
+               if  test -f $dir/include/almaabs_c.h; then
+			WVR_CFLAGS="-I$dir/include"
+			CPPFLAGS="$ac_wvr_saved_CPPFLAGS $WVR_CFLAGS"
+			WVR_LDFLAGS="-L$dir/lib"
+			LDFLAGS="$ac_wvr_saved_LDFLAGS $WVR_LDFLAGS"
+  			touch /tmp/dummy3_wvr.h
+	        	for ac_header in /tmp/dummy3_wvr.h
+do :
+  ac_fn_c_check_header_compile "$LINENO" "/tmp/dummy3_wvr.h" "ac_cv_header__tmp_dummy3_wvr_h" "#include \"almaabs_c.h\"
+"
+if test "x$ac_cv_header__tmp_dummy3_wvr_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE__TMP_DUMMY3_WVR_H 1
+_ACEOF
+ ac_have_wvrh=yes
+else
+  ac_have_wvrh=no
+fi
+
+done
+
+			rm /tmp/dummy3_wvr.h
+			if test $ac_have_wvrh = yes; then
+				# Force check
+				ac_cv_search_wvr_almaabs_ret="  "
+        			{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing wvr_almaabs_ret" >&5
+$as_echo_n "checking for library containing wvr_almaabs_ret... " >&6; }
+if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char wvr_almaabs_ret ();
+int
+main ()
+{
+return wvr_almaabs_ret ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' almawvr; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib -lm  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_wvr_almaabs_ret=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+
+else
+  ac_cv_search_wvr_almaabs_ret=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_wvr_almaabs_ret" >&5
+$as_echo "$ac_cv_search_wvr_almaabs_ret" >&6; }
+ac_res=$ac_cv_search_wvr_almaabs_ret
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+  ac_have_wvr=yes
+else
+  ac_have_wvr=no
+fi
+
+				if test $ac_have_wvr = yes; then
+ 	                                echo "WVR found3 $LIBS in $dir"
+ 					OTHERLIB="-lalmawvr"
+				fi
+				if test $ac_have_wvr = no; then
+					# try other possibility
+					ac_cv_search_wvr_almaabs_ret="  "
+        				{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing wvr_almaabs_ret" >&5
+$as_echo_n "checking for library containing wvr_almaabs_ret... " >&6; }
+if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char wvr_almaabs_ret ();
+int
+main ()
+{
+return wvr_almaabs_ret ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' air_cbind; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib -lm -lair -lairapps $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_wvr_almaabs_ret=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_wvr_almaabs_ret+:} false; then :
+
+else
+  ac_cv_search_wvr_almaabs_ret=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_wvr_almaabs_ret" >&5
+$as_echo "$ac_cv_search_wvr_almaabs_ret" >&6; }
+ac_res=$ac_cv_search_wvr_almaabs_ret
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+  ac_have_wvr=yes
+else
+  ac_have_wvr=no
+fi
+
+					if test $ac_have_wvr = yes; then
+	 	                                echo "WVR found4 $LIBS in $dir"
+						OTHERLIB=" -lair_cbind -lair -lairapps "
+					fi
+				fi
+			fi
+			if test $ac_have_wvr = yes ; then
+				if test $ac_have_wvrh = yes ; then
+					break;
+				fi
+			fi
+		fi
+	fi
+	echo "WVR Testn $ac_have_wvrh $ac_have_wvr"
+done
+if test $ac_have_wvrh = no; then
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: cannot find WVR headers" >&5
+$as_echo "$as_me: WARNING: cannot find WVR headers" >&2;}
+	ac_have_wvr=no
+fi
+if test $ac_have_wvr = no; then
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: cannot find WVR library" >&5
+$as_echo "$as_me: WARNING: cannot find WVR library" >&2;}
+	WVR_CFLAGS=""
+	WVR_LDFLAGS=""
+	WVR_LIBS=""
+fi
+if test $ac_have_wvr = yes; then
+
+$as_echo "#define HAVE_WVR 1" >>confdefs.h
+
+fi
+WVR_LIBS="$LIBS $OTHERLIB"
+CFLAGS="$ac_wvr_saved_CFLAGS"
+LDFLAGS="$ac_wvr_saved_LDFLAGS"
+LIBS="$ac_wvr_saved_LIBS"
 
 
 
@@ -8546,7 +9126,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -8592,7 +9172,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -8616,7 +9196,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -8661,7 +9241,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -8685,7 +9265,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
+#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];

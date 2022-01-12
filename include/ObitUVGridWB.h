@@ -1,6 +1,6 @@
-/* $Id: ObitUVGridWB.h 69 2009-01-21 16:00:01Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -111,7 +111,7 @@ void ObitUVGridWBSetup (ObitUVGrid *in, ObitUV *UVin,
 void ObitUVGridWBReadUV (ObitUVGrid *in, ObitUV *UVin, ObitErr *err);
 
 /** Public: Parallel read uv data accumulating to grid */
-void ObitUVGridWBReadUVPar (olong nPar, ObitUVGrid **in, ObitUV **UVin, 
+void ObitUVGridWBReadUVPar (olong nPar, ObitUVGrid **in, ObitUV *UVin, 
 			    ObitErr *err);
 
 /** Public: FFT grid to image plane with gridding correction. */

@@ -1,6 +1,6 @@
-# $Id: FArrayUtil.py 112 2009-06-17 12:31:53Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2005,2009
+#  Copyright (C) 2005-2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -27,24 +27,26 @@
 #-----------------------------------------------------------------------
 
 # Python utility package for FArrays
+from __future__ import absolute_import
 import Obit, FArray, OErr
 
 def PFitCGauss(inFA, FWHM, center, peak, err):
-    """ Fit Circular Gaussian around peak in FArray
-
+    """
+    Fit Circular Gaussian around peak in FArray
+    
     returns  RMS residual to fit
-    inFA    = Array to be fitted
-    FWHM    = [in] as list, half width of box around peak to use in fitting
-              0 = all.
-              [out] as list, Full width Half Max (pixels) of fitted Gaussian
-    center  = [out] [x,y] pixel (0-rel) coordinates of peak
-    peak    = [out] as list, peak value in fitted Gaussian
-    err     = Python Obit Error/message stack
+
+    * inFA    = Array to be fitted
+    * FWHM    = [in] as list, half width of box around peak to use in fitting
+      * 0 = all. [out] as list, Full width Half Max (pixels) of fitted Gaussian
+    * center  = [out] [x,y] pixel (0-rel) coordinates of peak
+    * peak    = [out] as list, peak value in fitted Gaussian
+    * err     = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not FArray.PIsA(inFA):
-        raise TypeError,"inFA MUST be a Python Obit FArray"
+        raise TypeError("inFA MUST be a Python Obit FArray")
     # results in retVal
     retVal = Obit.FArrayUtilFitCGauss(inFA.me, FWHM[0], center, peak[0], err.me)
     FWHM[0] = retVal[0];
@@ -54,21 +56,47 @@ def PFitCGauss(inFA, FWHM, center, peak, err):
     return retVal[4]
     # end PFitCGauss
 
-def PConvolve(inFA1, inFA2, err):
-    """ Return the convolution of two 2-D arrays
+def PFit1DGauss(inFA,err):
+    """
+    Fit 1-D Gaussian plus a linear baseline in FArray
+    
+    returns  list:
+    [0]= Full width Half Max (pixels) of fitted Gaussian
+    [1]= peak value in fitted Gaussian
+    [2]= x pixel (0-rel) coordinates of peak in pixels
+    [3]= 0th order baseline term
+    [4]= 1st order baseline term
+    [5]= RMS residual
+    * inFA    = Array to be fitted
+    * err     = Python Obit Error/message stack
+    """
+    ################################################################
+    # Checks
+    if not FArray.PIsA(inFA):
+        raise TypeError("inFA MUST be a Python Obit FArray")
+    FWHM = 0.0; cen = 0.0; peak = 0.0; center = 0.0; # Not really used
+    # results in retVal
+    retVal = Obit.FArrayUtilFit1DGauss(inFA.me, FWHM, center, peak, err.me)
+    return retVal
+    # end PFit1DGauss
 
+def PConvolve(inFA1, inFA2, err):
+    """
+    Return the convolution of two 2-D arrays
+    
     inFA1 and inFA2 must be compatible size and should not contain magic value blanks.
     Convolved array returned.
-    inFA1   = First array
-    inFA2   = Second array
-    err     = Python Obit Error/message stack
+
+    * inFA1   = First array
+    * inFA2   = Second array
+    * err     = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not FArray.PIsA(inFA1):
-        raise TypeError,"inFA1 MUST be a Python Obit FArray"
+        raise TypeError("inFA1 MUST be a Python Obit FArray")
     if not FArray.PIsA(inFA2):
-        raise TypeError,"inFA2 MUST be a Python Obit FArray"
+        raise TypeError("inFA2 MUST be a Python Obit FArray")
     # 
     outFA = FArray.FArray("None")
     outFA.me = Obit.FArrayUtilConvolve (inFA1.me, inFA2.me, err.me)
@@ -76,15 +104,17 @@ def PConvolve(inFA1, inFA2, err):
     # end PConvolve
 
 def PUVGaus(naxis, cells, maprot, maj, min, pa):
-    """ Create a Gaussian UV tapering image corresponding to an image plane Gaussian
+    """
+    Create a Gaussian UV tapering image corresponding to an image plane Gaussian
     
     Returns an FArray with a Gaussian taper, as [u,v]
-    naxis  = dimension as [nx,ny]
-    cells  = cell spacing in x and y in units of maj,min (asec)
-    maprot = Map rotation (deg)
-    maj    = Major axis of Gaussian in image plane (same units as cells)
-    min    = Minor axis of Gaussian in image plane (same units as cells)
-    pa     = Position angle of Gaussian in image plane, from N thru E, (deg)
+
+    * naxis  = dimension as [nx,ny]
+    * cells  = cell spacing in x and y in units of maj,min (asec)
+    * maprot = Map rotation (deg)
+    * maj    = Major axis of Gaussian in image plane (same units as cells)
+    * min    = Minor axis of Gaussian in image plane (same units as cells)
+    * pa     = Position angle of Gaussian in image plane, from N thru E, (deg)
     """
     ################################################################
     # Create output

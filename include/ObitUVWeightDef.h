@@ -1,6 +1,6 @@
-/* $Id: ObitUVWeightDef.h 33 2008-09-22 13:24:26Z bill.cotton $                            */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003                                               */
+/*;  Copyright (C) 2003-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -45,25 +45,33 @@ olong WtBox;
 olong WtFunc;
 /** Number of visibilities out of the inner 90% of the grid */
 olong numberBad;
-/** Robust weighting parameter */
-ofloat Robust;
+/** Number of IFs */
+olong numIF;
+/** Separate Robust factors per IF? */
+gboolean RobustperIF;
+/** Robust weighting parameter array per IF */
+ofloat *Robust;
 /**  Weighting power */
 ofloat WtPower;
 /** Scaling from wavelength to cells for u, v at reference frequency */
 ofloat UScale, VScale;
-/** -sigma,uu,vv,uv for taper (in cells) */
-ofloat sigma1, sigma2, sigma3;
+/** -sigma,uu,vv,uv for taper (in cells) array per IF */
+ofloat *sigma1, *sigma2, *sigma3;
+/** Minimum weight for inner taper */
+ofloat minInnerWt;
+/** -sigma,uu,vv,uv for inverse taper (in cells) array per IF */
+ofloat *isigma1, *isigma2, *isigma3;
 /** max, min baseline lengths (wavelengths) */
 ofloat blmax, blmin;
-/** Robust temperance value */
-ofloat temperance;
-/** Weight scaling (normalization) factor */
-ofloat wtScale;
+/** Robust temperance value array */
+ofloat *temperance;
+/** Weight scaling (normalization) factor array per IF */
+ofloat *wtScale;
 /** Noise increase factor */
 ofloat noiseFactor;
-/** weight grid  */
-ObitFArray *wtGrid;
-/** count grid, as ofloat  */
-ObitFArray *cntGrid;
+/** weight grid one per IF  */
+ObitFArray **wtGrid;
+/** count grid, as ofloat one per IF */
+ObitFArray **cntGrid;
 /** Gridding convolution table */
 ObitFArray *convfn;

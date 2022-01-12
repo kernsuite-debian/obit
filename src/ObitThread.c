@@ -1,6 +1,6 @@
-/* $Id: ObitThread.c 46 2008-10-31 13:02:48Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2008                                          */
+/*;  Copyright (C) 2002-2013                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -96,7 +96,7 @@ ObitThread* freeObitThread (ObitThread *in)
 
   /* Delete members */
 #ifdef OBIT_THREADS_ENABLED
-  if (in->pool)  g_thread_pool_free(in->pool, FALSE, TRUE);  /* Be patient */
+  if (in->pool)  g_thread_pool_free(in->pool, TRUE, FALSE);
   if (in->queue) g_async_queue_unref (in->queue);
   /*g_mutex_unlock(in->myMutex); *//* Make sure unlocked */
   g_mutex_free(in->myMutex); in->myMutex = NULL;
@@ -468,7 +468,7 @@ void ObitThreadPoolInit (ObitThread* in, olong nthreads,
 /**
  * Loops over a set of threads, all with same function call
  * If nthreads=1 or threading not allowed, routine called directly.
- * Waits for operations to finish before returning, 1 min timeout.
+ * Waits for operations to finish before returning, ~90 min timeout.
  * Initializes Thread pool and asynchronous queue (ObitThreadPoolInit)
  * if not already done.
  * When threaded operations are finished, call ObitThreadPoolFree to release
@@ -485,6 +485,7 @@ gboolean ObitThreadIterator (ObitThread* in, olong nthreads,
 {
   gboolean out = TRUE;
   GTimeVal end_time;
+  gpointer rval;
   glong add_time;
   olong i;
 
@@ -513,7 +514,7 @@ gboolean ObitThreadIterator (ObitThread* in, olong nthreads,
 
   /* Make sure pool is using the correct function */
   if ((in->pool) && (((GFunc)in->pool->func)!=((GFunc)func))) {
-     g_thread_pool_free(in->pool, FALSE, TRUE);  /* Be patient */
+     g_thread_pool_free(in->pool, TRUE, TRUE);  
      in->pool = NULL;
      if (in->queue) g_async_queue_unref (in->queue);
      in->queue = NULL;
@@ -529,18 +530,24 @@ gboolean ObitThreadIterator (ObitThread* in, olong nthreads,
 
   /* Wait for them to finish, expects each to send a message to the asynchronous 
    queue iff they finish */
-  /* 1 min. timeout */
-  add_time = 60 * 1000000;
+  /* 60 min. timeout
+  add_time = 3600 * 1000000; */
+  /* Compiler overflow problem? 30 min */
+  add_time = 1800 * 1000000;
   g_get_current_time (&end_time);
   g_time_val_add (&end_time, add_time); /* add timeout in microseconds */
+  g_time_val_add (&end_time, add_time); /* double timeout */
+  g_time_val_add (&end_time, add_time); /* add another half hour timeout */
   for (i=0; i<nthreads; i++) {
-    g_async_queue_timed_pop (in->queue, &end_time);
- }
+    rval = g_async_queue_timed_pop (in->queue, &end_time);
+    /* Check for timeout */
+    if (rval==NULL) fprintf (stderr, "Timeout on Thread %d\n", i);
+  }
 
   return out;
 } /* end ObitThreadIterator */
 
-/** 
+/**
  * Indicates that a thread function is done by sending a message to the 
  * asynchronous queue on in
  * Noop unless compiled with OBIT_THREADS_ENABLED
@@ -563,7 +570,9 @@ void ObitThreadPoolDone (ObitThread* in, gpointer arg)
 void ObitThreadPoolFree (ObitThread* in)
 {
 #ifdef OBIT_THREADS_ENABLED
-  if (in->pool)  g_thread_pool_free(in->pool, FALSE, TRUE);  /* Be patient */
+  /*if (in->pool)  g_thread_pool_free(in->pool, TRUE, TRUE); 
+   Should have to wait here and it sometimes gets hung here */
+  if (in->pool)  g_thread_pool_free(in->pool, TRUE, FALSE); 
   in->pool = NULL;
   if (in->queue) g_async_queue_unref (in->queue);
   in->queue = NULL;

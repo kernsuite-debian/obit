@@ -1,6 +1,6 @@
-# $Id: IonCal.py 2 2008-06-10 15:32:27Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2007
+#  Copyright (C) 2007,2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -27,27 +27,34 @@
 #-----------------------------------------------------------------------
 
 # Python interface to Obit Ionospheric calibration utilities
+from __future__ import absolute_import
 import Obit, UV, Table, OErr
 
 def PIoN2SolNTableConvert (inUV, outSNVer, NITable, pos, err):
-    """ Evaluate Ionospheric model table at pos and convert to SN table
-
+    """
+    Evaluate Ionospheric model table at pos and convert to SN table
+    
     Returns resultant SN table
-    inUV     = UV data for output SN table.
-    Control parameters on inUV info member
+
+    * inUV     = UV data for output SN table.
+      Control parameters on inUV info member:
+
+      ========== ================ ================================
       "doAntOff" OBIT_bool scalar True if correctionss for antenna
-                offset from array center wanted [def False]
-    outSNVer = Desired output SN table version, 0=> new
-    NITable  = Ionospheric model table to evaluate
-    pos      = [RA, Dec] shift (deg) in which NITable to be evaluated.
-    err      = Obit Error stack, returns if not empty.
+                                  offset from array center wanted [def False]
+      ========== ================ ================================
+
+    * outSNVer = Desired output SN table version, 0=> new
+    * NITable  = Ionospheric model table to evaluate
+    * pos      = [RA, Dec] shift (deg) in which NITable to be evaluated.
+    * err      = Obit Error stack, returns if not empty.
     """
     ################################################################
     # Checks
     if not UV.PIsA(inUV):
-        raise TypeError, 'PIoN2SolNTableConvert: Bad input UV data'
+        raise TypeError('PIoN2SolNTableConvert: Bad input UV data')
     if not Table.PIsA(NITable):
-        raise TypeError, 'PIoN2SolNTableConvert: Bad NI input table'
+        raise TypeError('PIoN2SolNTableConvert: Bad NI input table')
 
     # Create output SN table object
     outSNTable = Table.Table("None")

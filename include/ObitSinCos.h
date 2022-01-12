@@ -1,6 +1,6 @@
-/* $Id:  $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2009                                               */
+/*;  Copyright (C) 2009,2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -41,8 +41,14 @@
 
 #ifndef OBITSINCOS_H 
 #define OBITSINCOS_H 
+/** Init sine/cosine  */
+void ObitSinCosInit();
 /** Calculate sine/cosine of angle */
 void ObitSinCosCalc(ofloat angle, ofloat *sin, ofloat *cos);
 /** Calculate sine/cosine of vector of angles */
 void ObitSinCosVec(olong n, ofloat *angle, ofloat *sin, ofloat *cos);
+/** Calculate sine of vector of angles */
+void ObitSinVec(olong n, ofloat *angle, ofloat *sin);
+/** Calculate cosine of vector of angles */
+void ObitCosVec(olong n, ofloat *angle, ofloat *cos);
 #endif /* OBITSINCOS_H */ 

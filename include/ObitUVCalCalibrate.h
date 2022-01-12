@@ -1,4 +1,4 @@
-/* $Id: ObitUVCalCalibrate.h 64 2009-01-01 14:57:18Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2003                                               */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

@@ -1,4 +1,4 @@
-/* $Id: ObitImageMFDef.h 128 2009-09-23 14:48:29Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2010                                               */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -50,5 +50,11 @@ olong *BIFSpec, *EIFSpec;
 olong *BChanSpec, *EChanSpec;
 /** Arrays of Center Frequency, per coarse channel */
 odouble *specFreq;
-/** Spectral index correction applied to data making image */
+/** Arrays of low frequency, per coarse channel */
+odouble *specFreqLo;
+/** Arrays of high frequency, per coarse channel */
+odouble *specFreqHi;
+/** Spectral index correction applied to data making image (wrt alphaRefF) */
 ofloat alpha;
+/** Reference frequency (Hz) for spectral index */
+odouble alphaRefF;

@@ -1,4 +1,4 @@
-/* $Id: ObitIOTableFITSUtil.c 190 2010-05-04 15:21:06Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2006,2010                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

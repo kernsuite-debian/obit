@@ -1,6 +1,6 @@
-/* $Id: Obit.c 123 2009-09-04 11:26:14Z bill.cotton $            */
+/* $Id$            */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2008                                          */
+/*;  Copyright (C) 2002-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -236,9 +236,10 @@ gpointer ObitUnref (gpointer inn)
     /* free structure - may be ObitMem allocation */
     if (ObitMemValid (in)) ObitMemFree (in);
     else g_free (in);
+    return NULL; /* new value for pointer */
   } /* end deallocate */
+  return in; /* not destroyed, same pointer */
 
-  return NULL; /* new value for pointer */
 } /* end ObitUnref */
 
 /**
@@ -271,24 +272,6 @@ gboolean ObitIsA (gpointer in, gconstpointer class)
   return FALSE; /* if it got here it must not match */
 } /* end ObitIsA  */
 
-/**
- * Returns Obit magic blanking float value
- * This is adopted from AIPS and correcponds to the string 'INDE'
- * \return float magic value
- */
-ofloat ObitMagicF (void)
-{
-  static union FBLANKequiv {
-    gchar string[4];
-    ofloat fblank;
-  } FBLANK;
-  FBLANK.string[0] = 'I'; 
-  FBLANK.string[1] = 'N'; 
-  FBLANK.string[2] = 'D'; 
-  FBLANK.string[3] = 'E'; 
-  
-  return FBLANK.fblank;
-} /* end ObitMagicF */
 
 /**
  * Trims trailing blanks from string
@@ -330,7 +313,7 @@ gboolean ObitStrCmp (gchar *str1, gchar *str2, olong maxlen)
   
   /* Compare */
   if (last1!=last2) return FALSE;
-  for (i=0; i<last1; i++)
+  for (i=0; i<=last1; i++)
     if (str1[i]!=str2[i]) { out=FALSE; break;}
   return out;
 } /* end ObitStrCmp */

@@ -1,6 +1,6 @@
-# $Id: OErr.py 199 2010-06-15 11:39:58Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2004
+#  Copyright (C) 2004,2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -27,22 +27,36 @@
 #-----------------------------------------------------------------------
 
 # Python shadow class to ObitErr class
-import Obit, InfoList
+from __future__ import absolute_import
+from __future__ import print_function
+import Obit, InfoList, _Obit
 
-class OErrPtr :
-    def __init__(self,this):
-        self.this = this
+class OErr(Obit.OErr):
+    """
+    Python ObitErr message and error stack
+    
+    This is an error stack class for obtaining tracebacks for error conditions.
+    This is also the mechanism for passing informative messages.
+    No messages, error or informative, are displayed until the contents
+    of the stack are explicitly printed
+    """
+    def __init__(self) :
+        super(OErr, self).__init__()
+        Obit.CreateOErr(self.this)
+    def __del__(self, DeleteOErr=_Obit.DeleteOErr):
+        if _Obit!=None:
+            DeleteOErr(self.this)
     def __setattr__(self,name,value):
         if name == "me" :
-            Obit.OErr_me_set(self.this,value)
+            Obit.OErr_Set_me(self.this,value)
             return
         self.__dict__[name] = value
     def __getattr__(self,name):
         if name == "me" : 
-            return Obit.OErr_me_get(self.this)
+            return Obit.OErr_Get_me(self.this)
         if name == "isErr" : 
             return PIsErr(self)
-        raise AttributeError,name
+        raise AttributeError(name)
     def __repr__(self):
         return "<C OErr instance>"
     def __str__(self):
@@ -54,24 +68,21 @@ class OErrPtr :
             continue
         Obit.ObitErrClear (self.me);  # Clear stack
         return messages
-class OErr(OErrPtr):
-    """ Python ObitErr message and error stack
-    
-    This is an error stack class for obtaining tracebacks for error conditions.
-    This is also the mechanism for passing informative messages.
-    No messages, error or informative, are displayed until the contents
-    of the stack are explicitly printed
-    """
-    def __init__(self) :
-        self.this = Obit.new_OErr()
-    def __del__(self):
-        if Obit!=None:
-            Obit.delete_OErr(self.this)
-
     def Clear(self):
         """ Clear Obit error stack """
         PClear(self)
         # end Clear
+    def IsA (self):
+        """
+        Tells if input really a Python Obit OErr
+        
+        return True, False
+        * self   = Python OErr object
+        """
+        ################################################################
+        # Allow derived types
+        return Obit.ObitErrIsA(self.me)!=0
+        # end IsA
 
 # Error levels
 NoErr     = 0
@@ -84,30 +95,34 @@ StrongError = 6
 Fatal     = 7
 
 def PIsErr(err):
-    """ Tells if an error condition exists
-
+    """
+    Tells if an error condition exists
+    
     Returns True if error condition exists, else False
-    err      = Python Obit Error/message stack
+
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        print("calls itself",err,"\n\n")
+        raise TypeError("err MUST be a Python ObitErr")
     return Obit.isError(err.me) != 0
     # end PIsErr
 
 def PInit(err, prtLv=0, taskLog="    "):
-    """ Initializes logging
+    """
+    Initializes logging
 
-    err      = Python Obit Error/message stack to init
-    prtLv    = Message print level, 0=little, 5=LOTS
-    taskLog  = Name of task log file, if given messages go here
-               and NOT to the terminal (visible) output.
+    * err      = Python Obit Error/message stack to init
+    * prtLv    = Message print level, 0=little, 5=LOTS
+    * taskLog  = Name of task log file, if given messages go here
+      and NOT to the terminal (visible) output.
     """
     ################################################################
     # Checks
     if not OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        raise TypeError("err MUST be a Python ObitErr")
     info = InfoList.InfoList()
     info.set("prtLv",prtLv)
     info.set("taskLog",taskLog)
@@ -115,89 +130,97 @@ def PInit(err, prtLv=0, taskLog="    "):
     # end PInit
 
 def PClear(err):
-    """ Clear Obit error stack
+    """
+    Clear Obit error stack
 
-    err      = Python Obit Error/message stack
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        raise TypeError("err MUST be a Python ObitErr")
     Obit.ObitErrClear(err.me)
     #end PClear
 
 def PSet(err):
-    """ Set Obit error flag
+    """
+    Set Obit error flag
 
-    err      = Python Obit Error/message stack
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        raise TypeError("err MUST be a Python ObitErr")
     Obit.SetError(err.me)
     #end PSet
 
 def PLog(err, eCode, message):
-    """ Add message To Obit Error/message stack
+    """
+    Add message To Obit Error/message stack
 
-    err      = Python Obit Error/message stack
-    eCode    = error code defined above:
-               NoErr, Info, Warn, Traceback,
-               MildError, Error, StrongError, Fatal
+    * err      = Python Obit Error/message stack
+    * eCode    = error code defined above:
+      NoErr, Info, Warn, Traceback,
+      MildError, Error, StrongError, Fatal
     """
     ################################################################
     # Checks
     if not OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        raise TypeError("err MUST be a Python ObitErr")
     Obit.LogError(err.me, eCode, message)
     #end PLog
 
 def printErr(err):
-    """ Prints Obit error stack
-    
-    err      = Python Obit Error/message stack
+    """
+    Prints Obit error stack
+
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        raise TypeError("err MUST be a Python ObitErr")
     Obit.ObitErrLog(err.me)
     # end PrintErr
      
 def printErrMsg(err, message="Error"):
-    """ Prints Obit error stack and throws runtime exception on error
+    """
+    Prints Obit error stack and throws runtime exception on error
 
-    err     = Python Obit Error/message stack
-    message = message string for exception
+    * err     = Python Obit Error/message stack
+    * message = message string for exception
     """
     ################################################################
     # Checks
     if not OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        raise TypeError("err MUST be a Python ObitErr")
     ierr = Obit.isError(err.me)
     Obit.ObitErrLog(err.me)
     if ierr:
-        print message
-        raise OErr
+        print(message)
+        raise Exception
     # end printErrMsg
      
 def OErrIsA (err):
-    """ Tells if object thinks it's a Python ObitErr
-
+    """
+    Tells if object thinks it's a Python ObitErr
+    
     return true, false (1,0)
-    err    = input Python ObitErr stack
+
+    * err    = input Python ObitErr stack
     """
     ################################################################
     # Checks
-    if err.__class__ != OErr:
-        return 0
+    if not isinstance(err, OErr):
+        return False
     #
     return Obit.ObitErrIsA(err.me)
     # end OErrIsA
 
 def Bomb ():
-    """ Throws an exception to stop the debugger
+    """
+    Throws an exception to stop the debugger
     """
     ################################################################
     #

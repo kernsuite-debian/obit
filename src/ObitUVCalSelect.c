@@ -1,6 +1,6 @@
-/* $Id: ObitUVCalSelect.c 2 2008-06-10 15:32:27Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,9 +26,9 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitUVSel.h"
 #include "ObitUVCalSelect.h"
 #include "ObitUVDesc.h"
-#include "ObitUVSel.h"
 #include "ObitUVCal.h"
 #include "ObitUVCalSelect.h"
 
@@ -75,9 +75,29 @@ static void
 ObitUVCalSelectRLInit (ObitUVCal *in, olong kstoke0, olong nstoke, 
 		      olong ivpnt, ObitErr *err);
 
-/** Private: Init data selection for StokesLR */
+/** Private: Init data selection for Stokes LR */
 static void 
 ObitUVCalSelectLRInit (ObitUVCal *in, olong kstoke0, olong nstoke, 
+		      olong ivpnt, ObitErr *err);
+
+/** Private: Init data selection for Stokes XX */
+static void 
+ObitUVCalSelectXXInit (ObitUVCal *in, olong kstoke0, olong nstoke, 
+		      olong ivpnt, ObitErr *err);
+
+/** Private: Init data selection for Stokes YY */
+static void 
+ObitUVCalSelectYYInit (ObitUVCal *in, olong kstoke0, olong nstoke, 
+		      olong ivpnt, ObitErr *err);
+
+/** Private: Init data selection for Stokes XY */
+static void 
+ObitUVCalSelectXYInit (ObitUVCal *in, olong kstoke0, olong nstoke, 
+		      olong ivpnt, ObitErr *err);
+
+/** Private: Init data selection for Stokes YX */
+static void 
+ObitUVCalSelectYXInit (ObitUVCal *in, olong kstoke0, olong nstoke, 
 		      olong ivpnt, ObitErr *err);
 
 /*----------------------Public functions---------------------------*/
@@ -106,17 +126,18 @@ ObitUVCalSelectLRInit (ObitUVCal *in, olong kstoke0, olong nstoke,
 void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc, 
 			  ObitUVDesc *outDesc, ObitErr *err)
 {
-  olong   i, ifb, ife, icb, ice, nmode=17;
-  olong   ierr, pmode, nchan, nif, nstok, ivpnt, kstoke0;
+  olong   i, ifb, ife, icb, ice, nmode=21;
+  olong   pmode, nchan, nif, nstok, ivpnt, kstoke0;
   olong   knpoln, knchan, knif;
   ofloat crpixpoln=0.0, crpixchan=0.0, crpixif=0.0, crotapoln=0.0, crotachan=0.0, crotaif=0.0;
   ofloat cdeltpoln=0.0, cdeltchan=0.0, cdeltif=0.0;
   gchar  ctypepoln[9], ctypechan[9], ctypeif[9];
   odouble crvalpoln=0.0, crvalchan=0.0, crvalif=0.0;
-  gchar chmode[17][5] = 
+  gchar chmode[21][5] = 
     {"I   ","V   ","Q   ", "U   ", "IQU ", "IQUV", 
      "IV  ", "RR  ", "LL  ", "RL  ", "LR  ", "HALF", "FULL",
-    "F   ", "FQU ", "FQUV", "IV  "};
+     "F   ", "FQU ", "FQUV", "IV  ",
+     "XX  ", "YY  ", "XY  ", "YX  "};
   gboolean formalI;
   odouble crval=0.0;
   ofloat cdelt=0.0;
@@ -210,7 +231,7 @@ void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
   sel->lrecUC   = outDesc->lrec;
   sel->nrparmUC = outDesc->nrparm;
 
-  /* do we need to translate data? No is Stokes ="    " */
+  /* do we need to translate data? No if Stokes ="    " */
   in->mySel->transPol = strncmp(sel->Stokes, "    ", 4);
   if (!in->mySel->transPol) return;
 
@@ -237,8 +258,9 @@ void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
   } 
 
   /* linear polarized data (x-y), assume that it is being 
-     calibrated and will be changed  to rr,ll,rl,lr data. */
-  if (kstoke0 <= -5) kstoke0 = kstoke0 + 4;
+     calibrated and will be changed  to rr,ll,rl,lr data.
+  if (kstoke0 <= -5) kstoke0 = kstoke0 + 4;  Maybe not */
+  if (kstoke0 <= -5) formalI = TRUE;  /* For linears need both */
 
   /* get start, end channels, IFs from Selector */
   ifb = sel->startIF;
@@ -255,7 +277,6 @@ void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
   if (inDesc->jlocs>=0) nstok = inDesc->inaxes[inDesc->jlocs];
   else nstok = 1;
 
-  ierr = 1;
   /* check channel; default = all */
   if (icb <= 0)  ice = nchan;
   icb = MAX (icb, 1);
@@ -341,7 +362,7 @@ void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
   case 16: /* FV   */
     ObitUVCalSelectIInit (in, kstoke0, nstok, ivpnt, formalI, err);
     crval = 1.0; /* Stokes index */
-    cdelt = 4.0; /* stokes increment */
+    cdelt = -4.0; /* stokes increment */
     ivpnt++;
     ObitUVCalSelectVInit (in, kstoke0, nstok, ivpnt, err);
     ivpnt++;
@@ -350,50 +371,87 @@ void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
   case 7: /* RR   */
     ObitUVCalSelectRRInit (in, kstoke0, nstok, ivpnt, err);
     crval = -1.0; /* Stokes index */
-    cdelt =  1.0; /* stokes increment */
+    cdelt = 11.0; /* stokes increment */
     ivpnt++;
     break;
 
   case 8: /* LL   */
     ObitUVCalSelectLLInit (in, kstoke0, nstok, ivpnt, err);
     crval = -2.0; /* Stokes index */
-    cdelt =  1.0; /* stokes increment */
+    cdelt = -1.0; /* stokes increment */
     ivpnt++;
     break;
 
   case 9: /* RL   */
     ObitUVCalSelectRLInit (in, kstoke0, nstok, ivpnt, err);
     crval = -3.0; /* Stokes index */
-    cdelt =  1.0; /* stokes increment */
+    cdelt = -1.0; /* stokes increment */
     ivpnt++;
     break;
 
   case 10: /* LR  */
     ObitUVCalSelectLRInit (in, kstoke0, nstok, ivpnt, err);
     crval = -4.0; /* Stokes index */
-    cdelt =  1.0; /* stokes increment */
+    cdelt = -1.0; /* stokes increment */
     ivpnt++;
     break;
 
-  case 11: /* HALF = RR,LL  */
-    ObitUVCalSelectRRInit (in, kstoke0, nstok, ivpnt, err);
-    crval = -1.0; /* Stokes index */
-    cdelt =  1.0; /* stokes increment */
-    ivpnt++;
-    ObitUVCalSelectLLInit (in, kstoke0, nstok, ivpnt, err);
-    ivpnt++;
-    break;
+  case 11: /* HALF = RR,LL or XX,YY */
+    if (kstoke0 <= -5) { /* Linear */
+      ObitUVCalSelectXXInit (in, kstoke0, nstok, ivpnt, err);
+      crval = -5.0; /* Stokes index */
+      cdelt = -1.0; /* stokes increment */
+      ivpnt++;
+      ObitUVCalSelectYYInit (in, kstoke0, nstok, ivpnt, err);
+      ivpnt++;
+    } else { /* Circular */
+      ObitUVCalSelectRRInit (in, kstoke0, nstok, ivpnt, err);
+      crval = -1.0; /* Stokes index */
+      cdelt = -1.0; /* stokes increment */
+      ivpnt++;
+      ObitUVCalSelectLLInit (in, kstoke0, nstok, ivpnt, err);
+      ivpnt++;
+    }
+      break;
 
   case 12: /* FULL */
     ObitUVCalSelectRRInit (in, kstoke0, nstok, ivpnt, err);
     crval = -1.0; /* Stokes index */
-    cdelt =  1.0; /* stokes increment */
+    cdelt = -1.0; /* stokes increment */
     ivpnt++;
     ObitUVCalSelectLLInit (in, kstoke0, nstok, ivpnt, err);
     ivpnt++;
     ObitUVCalSelectRLInit (in, kstoke0, nstok, ivpnt, err);
     ivpnt++;
     ObitUVCalSelectLRInit (in, kstoke0, nstok, ivpnt, err);
+    ivpnt++;
+    break;
+
+  case 17: /* XX */
+    ObitUVCalSelectXXInit (in, kstoke0, nstok, ivpnt, err);
+    crval = -5.0; /* Stokes index */
+    cdelt = -1.0; /* stokes increment */
+    ivpnt++;
+    break;
+
+  case 18: /* YY */
+    ObitUVCalSelectYYInit (in, kstoke0, nstok, ivpnt, err);
+    crval = -6.0; /* Stokes index */
+    cdelt = -1.0; /* stokes increment */
+    ivpnt++;
+    break;
+
+  case 19: /* XY */
+    ObitUVCalSelectXYInit (in, kstoke0, nstok, ivpnt, err);
+    crval = -7.0; /* Stokes index */
+    cdelt = -1.0; /* stokes increment */
+    ivpnt++;
+    break;
+
+  case 20: /* YX */
+    ObitUVCalSelectYXInit (in, kstoke0, nstok, ivpnt, err);
+    crval = -8.0; /* Stokes index */
+    cdelt = -1.0; /* stokes increment */
     ivpnt++;
     break;
 
@@ -428,7 +486,7 @@ void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
 /**
  * Select data and translate to desired Stokes parameter
  * Adapted from the AIPSish DGGET.FOR.
- * U, V, W scales if selecting in IF.
+ * U, V, W scales if selecting in IF. (done in ObitUVCal)
  * \param in     Calibration Object.
  * \li mySel->transPol  if TRUE translate stokes
  * \li mySel->bothCorr  if TRUE all data needed in combination
@@ -446,9 +504,10 @@ void ObitUVCalSelectInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *inDesc,
  * \returns TRUE if at least some data is valid
  */
 gboolean ObitUVCalSelect (ObitUVCal *in, ofloat *RP, ofloat *visIn, ofloat *visOut, 
-		      ObitErr *err)
+			  ObitErr *err)
 {
   olong   i, ip1, ip2, op, lf, lc, lp, lfoff, ioff, incf, incif, incs;
+  olong channInc, maxChan, maxIF;
   gboolean   good;
   ofloat wt1, wt2, temp, xfact1, xfact2;
   ObitUVSel *sel = in->mySel;
@@ -468,21 +527,27 @@ gboolean ObitUVCalSelect (ObitUVCal *in, ofloat *RP, ofloat *visIn, ofloat *visO
   incs  = 3 * desc->incs  / desc->inaxes[0];
   incf  = 3 * desc->incf  / desc->inaxes[0];
   incif = 3 * desc->incif / desc->inaxes[0];
+  channInc = MAX (1, sel->channInc);
+  maxChan  = MIN (sel->numberChann*channInc, desc->inaxes[desc->jlocf]);
+  if (desc->jlocif>=0) maxIF =  desc->inaxes[desc->jlocif];
+  else                 maxIF = 1;
 
   /* loop checking  and summing weights and getting visibilities. */
   i = -1; /* output visibility number */
 
-  /* visibility offset in input */
-  lfoff = (sel->startIF - 2) * incif + (sel->startChann - 2) * incf;
+  /* initial visibility offset in input */
+  lfoff = (sel->startChann-1-channInc) * incf - incif;
 
   /* loop over IF */
-  for (lf=0; lf<sel->numberIF; lf++) { /* loop 70 */
+  for (lf=0; lf<maxIF; lf++) { /* loop 70 */
     lfoff += incif;
     ioff   = lfoff;
+    /* This one wanted? */
+    if (!sel->IFSel[lf]) continue;
 
     /* Loop over channel */
-    for (lc=0; lc<sel->numberChann; lc++) { /* loop 60 */
-      ioff += incf;
+    for (lc=0; lc<maxChan; lc += channInc) { /* loop 60 */
+      ioff += incf * channInc;
 
       /* translating stokes? */
       if (sel->transPol) {
@@ -534,8 +599,8 @@ gboolean ObitUVCalSelect (ObitUVCal *in, ofloat *RP, ofloat *visIn, ofloat *visO
 		visOut[3*i+1] = 2.0 * visOut[3*i+1];
 	      } 
 	    } 
-	  } /* end loop  L40:  */;
-	} /* end need all weights */
+	  } /* end need all weights */
+	} /* end loop  L40: */
 
 	/* no translation - just copy and reorder data */
       } else {
@@ -598,9 +663,11 @@ ObitUVCalSelectIInit (ObitUVCal *in, olong kstoke0, olong nstok,
   if (err->error) return;
 
   /* Make sure data there */
-  missing = ((kstoke0 > 1) ||  (kstoke0 < -2));
+  missing = ((kstoke0 > 1) || (kstoke0 < -2));
+  /* Linear poloarization */
+  if (kstoke0<=-5) missing = (kstoke0 < -6);
   if (formalI && (kstoke0<0))  
-    missing = missing || ((nstok<2) || (kstoke0<-1));
+    missing = missing || ((nstok<2) || ((kstoke0!=-1) && (kstoke0!=-5)));
   if (missing) {
     if (formalI)
       Obit_log_error(err, OBIT_Error, 
@@ -627,8 +694,10 @@ ObitUVCalSelectIInit (ObitUVCal *in, olong kstoke0, olong nstok,
     in->selFact[ivpnt][0] = 0.5;
     in->selFact[ivpnt][1] = 0.5;
     /* check if only RR or LL and if so use it. */
-    if ((nstok < 2)  ||  (kstoke0 != -1)) 
-      in->jadr[ivpnt][1] = in->jadr[ivpnt][0];
+    if (!formalI) {
+      if ((nstok < 2) && ((kstoke0 != -1) && (kstoke0 != -5)))
+	in->jadr[ivpnt][1] = in->jadr[ivpnt][0];
+    }
   }
 } /* end ObitUVCalSelectIInit */
 
@@ -919,7 +988,7 @@ ObitUVCalSelectRLInit (ObitUVCal *in, olong kstoke0, olong nstok,
     /* Add Stokes LL -  check if in data */
     missing = ((kstoke0>0) && ((nstok<4) || (kstoke0>1) || (kstoke0+nstok-1<4)));
     missing = missing ||
-      ((kstoke0<0) && ((kstoke0<-3) || (kstoke0-nstok+1>-3)));
+      ((kstoke0<0) && ((kstoke0<-3) || (kstoke0-nstok+1>-2)));
     if (missing) {
       Obit_log_error(err, OBIT_Error, 
 		     "Stokes LL not available for %s", in->name);
@@ -999,4 +1068,216 @@ ObitUVCalSelectLRInit (ObitUVCal *in, olong kstoke0, olong nstok,
       in->selFact[ivpnt][1] = 0.0;
     } 
 } /* end ObitUVCalSelectLRInit */
+
+/**
+ * Initialize structures for data selection for RR.
+ * Adapted from the AIPSish DGINIT.FOR.
+ * \param in      Object to initialize.
+ * \param kstoke0 Stokes index of first correlation
+ *                (1-4) => I,Q,U,V; 
+ *                (-5 -> -8)=> XX, YY, XY, YX
+ * \param nstok   Number of Stokes correlations
+ * \param ivpnt   Index in data selection structures
+ *                Updated on output.
+ * \param err     ObitError stack.
+ */
+static void 
+ObitUVCalSelectXXInit (ObitUVCal *in, olong kstoke0, olong nstok, 
+		      olong ivpnt, ObitErr *err)
+{
+  gboolean missing;
+  olong incs;
+
+  /* error check */
+  if (err->error) return;
+
+     /* Add Stokes XX -  check if in data */
+    missing = ((kstoke0>0) && ((nstok<4) || (kstoke0>1) || (kstoke0+nstok-1<4)));
+    missing = missing ||
+      ((kstoke0<0) && ((kstoke0<-5) || (kstoke0-nstok+1>-5)));
+    if (missing) {
+      Obit_log_error(err, OBIT_Error, 
+		     "Stokes XX not available for %s", in->name);
+      return;
+    }
+
+    /* Data will always be uncompressed by the time it gets here */
+    incs = 3 * in->myDesc->incs / in->myDesc->inaxes[0];
+    if (kstoke0 > 0) {
+      /* true Stokes (need IQUV for this to work) */
+      g_error ("FIX ME");
+      in->mySel->bothCorr = TRUE;  /* Need both */
+      in->jadr[ivpnt][0] = (1-kstoke0) * incs;
+      in->jadr[ivpnt][1] = (4-kstoke0) * incs;
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = 1.0;
+
+    } else {
+      /* XX */
+      in->jadr[ivpnt][0] = 0;
+      in->jadr[ivpnt][1] = in->jadr[ivpnt][0];
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = 0.0;
+    } 
+} /* end ObitUVCalSelectXXInit */
+
+/**
+ * Initialize structures for data selection for YY.
+ * Adapted from the AIPSish DGINIT.FOR.
+ * \param in      Object to initialize.
+ * \param kstoke0 Stokes index of first correlation
+ *                (1-4) => I,Q,U,V; 
+ *                (-5 -> -8)=> XX, YY, XY, YX
+ * \param nstok   Number of Stokes correlations
+ * \param ivpnt   Index in data selection structures
+ *                Updated on output.
+ * \param err     ObitError stack.
+ */
+static void 
+ObitUVCalSelectYYInit (ObitUVCal *in, olong kstoke0, olong nstok, 
+		      olong ivpnt, ObitErr *err)
+{
+  gboolean missing;
+  olong incs;
+
+  /* error check */
+  if (err->error) return;
+
+    /* Add Stokes YY -  check if in data */
+    missing = ((kstoke0>0) && ((nstok<4) || (kstoke0>1) || (kstoke0+nstok-1<4)));
+    missing = missing ||
+      ((kstoke0<0) && ((kstoke0<-6) || (kstoke0-nstok+1>-6)));
+    if (missing) {
+      Obit_log_error(err, OBIT_Error, 
+		     "Stokes YY not available for %s", in->name);
+      return;
+    }
+    /* true Stokes.(need IQUV for this to work) */
+
+    /* Data will always be uncompressed by the time it gets here */
+    incs = 3 * in->myDesc->incs / in->myDesc->inaxes[0];
+    
+    if (kstoke0 > 0) {
+      g_error ("FIX ME"); /* Convert */
+      in->mySel->bothCorr = TRUE;  /* Need both */
+      in->jadr[ivpnt][0] = (1-kstoke0) * incs;
+      in->jadr[ivpnt][1] = (4-kstoke0) * incs;
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = -1.0;
+    } else {
+      /* YY. */
+      in->jadr[ivpnt][0] = (6+kstoke0) * incs;
+      in->jadr[ivpnt][1] = in->jadr[ivpnt][0];
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = 0.0;
+    } 
+} /* end ObitUVCalSelectYYInit */
+
+/**
+ * Initialize structures for data selection for XY.
+ * Adapted from the AIPSish DGINIT.FOR.
+ * \param in      Object to initialize.
+ * \param kstoke0 Stokes index of first correlation
+ *                (1-4) => I,Q,U,V; 
+ *                (-5 -> -8)=> XX, YY, XY, YX
+ * \param nstok   Number of Stokes correlations
+ * \param ivpnt   Index in data selection structures
+ *                Updated on output.
+ * \param err     ObitError stack.
+ */
+static void 
+ObitUVCalSelectXYInit (ObitUVCal *in, olong kstoke0, olong nstok, 
+		      olong ivpnt, ObitErr *err)
+{
+  gboolean missing;
+  olong incs;
+
+  /* error check */
+  if (err->error) return;
+
+    /* Add Stokes LL -  check if in data */
+    missing = ((kstoke0>0) && ((nstok<4) || (kstoke0>1) || (kstoke0+nstok-1<4)));
+    missing = missing ||
+      ((kstoke0<0) && ((kstoke0<-7) || (kstoke0-nstok+1>-7)));
+    if (missing) {
+      Obit_log_error(err, OBIT_Error, 
+		     "Stokes XY not available for %s", in->name);
+      return;
+    }
+
+    /* Data will always be uncompressed by the time it gets here */
+    incs = 3 * in->myDesc->incs / in->myDesc->inaxes[0];
+    
+    if (kstoke0 > 0) {
+      /* true Stokes (need QU for this to work)*/
+      g_error ("FIX ME"); /* Convert */
+      in->mySel->bothCorr = TRUE;  /* Need both */
+      in->jadr[ivpnt][0] = (2-kstoke0) * incs;
+      in->jadr[ivpnt][1] = in->jadr[ivpnt][0] + incs;
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = 1.0;
+      /* q + iu code */
+      in->jadr[ivpnt][1] = -in->jadr[ivpnt][1];
+    } else {
+      /* XY */
+      in->jadr[ivpnt][0] = (7+kstoke0) * incs;
+      in->jadr[ivpnt][1] = in->jadr[ivpnt][0];
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = 0.0;
+    } 
+} /* end ObitUVCalSelectXYInit */
+
+/**
+ * Initialize structures for data selection for YX.
+ * Adapted from the AIPSish DGINIT.FOR.
+ * \param in      Object to initialize.
+ * \param kstoke0 Stokes index of first correlation
+ *                (1-4) => I,Q,U,V; 
+ *                (-5 -> -8)=> XX, YY, XY, YX
+ * \param nstok   Number of Stokes correlations
+ * \param ivpnt   Index in data selection structures
+ *                Updated on output.
+ * \param err     ObitError stack.
+ */
+static void 
+ObitUVCalSelectYXInit (ObitUVCal *in, olong kstoke0, olong nstok, 
+		      olong ivpnt, ObitErr *err)
+{
+  gboolean missing;
+  olong incs;
+
+  /* error check */
+  if (err->error) return;
+
+    /* Add Stokes YX -  check if in data */
+    missing = ((kstoke0>0) && ((nstok<4) || (kstoke0>1) || (kstoke0+nstok-1<4)));
+    missing = missing ||
+      ((kstoke0<0) && ((kstoke0<-8) || (kstoke0-nstok+1>-8)));
+    if (missing) {
+      Obit_log_error(err, OBIT_Error, 
+		     "Stokes YX not available for %s", in->name);
+      return;
+    }
+
+    /* Data will always be uncompressed by the time it gets here */
+    incs = 3 * in->myDesc->incs / in->myDesc->inaxes[0];
+    
+    if (kstoke0 > 0) {
+      /* true Stokes (need QU for this to work) */
+      g_error ("FIX ME"); /* COnvert */
+      in->mySel->bothCorr = TRUE;  /* Need both */
+      in->jadr[ivpnt][0] = (2-kstoke0) * incs;
+      in->jadr[ivpnt][1] = in->jadr[ivpnt][0] + incs;
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = -1.0;
+      /* q + iu code */
+      in->jadr[ivpnt][1] = -in->jadr[ivpnt][1];
+    } else {
+      /* YX. */
+      in->jadr[ivpnt][0] = (8+kstoke0) * incs;
+      in->jadr[ivpnt][1] = in->jadr[ivpnt][0];
+      in->selFact[ivpnt][0] = 1.0;
+      in->selFact[ivpnt][1] = 0.0;
+    } 
+} /* end ObitUVCalSelectYXInit */
 

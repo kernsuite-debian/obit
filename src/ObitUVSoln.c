@@ -1,6 +1,6 @@
-/* $Id: ObitUVSoln.c 149 2010-01-01 18:31:02Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2008                                          */
+/*;  Copyright (C) 2006-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -199,7 +199,7 @@ void ObitUVSolnStartUp (ObitUVSoln *in, ObitErr *err)
   gint32 dim[MAXINFOELEMDIM];
   olong size, i, iif, iant, SNver, highVer;
   olong itemp;
-  gchar interMode[9];
+  gchar interMode[9], smoType[5];
   gchar *routine="ObitUVSolnStartUp";
 
   /* error checks */
@@ -272,7 +272,8 @@ void ObitUVSolnStartUp (ObitUVSoln *in, ObitErr *err)
   in->numAnt    = desc->maxAnt;
   in->numSubA   = desc->numSubA;
   in->DeltaTime = desc->DeltaTime;
-  in->numIF     = desc->inaxes[desc->jlocif];
+  if (desc->jlocif>=0) in->numIF = desc->inaxes[desc->jlocif];
+  else                 in->numIF = 1;
 
   /* Nothing read yet */
   in->LastRowRead = 0;
@@ -309,6 +310,9 @@ void ObitUVSolnStartUp (ObitUVSoln *in, ObitErr *err)
   in->numPol = in->SNTable->numPol;
   in->numRow = in->SNTable->myDesc->nrow;
 
+  /* Make sure antenna arrays large enough */
+  in->numAnt = MAX(in->numAnt, in->SNTable->numAnt);
+
   /* Smoothing needed? */
   in->isSNSmoo = FALSE;
   if ((in->interMode == OBIT_UVSolnInterMWF) || 
@@ -333,7 +337,13 @@ void ObitUVSolnStartUp (ObitUVSoln *in, ObitErr *err)
 
     /* Smooth table */
     dim[0] = 4; dim[1] = 1;
-    ObitInfoListAlwaysPut(in->SNTable->info, "smoType", OBIT_string, dim, interMode);
+    ObitInfoListAlwaysPut(in->SNTable->info, "smoFunc", OBIT_string, dim, interMode);
+    if (in->interParm[0]>0.0) strcpy(smoType,"AMPL");
+    if (in->interParm[1]>0.0) strcpy(smoType,"PHAS");
+    if ((in->interParm[0]>0.0) && (in->interParm[1]>0.0)) strcpy(smoType,"BOTH");
+    ObitInfoListAlwaysPut(in->SNTable->info, "smoType", OBIT_string, dim, smoType);
+    dim[0] = 2; dim[1] = 1;
+    ObitInfoListAlwaysPut(in->SNTable->info, "smoParm", OBIT_float, dim, &in->interParm[0]);
     dim[0] = 1; dim[1] = 1;
     ObitInfoListAlwaysPut(in->SNTable->info, "smoAmp",   OBIT_float, dim, &in->interParm[0]);
     ObitInfoListAlwaysPut(in->SNTable->info, "smoPhase", OBIT_float, dim, &in->interParm[1]);
@@ -894,8 +904,10 @@ void ObitUVSolnRefAnt (ObitTableSN *SNTab, olong isuba, olong* refant, ObitErr* 
   if (noReRef) return;
   
   /* Open table */
+  numant = SNTab->numAnt;
   retCode = ObitTableSNOpen (SNTab, OBIT_IO_ReadWrite, err);
   if (err->error) Obit_traceback_msg (err, routine, SNTab->name);
+  SNTab->numAnt = MAX(SNTab->numAnt, numant);  /* Don't let it get smaller */
  
   /* Get descriptive info */
   numif  = SNTab->numIF;
@@ -931,7 +943,7 @@ void ObitUVSolnRefAnt (ObitTableSN *SNTab, olong isuba, olong* refant, ObitErr* 
 
   /* Message about rereferencing. */
   g_snprintf (msgtxt,80, "Rereferencing phases to antenna %3d", *refant);
-  Obit_log_error(err, OBIT_InfoErr, msgtxt);
+  Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
 
   /* Loop through antennas used as  secondary reference antennas. */
   for (ant= 1; ant<=numant; ant++) { /* loop 500 */
@@ -1310,6 +1322,90 @@ void ObitUVSolnDeselCL (ObitTableCL *CLTab, olong isuba, olong fqid,
 } /* end ObitUVSolnDeselCL */
 
 /**
+ * Routine to deselect records in an BP table if they match a given
+ * subarray, have a selected FQ id, appear on a list of antennas and
+ * are in a given timerange.
+ * \param BPTab      BP table object 
+ * \param isub       Subarray number, <=0 -> any
+ * \param fqid       Selected FQ id, <=0 -> any
+ * \param nantf      Number of antennas in ants
+ * \param ants       List of antennas, NULL or 0 in first -> flag all
+ * \param nsou       Number of source ids in sources
+ * \param sources    List of sources, NULL or 0 in first -> flag all
+ * \param timerange  Timerange to flag, 0s -> all
+ * \param err        Error/message stack, returns if error.
+ */
+void ObitUVSolnDeselBP (ObitTableBP *BPTab, olong isuba, olong fqid, 
+			   olong nantf, olong *ants, olong nsou, olong *sources,
+			   ofloat timerange[2], ObitErr* err)
+{
+  ObitIOCode retCode;
+  ObitTableBPRow *row=NULL;
+  olong   i;
+  gboolean allAnt, allSou, flagIt;
+  ofloat tr[2];
+  olong  loop;
+  gchar  *routine = "ObitUVSolnDeselBP";
+  
+  /* Error checks */
+  g_assert(ObitErrIsA(err));
+  if (err->error) return;  /* previous error? */
+  g_assert(ObitTableBPIsA(BPTab));
+ 
+ /* Open table */
+  retCode = ObitTableBPOpen (BPTab, OBIT_IO_ReadWrite, err);
+  if (err->error) Obit_traceback_msg (err, routine, BPTab->name);
+ 
+  /* All antennas to be flagged? */
+  allAnt = ((ants==NULL) || (ants[0]<=0));
+  /* All sources to be flagged? */
+  allSou = ((sources==NULL) || (sources[0]<=0));
+
+  /* Timerange */
+  tr[0] = timerange[0];
+  tr[1] = timerange[1];
+  if ((tr[0]==0.0) && (tr[1]==0.0)) {
+    tr[0] = -1.0e20;
+    tr[1] =  1.0e20;
+  }
+
+  /* Create Row */
+  row = newObitTableBPRow (BPTab);
+  /* Loop through table */
+  for (loop=1; loop<=BPTab->myDesc->nrow; loop++) { /* loop 20 */
+
+    retCode = ObitTableBPReadRow (BPTab, loop, row, err);
+    if (err->error) Obit_traceback_msg (err, routine, BPTab->name);
+    if (row->status<0) continue;  /* Skip deselected record */
+
+    /* Flag this one? */
+    flagIt = (row->SubA==isuba) || (isuba<=0);             /* by subarray */
+    flagIt = flagIt || (row->FreqID==fqid) || (fqid<=0);      /* by FQ id */
+    flagIt = flagIt || ((row->Time>=tr[0]) && (row->Time<=tr[1])); /* by time */
+    flagIt = flagIt && allAnt;                          /* Check Antenna */
+    if (!flagIt) for (i=0; i<nantf; i++) {
+      if (row->antNo==ants[i]) {flagIt = TRUE; break;}
+    }
+    flagIt = flagIt && allSou;                          /* Check Source */
+    if (!flagIt) for (i=0; i<nsou; i++) {
+      if (row->SourID==sources[i]) {flagIt = TRUE; break;}
+    }
+
+    if (flagIt) { /* flag */
+      /* Rewrite record flagged */
+      row->status = -1;
+      retCode = ObitTableBPWriteRow (BPTab, loop, row, err);
+      if (err->error) Obit_traceback_msg (err, routine, BPTab->name);
+    } /* end if flag */
+  } /* End loop over table */
+
+  /* Close table */
+  retCode = ObitTableBPClose (BPTab, err);
+  if (err->error) Obit_traceback_msg (err, routine, BPTab->name);
+  row = ObitTableBPRowUnref (row);  /* Cleanup */
+} /* end ObitUVSolnDeselBP */
+
+/**
  * Routine to smooth amplitudes and/or phases rates in an open SN  
  * table.  All poln present are smoothed but only one IF.  The KOL  
  * pointers are presumed to point at the desired IF.  An error is  
@@ -1433,7 +1529,11 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
     doph    = TRUE;
     dodela  = TRUE;
     dorate  = TRUE;
- }
+  } else {  /* Unknown type */
+    Obit_log_error(err, OBIT_Error,"%s: Unsupported smoothing type %s",
+		   routine, smoType);
+    return;
+  }
 
   /* Create Row */
   row = newObitTableSNRow (SNTab);
@@ -1459,16 +1559,17 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
       /* Finished antenna? */
       if (row->antNo < ant) continue; /* Shouldn't happen */
       if (row->antNo > ant) break;
-
+      
       /* Want this record */
       if ((row->SubA == sub)  &&  (row->antNo == ant)) {
-
+	
 	/* take first reference antenna and check that it never changes */
 	if (refa1 <= 0) {
 	  refa1 = row->RefAnt1[iif];
 	} else {
 	  if (row->RefAnt1[iif] == 0) row->RefAnt1[iif] = refa1;
 	} 
+	if (row->Weight1[iif]<=0.0) row->RefAnt1[iif] = refa1;
 	if (refa1 != row->RefAnt1[iif]) { /* goto L980;*/
 	  Obit_log_error(err, OBIT_Error, 
 			 "%s: Reference antenna varies, cannot smooth %s", 
@@ -1484,6 +1585,7 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	  } else {
 	    if (row->RefAnt2[iif] == 0) row->RefAnt2[iif] = refa2;
 	  } 
+	  if (row->Weight2[iif]<=0.0) row->RefAnt2[iif] = refa2;
 	  if (refa2 != row->RefAnt2[iif]) { /* goto L980;*/
 	    Obit_log_error(err, OBIT_Error, 
 			   "%s: Reference antenna varies, cannot smooth %s", 
@@ -1574,7 +1676,7 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
       } /* end if want record */ 
       numtim++;   /* count times */
     } /* end loop  L100: */
-
+    
     save = isnrno - 1; /* How far did we get? */
     if (numtim <= 0) goto endAnt;  /* Catch anything? */
     
@@ -1584,8 +1686,12 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	smoIt (smoFunc, stamp, alpha, &work1[8*nxt], &work1[2*nxt], &work1[3*nxt], numtim, 
 	       &work2[0*nxt], &work2[1*nxt], &work2[2*nxt], &work2[3*nxt], doBlank);
 	for (i=0; i<numtim; i++) work1[2*nxt+i] = work2[i];
-	/* Save deblanked weights if not going to smooth phases */
-	if (doBlank &&(!doph)) for (i=0; i<numtim; i++) work1[3*nxt+i] = work2[1*nxt+i];
+      } else {  /* Not smoothing amp, replace fblank with 1.0 if doBlank */
+	if (doBlank) {
+	  for (i=0; i<numtim; i++) {
+	    if (work1[2*nxt+i]==fblank) work1[2*nxt+i] = 1.0;
+	  }
+	}
       }
       if (doph) {
 	smoIt (smoFunc, stph, alpha, &work1[8*nxt], &work1[0*nxt], &work1[3*nxt], numtim, 
@@ -1594,7 +1700,6 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	smoIt (smoFunc, stph, alpha, &work1[8*nxt], &work1[1*nxt], &work1[3*nxt], numtim, 
 	       &work2[0*nxt], &work2[1*nxt], &work2[2*nxt], &work2[3*nxt], doBlank);
 	for (i=0; i<numtim; i++) work1[1*nxt+i] = work2[i];
-	for (i=0; i<numtim; i++) work1[3*nxt+i] = work2[1*nxt+i];
       }
       if (doMB) {
 	smoIt (smoFunc, stMB, alpha, &work1[8*nxt], &work1[10*nxt], &work1[3*nxt], numtim, 
@@ -1611,15 +1716,23 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	       &work2[0*nxt], &work2[1*nxt], &work2[2*nxt], &work2[3*nxt], doBlank);
 	for (i=0; i<numtim; i++) work1[12*nxt+i] = work2[i];
       }
+      
+      /* Save deblanked weights if doBlank */
+      if (doBlank) for (i=0; i<numtim; i++) work1[3*nxt+i] = work2[1*nxt+i];
     } /* end first polarization */
+    
     
     if (n2good > 0) {  /* Second polarization */
       if (doamp) {
 	smoIt (smoFunc, stamp, alpha, &work1[8*nxt], &work1[6*nxt], &work1[7*nxt], numtim, 
 	       &work2[0*nxt], &work2[1*nxt], &work2[2*nxt], &work2[3*nxt], doBlank);
 	for (i=0; i<numtim; i++) work1[6*nxt+i] = work2[i];
-	/* Save deblanked weights if not going to smooth phases */
-	if (doBlank &&(!doph)) for (i=0; i<numtim; i++) work1[7*nxt+i] = work2[1*nxt+i];
+      } else {  /* Not smoothing amp, replace fblank with 1.0 if doBlank */
+	if (doBlank) {
+	  for (i=0; i<numtim; i++) {
+	    if (work1[6*nxt+i]==fblank) work1[6*nxt+i] = 1.0;
+	  }
+	}
       }
       if (doph) {
 	smoIt (smoFunc, stph, alpha, &work1[8*nxt], &work1[4*nxt], &work1[7*nxt], numtim, 
@@ -1628,7 +1741,6 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	smoIt (smoFunc, stph, alpha, &work1[8*nxt], &work1[5*nxt], &work1[7*nxt], numtim, 
 	       &work2[0*nxt], &work2[1*nxt], &work2[2*nxt], &work2[3*nxt], doBlank);
 	for (i=0; i<numtim; i++) work1[5*nxt+i] = work2[i];
-	for (i=0; i<numtim; i++) work1[7*nxt+i] = work2[1*nxt+i];
       }
       if (doMB) {
 	smoIt (smoFunc, stMB, alpha, &work1[8*nxt], &work1[13*nxt], &work1[3*nxt], numtim, 
@@ -1645,9 +1757,11 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	       &work2[0*nxt], &work2[1*nxt], &work2[2*nxt], &work2[3*nxt], doBlank);
 	for (i=0; i<numtim; i++) work1[15*nxt+i] = work2[i];
       }
+      /* Save deblanked weights if doBlank */
+      if (doBlank) for (i=0; i<numtim; i++) work1[7*nxt+i] = work2[1*nxt+i];
     } /* end second polarization */
     
-    /* Replace with smoothed values */
+      /* Replace with smoothed values */
     for (itime=0; itime<numtim; itime++) { /* loop 200 */
       isnrno = (olong)(work1[9*nxt+itime]+0.5);
       retCode = ObitTableSNReadRow (SNTab, isnrno, row, err);
@@ -1659,7 +1773,7 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	row->MBDelay1 = work1[10*nxt+itime];
 	if (need2) row->MBDelay2 = work1[13*nxt+itime];
       }
-
+      
       /* weights zero rather than fblank */
       if (work1[3*nxt+itime]==fblank) work1[3*nxt+itime] = 0.0;
       if (work1[3*nxt+itime] > 0.0) {
@@ -1669,8 +1783,10 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	row->Real1[iif]   = work1[0*nxt+itime] * work1[2*nxt+itime] / amp;
 	row->Imag1[iif]   = work1[1*nxt+itime] * work1[2*nxt+itime] / amp;
 	row->Weight1[iif] = work1[3*nxt+itime];
-	row->Delay1[iif]  = work1[11*nxt+itime];
-	row->Rate1[iif]   = work1[12*nxt+itime];
+	if (work1[11*nxt+itime]!=fblank)  row->Delay1[iif]  = work1[11*nxt+itime];
+	else row->Delay1[iif] = 0.0;
+	if (work1[12*nxt+itime]!=fblank)  row->Rate1[iif]   = work1[12*nxt+itime];
+	else row->Rate1[iif] = 0.0;
 	(*gncnt) += + 1.0;
 	(*gnsum) += work1[2*nxt+itime];
 	if (row->RefAnt1[iif] == 0) row->RefAnt1[iif] = refa1;
@@ -1691,8 +1807,10 @@ ObitUVSolnSNSmooth (ObitTableSN *SNTab, gchar* smoFunc, gchar* smoType, ofloat a
 	  row->Real2[iif]   = work1[4*nxt+itime] * work1[6*nxt+itime] / amp;
 	  row->Imag2[iif]   = work1[5*nxt+itime] * work1[6*nxt+itime] / amp;
 	  row->Weight2[iif] = work1[7*nxt+itime];
-	  row->Delay2[iif]  = work1[14*nxt+itime];
-	  row->Rate2[iif]   = work1[15*nxt+itime];
+	  if (work1[14*nxt+itime]!=fblank)  row->Delay2[iif]  = work1[14*nxt+itime];
+	  else row->Delay2[iif] = 0.0;
+	  if (work1[14*nxt+itime]!=fblank)  row->Rate2[iif]   = work1[15*nxt+itime];
+	  else row->Rate2[iif] = 0.0;
 	  (*gncnt) += 1.0;
 	  (*gnsum) += work1[6*nxt+itime];
 	  if (row->RefAnt2[iif] == 0) row->RefAnt2[iif] = refa2;
@@ -1868,8 +1986,9 @@ ObitUVSolnSmooBox (ofloat width, ofloat* x, ofloat* y, ofloat* w, olong n,
  * Routine translated from the AIPSish SMGAUS.FOR/SMGAUS  
  * \param width   Width of boxcar in same units as X: 0 => replace 
  *                blanks with interpolated closest 2, < 0 => replace 
- *                only blanks with the b oxcar smoothed values (all 
+ *                only blanks with the Gaussian smoothed values (all 
  *                others remain unchanged) 
+ *                width = twice sigma of Gaussian
  * \param x       Abscissas of points to be smoothed in increasing 
  *                order 
  * \param y       Values to be smoothed. 
@@ -1885,7 +2004,7 @@ ObitUVSolnSmooGauss (ofloat width, ofloat* x, ofloat* y, ofloat* w, olong n,
 		     ofloat* ys, ofloat* ws, ofloat* wtsum, gboolean doBlank) 
 {
   olong   i , j, k, l, i1, i2;
-  ofloat      hw, d, temp, s=0.0, g, fblank =  ObitMagicF();
+  ofloat      hw, d, temp, s=0.5*width, g, fblank =  ObitMagicF();
   gboolean   wasb, onlyb, blnkd;
 
 
@@ -2035,8 +2154,9 @@ void
 ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, olong n, 
 		   ofloat* ys, ofloat* ws, ofloat* yor, ofloat* wor, gboolean doBlank) 
 {
-  olong   i, j, k, l, i1, i2, ic;
-  ofloat      hw, d, temp, beta=0.0, fblank =  ObitMagicF();
+  olong      i, j, k, l, i1=0, i2=0, ic=0, nword;
+  size_t     nbyte;
+  ofloat     hw, d, temp, beta=0.0, fblank =  ObitMagicF();
   gboolean   wasb, onlyb, blnkd;
 
   if (n <= 0) return;    /* any data? */
@@ -2045,6 +2165,10 @@ ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, 
   hw = d / 2.0;          /* Half width of smoothing */
   wasb = FALSE;          /* any blanked data? */
   beta = MAX (0.05, MIN (0.95, alpha)) / 2.0; /*  Average around median factor */
+
+  nbyte = n*sizeof(ofloat);
+  /*memmove (yor, y, nbyte);*/
+  /*memmove (wor, w, nbyte);*/
 
   /* width = 0.0 => interp only - here copy good and interpolate later */
   if (d <= 0.0) {
@@ -2078,9 +2202,7 @@ ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, 
       
       if ((blnkd)  ||  (!onlyb)) { /* smoothing data */
 	for (k=1; k<=i; k++) { /* previous values loop 30 */
-	  if (fabs(x[i]-x[i-k]) > hw) {
-	    break;   /* out of window? goto L35; */
-	  } else {
+	  if (fabs(x[i]-x[i-k]) <= hw) {  /* In window? */
 	    if ((y[i-k] != fblank)  &&  (w[i-k] > 0.0)  &&  (w[i-k] != fblank)) {
 	      /* valid datum in window, order the datum */
 	      l = ic;
@@ -2088,11 +2210,18 @@ ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, 
 		if (yor[j] > y[i-k]) {l = j; break;}  /* goto L20; */
 	      } /* end loop  L15:  */;
 	      
-	      for (j=l; j<=ic; j++) { /* shuffle loop 25 */
+	      nword = ic-l+1;
+	      nbyte = nword*sizeof(ofloat);
+	      if (nword>0) {
+		memmove (&yor[l+1], &yor[l], nbyte);
+		memmove (&wor[l+1], &wor[l], nbyte);
+	      }
+	      /* shuffle loop 25 */
+	      /*for (j=l; j<=ic; j++) { 
 		i1 = ic - j + l;
 		yor[i1] = yor[i1-1];
 		wor[i1] = wor[i1-1];
-	      } /* end loop  L25:  */;
+		} *//* end loop  L25:  */;
 	      yor[l] = y[i-k];  /* insert [i-k] in ordered array */
 	      wor[l] = w[i-k];
 	      ic++; /* Number of elements in ordered list */
@@ -2109,12 +2238,19 @@ ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, 
 	      for (j=0; j<ic; j++) { /* find location in ordered arrays for [k] loop 45 */
 		if (yor[j] > y[k]) {l = j; break;}  /* goto L50; */
 	      } /* end loop  L45:  */;
-	      
-	      for (j=l; j<ic; j++) { /*shuffle  loop 55 */
+
+	      nword = ic - l;
+	      nbyte = nword*sizeof(ofloat);
+	      if (nword>0) {
+		memmove (&yor[l+1], &yor[l], nbyte);
+		memmove (&wor[l+1], &wor[l], nbyte);
+	      }
+	      /*shuffle  loop 55 */
+	      /*for (j=l; j<ic; j++) { 
 		i1 = ic - j + l;
 		yor[i1] = yor[i1-1];
 		wor[i1] = wor[i1-1];
-	      } /* end loop  L55:  */;
+		}*/ /* end loop  L55:  */;
 	      yor[l] = y[k];   /* insert [k] in ordered array */
 	      wor[l] = w[k];
 	      ic++; /* Number of elements in ordered list */
@@ -2143,6 +2279,7 @@ ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, 
       /* Get smoothed datum */
       if (ws[i] > 0.0) {
 	ys[i] /= ws[i];
+	ws[i] /= (i2-i1+1);
       } else {
 	ys[i] = fblank;
 	wasb = TRUE;
@@ -2161,6 +2298,9 @@ ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, 
 	i2 = MAX (i, i2);
       } 
     } /* end loop  L110: */
+
+    /* Anything? */
+    if (i2<1) return;
 
     if (i1 > 1) {  /* Fill to beginning */
       j = i1 - 1;
@@ -2191,7 +2331,6 @@ ObitUVSolnSmooMWF (ofloat width, ofloat alpha, ofloat* x, ofloat* y, ofloat* w, 
       } 
     } /* end loop  L130: */
   } /* end of if any blanks to interpolate */ 
-
 
 } /* end of routine ObitUVSolnSmooMWF */ 
 
@@ -2461,7 +2600,7 @@ static void ObitUVSolnNewTime (ObitUVSoln *in, ofloat time,
     if (SNTableRow->status < 0) continue; /* entry flagged? */
 
     /* Check calibrator selector */
-    want = ObitUVSelWantSour (in->CalSel, SNTableRow->SourID);
+    want = (SNTableRow->SourID<=0) || ObitUVSelWantSour (in->CalSel, SNTableRow->SourID);
     
     /* check subarray */
     want = want && 
@@ -2773,10 +2912,10 @@ refPhase (ObitTableSN *SNTab, olong isub, olong iif, olong refa, olong ant,
       
       /* Bad solution? */
       if (((row->Weight1[iif] <= 0.0)  ||  ( row->Real1[iif] == fblank)  ||  
-	   (row->RefAnt1[iif] <= 0))) continue;  /* goto L100;*/
-      if (need2  &&  ((numpol > 1)  &&  
+	   (row->RefAnt1[iif] <= 0)) &&
+	  (need2  &&  ((numpol > 1)  &&  
 		      ((row->Weight2[iif] <= 0.0) || (row->Real2[iif] == fblank)  || 
-		       (row->RefAnt2[iif] <= 0)))) continue;  /* goto L100; */
+		       (row->RefAnt2[iif] <= 0))))) continue;  /* goto L100; */
       
       /* Desired antenna combination? */
       if (need2  &&  (refa1 > 0)  &&  (refa2 > 0)  &&  (refa1 != refa2)) continue; 

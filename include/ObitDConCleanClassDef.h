@@ -1,4 +1,4 @@
-/* $Id: ObitDConCleanClassDef.h 157 2010-02-15 14:13:36Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2004-2010                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

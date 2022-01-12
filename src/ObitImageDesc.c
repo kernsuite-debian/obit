@@ -1,6 +1,6 @@
-/* $Id: ObitImageDesc.c 158 2010-02-24 16:27:22Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2015                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -162,6 +162,10 @@ ObitImageDesc* ObitImageDescCopy (ObitImageDesc* in, ObitImageDesc* out,
   out->obsra   = in->obsra;
   out->obsdec  = in->obsdec;
   out->plane   = in->plane;
+  out->plane4  = in->plane4;
+  out->plane5  = in->plane5;
+  out->plane6  = in->plane6;
+  out->plane7  = in->plane7;
   out->row     = in->row;
   out->IOsize  = in->IOsize;
   out->areBlanks = in->areBlanks;
@@ -282,6 +286,9 @@ void ObitImageDescCopyDesc (ObitImageDesc* in, ObitImageDesc* out,
   /* index output */
   ObitImageDescIndex (out);
 
+  /* Copy list */
+  ObitInfoListCopyData(in->info, out->info);
+
   return;
 } /* end ObitImageDescCopyDesc */
 
@@ -310,6 +317,10 @@ ObitImageDesc* ObitImageDescDefault (gchar *name)
   out->obsra   = 0.0;
   out->obsdec  = 0.0;
   out->plane   = 0;
+  out->plane4  = 0;
+  out->plane5  = 0;
+  out->plane6  = 0;
+  out->plane7  = 0;
   out->row     = 0;
   out->IOsize  = OBIT_IO_byPlane;
   out->areBlanks = FALSE;
@@ -406,6 +417,7 @@ void ObitImageDescIndex (ObitImageDesc* in)
     if (!strncmp (in->ctype[i], "STOKES", 6)) in->jlocs = i;
     if (!strncmp (in->ctype[i], "FREQ",     4)) in->jlocf = i;
     else if (!strncmp (in->ctype[i], "VELO",     4)) in->jlocf = i;
+    else if (!strncmp (in->ctype[i], "FELO",     4)) in->jlocf = i;
     else if (!strncmp (in->ctype[i], "FREQ",     4)) in->jlocf = i;
     else if (!strncmp (in->ctype[i], "SPECLOGF", 8)) in->jlocf = i;
     else if (!strncmp (in->ctype[i], "SPECLNMF", 8)) in->jlocf = i;
@@ -413,6 +425,8 @@ void ObitImageDescIndex (ObitImageDesc* in)
   }
   /* Make sure equinox set if epoch set */
   if ((in->equinox<0.1) && (in->epoch>0.1)) in->equinox = in->epoch;
+  /* to be sure */
+  if (!strncmp (in->ctype[0], "GLON",   4)) in->coordType = OBIT_Galactic;
 } /* end ObitImageDescIndex */
 
 /**
@@ -498,7 +512,20 @@ ObitImageDescCvtPixel(ObitImageDesc* in, ObitImageDesc* out,
     Obit_log_error(err, OBIT_Error, 
 		   "%s: Error %d determining location of pixel in %s", 
 		   routine, bad, in->name);
-    return OK;
+    Obit_log_error(err, OBIT_Error, 
+		   "%s: input coord %lf %lf", routine, ra, dec);
+    /* DEBUG
+    fprintf(stderr,"in %lf %lf, %f %f, %f %f, %f, %d %s\n",
+	    in->crval[in->jlocr], in->crval[in->jlocd],
+	    in->crpix[in->jlocr], in->crpix[in->jlocd],
+	    in->cdelt[in->jlocr], in->cdelt[in->jlocd],
+	    in->crota[in->jlocd], in->coordType, in->ctype[in->jlocr]);
+    fprintf(stderr,"out %lf %lf, %f %f, %f %f, %f, %d %s\n",
+	    out->crval[out->jlocr], out->crval[out->jlocd],
+	    out->crpix[out->jlocr], out->crpix[out->jlocd],
+	    out->cdelt[out->jlocr], out->cdelt[out->jlocd],
+	    out->crota[out->jlocd], out->coordType, out->ctype[out->jlocr]); */
+     return OK;
   }
 
   /* Is outPixel in out? or close enough? */
@@ -702,9 +729,7 @@ void ObitImageDescGetPixel(ObitImageDesc* in, odouble *pos,
 /**
  * Determine if there is an overlap is the selected regions described by.
  * a pair of image descriptors
- * Test if the difference in ra and dec is less than the sum of 
- * the halfwidths.  Nonlinearities of coordinates ignored but test is 
- * somewhat generous.
+ * Test is if any corner of either image is in the other.
  * \param in1      first input image descriptor
  * \param in2      second input image descriptor
  * \param err      ObitErr error stack
@@ -714,13 +739,58 @@ gboolean ObitImageDescOverlap(ObitImageDesc *in1, ObitImageDesc *in2,
 			      ObitErr *err)
 {
   gboolean out = FALSE;
-  odouble ra1, dec1, ra2, dec2, deltaRa, deltaDec;
+  gboolean test;
+  ofloat inPixel[2], outPixel[2];
+  odouble ra1, dec1, ra2, dec2, deltaRa, deltaDec, tr, ti, dp;
   ofloat halfx1, halfx2, halfy1, halfy2;
+  ObitErr *damnErr=NULL;
 
   /* error checks */
-  g_assert (ObitErrIsA(err));
   if (err->error) return out;
 
+  /* Ignore error messages */
+  damnErr = newObitErr( );
+
+  /* Center */
+  inPixel[0] = in1->inaxes[0]/2; inPixel[1] = in1->inaxes[1]/2; 
+  test = ObitImageDescCvtPixel (in1, in2, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+  inPixel[0] = in2->inaxes[0]/2; inPixel[1] = in2->inaxes[1]/2; 
+  test = ObitImageDescCvtPixel (in2, in1, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+
+  /* First corner */
+  inPixel[0] = inPixel[1] = 1.0; 
+  test = ObitImageDescCvtPixel (in1, in2, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+  test = ObitImageDescCvtPixel (in2, in1, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+
+  /* Second corner */
+  inPixel[1] = in1->inaxes[1]; inPixel[0] = 1.0; 
+  test = ObitImageDescCvtPixel (in1, in2, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+  inPixel[1] = in2->inaxes[1]; inPixel[0] = 1.0; 
+  test = ObitImageDescCvtPixel (in2, in1, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+
+  /* Third corner */
+  inPixel[0] = in1->inaxes[0]; inPixel[1] = 1.0; 
+  test = ObitImageDescCvtPixel (in1, in2, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+  inPixel[0] = in2->inaxes[0]; inPixel[1] = 1.0; 
+  test = ObitImageDescCvtPixel (in2, in1, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+
+  /* Fourth corner */
+  inPixel[0] = in1->inaxes[0]; inPixel[1] = in1->inaxes[1]; 
+  test = ObitImageDescCvtPixel (in1, in2, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+  inPixel[0] = in2->inaxes[0]; inPixel[1] = in2->inaxes[1]; 
+  test = ObitImageDescCvtPixel (in2, in1, inPixel, outPixel, damnErr);
+  if (test) goto OK;
+
+  /* Halfwidth tests */
   /* Positions of centers */
   ra1 = in1->crval[in1->jlocr] + 
     (0.5*in1->inaxes[in1->jlocr] + 1.0 - in1->crpix[in1->jlocr]) * 
@@ -734,23 +804,78 @@ gboolean ObitImageDescOverlap(ObitImageDesc *in1, ObitImageDesc *in2,
   dec2 = in2->crval[in2->jlocd] + 
     (0.5*in2->inaxes[in2->jlocd] + 1.0 - in2->crpix[in2->jlocd]) * 
     in2->cdelt[in2->jlocd];
-
-  /* Offsets */
-  deltaRa  = fabs (ra1-ra2) * cos(dec1*DG2RAD);
+  
+  /* Offsets - allow wrap in RA */
+  deltaRa  = fabs (ra1-ra2);
+  if (deltaRa>180.0) deltaRa  = fabs (deltaRa-360.0);
+  deltaRa  = deltaRa * cos(dec1*DG2RAD);
   deltaDec = fabs (dec1-dec2);
 
+  /* any rotation? */
+  if (fabs(in1->crota[1]-in2->crota[1])>0.1) {
+    dp = in1->crota[1]-in2->crota[1]*DG2RAD;
+    tr = deltaRa;
+    ti = deltaDec;
+    deltaRa  = tr*cos(dp) - ti*sin(dp);
+    deltaDec = ti*cos(dp) + tr*sin(dp);
+  }
+  
   /* Half widths - add a little slop */
-  halfx1 = fabs (0.6*in1->inaxes[in1->jlocr]*in1->cdelt[in1->jlocr]);
-  halfx2 = fabs (0.6*in2->inaxes[in2->jlocr]*in2->cdelt[in2->jlocr]);
-  halfy1 = fabs (0.6*in1->inaxes[in1->jlocd]*in1->cdelt[in1->jlocd]);
-  halfy2 = fabs (0.6*in2->inaxes[in2->jlocd]*in2->cdelt[in2->jlocd]);
+  halfx1 = fabs (0.55*in1->inaxes[in1->jlocr]*in1->cdelt[in1->jlocr]);
+  halfx2 = fabs (0.55*in2->inaxes[in2->jlocr]*in2->cdelt[in2->jlocr]);
+  halfy1 = fabs (0.55*in1->inaxes[in1->jlocd]*in1->cdelt[in1->jlocd]);
+  halfy2 = fabs (0.55*in2->inaxes[in2->jlocd]*in2->cdelt[in2->jlocd]);
 
   /* Are the offsets smaller than the sum of the halfwidths?
      not terrible accurate but it doesn't need to be */
   out = (deltaRa <= (halfx1+halfx2)) && (deltaDec <= (halfy1+halfy2));
+  goto done;
 
+  /* Overlap found */
+ OK:
+  out = TRUE;
+  ObitErrUnref(damnErr);
+  
+ done:
   return out;
 } /* end ObitImageDescOverlap */
+
+/**
+ * Determine if the pixels of two image grids are coincident (within 0.001 cell)
+ * Images must both have do3D FALSE, the same spacing, rotation, and tangent point.
+ * \param in1      first input image descriptor
+ * \param in2      second input image descriptor
+ * \param err      ObitErr error stack
+ * \return TRUE if there is overlap, else FALSE
+ */
+gboolean ObitImageDescAligned(ObitImageDesc *in1, ObitImageDesc *in2,
+			      ObitErr *err)
+{
+  gboolean out = FALSE;
+  odouble pos1[2], pos2[2];
+  gchar *routine = "ObitImageDescAligned";
+
+  /* Both do3D? */
+  if (in1->do3D || in2->do3D) return out;
+
+  /* X Cell spacing? */
+  if (fabs(in1->cdelt[0]-in2->cdelt[0]) > 0.001*fabs(in1->cdelt[0])) return out;
+
+  /* Y Cell spacing? */
+  if (fabs(in1->cdelt[1]-in2->cdelt[1]) > 0.001*fabs(in1->cdelt[1])) return out;
+
+  /* Rotation? */
+  if (fabs(in1->crota[1]-in2->crota[1]) > 0.001) return out;
+
+  /* Common reference (tangent) position? */
+  ObitImageDescGetPos(in1, in1->crpix, pos1, err);
+  ObitImageDescGetPos(in2, in2->crpix, pos2, err);
+  if (err->error) Obit_traceback_val (err, routine, "Descriptor", out);
+  if (fabs(pos1[0]-pos2[0]) > 0.001*fabs(in1->cdelt[0])) return out;
+  if (fabs(pos1[1]-pos2[1]) > 0.001*fabs(in1->cdelt[1])) return out;
+
+  return TRUE;  /* If it gets here, they are aligned */
+} /* end ObitImageDescAligned */
 
 /**
  * Return image rotation angle on sky.
@@ -820,6 +945,27 @@ ofloat ObitImageDescAngle (ObitImageDesc *in, ofloat y, ofloat x)
   dist = acos (zz) * RAD2DG;
   return dist;
 } /* end ObitImageDescAngle */
+
+/**
+ * Get image projection code
+ * \param imDesc   Image data descriptor
+ * \return Projection type, one of
+ *  OBIT_SkyGeom_SIN,  OBIT_SkyGeom_TAN, OBIT_SkyGeom_ARC, OBIT_SkyGeom_NCP, 
+ *  OBIT_SkyGeom_GLS,  OBIT_SkyGeom_MER, OBIT_SkyGeom_AIT, OBIT_SkyGeom_STG
+ */
+ObitSkyGeomProj ObitImageDescGetProj (ObitImageDesc *imDesc)
+{
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-SIN", 4)) return OBIT_SkyGeom_SIN;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-NCP", 4)) return OBIT_SkyGeom_NCP;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "    ", 4)) return OBIT_SkyGeom_SIN;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-TAN", 4)) return OBIT_SkyGeom_TAN;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-ARC", 4)) return OBIT_SkyGeom_ARC;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-GLS", 4)) return OBIT_SkyGeom_GLS;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-MER", 4)) return OBIT_SkyGeom_MER;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-AIT", 4)) return OBIT_SkyGeom_AIT;
+  if (!strncmp(&imDesc->ctype[imDesc->jlocr][4], "-STG", 4)) return OBIT_SkyGeom_STG;
+  return OBIT_SkyGeom_SIN;  /* Default */
+} /* end ObitImageDescGetProj  */
 
 /**
  * Initialize global ClassInfo Structure.
@@ -896,11 +1042,15 @@ void ObitImageDescInit  (gpointer inn)
   in->maxval = -1.0e20;
   in->minval =  1.0e20;
   in->plane   = 0;
+  in->plane4  = 0;
+  in->plane5  = 0;
+  in->plane6  = 0;
+  in->plane7  = 0;
   in->row     = 0;
   in->areBlanks = FALSE;
   in->do3D      = TRUE;
-  in-> xPxOff   = 0.0;
-  in-> yPxOff   = 0.0;
+  in->xPxOff    = 0.0;
+  in->yPxOff    = 0.0;
   in->info      = newObitInfoList();
   for (i=0; i<IM_MAXDIM; i++) {
     in->inaxes[i] = 0;

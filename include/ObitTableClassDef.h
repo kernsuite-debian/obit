@@ -1,4 +1,4 @@
-/* $Id: ObitTableClassDef.h 61 2008-12-19 18:14:49Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2002-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

@@ -1,6 +1,6 @@
-/* $Id: ObitSkyGeom.c 168 2010-03-25 11:54:01Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2010                                          */
+/*;  Copyright (C) 2004-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -66,13 +66,16 @@ void ObitSkyGeomShiftXY (odouble ra, odouble dec, ofloat rotate,
 			odouble shiftRA, odouble shiftDec,
 			ofloat *xShift, ofloat *yShift)
 {
-  odouble xxshft, yyshft;
+  odouble xxshft, yyshft, dRA;
   ofloat maprr;
 
   maprr = rotate * DG2RAD;
 
   /* Simple linear shift */
-  xxshft = cos (DG2RAD*dec) * (shiftRA - ra);
+  dRA = (shiftRA - ra);
+  if (dRA>+180.0) dRA -=360.0;
+  if (dRA<-180.0) dRA +=360.0;
+  xxshft = cos (DG2RAD*dec) * dRA;
   yyshft = shiftDec - dec;
 
   /*  Undo rotation */
@@ -108,6 +111,7 @@ void ObitSkyGeomXYShift (odouble ra, odouble dec,
   /* Simple linear shift */
   *shiftDec = dec + yyshft;
   cosDec = cos (DG2RAD * dec);
+  if (fabs(cosDec)<0.001) cosDec = 1.0;  /* trap pole */
   if (cosDec != 0.0) 
     *shiftRA = ra + xxshft / cosDec;
   else
@@ -241,7 +245,6 @@ ObitSkyGeomShiftNCP (odouble ra, odouble dec, ofloat rotate,
     dxyzc[0] = 2.0*G_PI * dxyzc[0];
     dxyzc[1] = 2.0*G_PI * dxyzc[1];
     dxyzc[2] = 0.0;
-    
 } /* end  ObitSkyGeomShiftNCP */
 
 /**

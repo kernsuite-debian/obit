@@ -1,4 +1,5 @@
-""" Python Obit inteferometer (UV) data class
+""" 
+Python Obit inteferometer (UV) data class
 
 This class contains interoferometric data and allows access.
 An ObitUV is the front end to a persistent disk resident structure.
@@ -9,91 +10,113 @@ Most access to UV data is through functions as the volume of the data is
 inappropriate to be processed directly in python.
 
 UV Members with python interfaces:
-exist     - True if object previously existed prior to object creation
-List      - used to pass instructions to processing
-Desc      - Astronomical labeling of the data
-TableList - List of tables attached
-VisBuf    - memory pointer into I/O Buffer
+
+=========  ==========================================================
+exist      True if object previously existed prior to object creation
+List       used to pass instructions to processing
+Desc       Astronomical labeling of the data
+TableList  List of tables attached
+VisBuf     memory pointer into I/O Buffer
+=========  ==========================================================
 
 Data selection, calibration and editing parameters on List member:
-  "doCalSelect" bool (1,1,1) Select/calibrate/edit data?
-  "Stokes"      string (4,1,1) Selected output Stokes parameters:
-           "    "=> no translation,"I   ","V   ","Q   ", "U   ", 
-           "IQU ", "IQUV",  "IV  ", "RR  ", "LL  ", "RL  ", "LR  ", 
-           "HALF" = RR,LL, "FULL"=RR,LL,RL,LR. [default "    "]
-           In the above 'F' can substitute for "formal" 'I' (both RR+LL).
-  "BChan"   int (1,1,1) First spectral channel selected. [def all]
-  "EChan"   int (1,1,1) Highest spectral channel selected. [def all]
-  "BIF"     int (1,1,1) First "IF" selected. [def all]
-  "EIF"     int (1,1,1) Highest "IF" selected. [def all]
-  "doPol"   int (1,1,1) >0 -> calibrate polarization.
-  "doCalib" int (1,1,1) >0 -> calibrate, 2=> also calibrate Weights
-  "gainUse" int (1,1,1) SN/CL table version number, 0-> use highest
-  "flagVer" int (1,1,1) Flag table version, 0-> use highest, <0-> none
-  "BLVer"   int (1,1,1) BL table version, 0> use highest, <0-> none
-  "BPVer"   int (1,1,1) Band pass (BP) table version, 0-> use highest
-  "Subarray"  int (1,1,1) Selected subarray, <=0->all [default all]
-  "dropSubA"  bool (1,1,1) Drop subarray info?
-  "FreqID"    int (1,1,1) Selected Frequency ID, <=0->all [default all]
-  "timeRange" float (2,1,1) Selected timerange in days.
-  "UVRange"   float (2,1,1) Selected UV range in kilowavelengths.
-  "InputAvgTime" float (1,1,1) Input data averaging time (sec).
-            used for fringe rate decorrelation correction.
-  "Sources" string (?,?,1) Source names selected unless any starts with
-            a '-' in which case all are deselected (with '-' stripped).
-  "souCode" string (4,1,1) Source Cal code desired, '    ' => any code selected
-                               '*   ' => any non blank code (calibrators only)
-                               '-CAL' => blank codes only (no calibrators)
-  "Qual"     int (1,1,1)  Source qualifier, -1 [default] = any
-  "Antennas" int (?,1,1) a list of selected antenna numbers, if any is negative
-             then the absolute values are used and the specified antennas are deselected.
-  "corrtype" int (1,1,1) Correlation type, 0=cross corr only, 1=both, 2=auto only.
-  "passAll"  bool (1,1,1) If True, pass along all data when selecting/calibration
-                              even if it's all flagged, 
-                              data deselected by time, source, antenna etc. is not passed.
-  "doBand"   int (1,1,1) Band pass application type <0-> none
-      (1) if = 1 then all the bandpass data for each antenna
-          will be averaged to form a composite bandpass
-          spectrum, this will then be used to correct the data.
-      (2) if = 2 the bandpass spectra nearest in time (in a weighted
-          sense) to the uv data point will be used to correct the data.
-      (3) if = 3 the bandpass data will be interpolated in time using
-          the solution weights to form a composite bandpass spectrum,
-          this interpolated spectrum will then be used to correct the
-          data.
-      (4) if = 4 the bandpass spectra nearest in time (neglecting
-          weights) to the uv data point will be used to correct the
-          data.
-      (5) if = 5 the bandpass data will be interpolated in time ignoring
-          weights to form a composite bandpass spectrum, this
-          interpolated spectrum will then be used to correct the data.
-  "Smooth"  float (3,1,1) specifies the type of spectral smoothing
-     Smooth(1) = type of smoothing to apply:
-        0 => no smoothing
-        1 => Hanning
-        2 => Gaussian
-        3 => Boxcar
-        4 => Sinc (i.e. sin(x)/x)
-      Smooth(2) = the "diameter" of the function, i.e.
-        width between first nulls of Hanning triangle
-        and sinc function, FWHM of Gaussian, width of
-        Boxcar. Defaults (if < 0.1) are 4, 2, 2 and 3
-        channels for Smooth(1) = 1 - 4.
-      Smooth(3) = the diameter over which the convolving
-        function has value - in channels.
-        Defaults: 1, 3, 1, 4 times Smooth(2) used when
- "Alpha" float scalar If != 0.0 then correct data by spectral index Alpha
-        -0.7 is typical for synchrotron.
- "SubScanTime" float scalar [Optional] if given, this is the 
-      desired time (days) of a sub scan.  This is used by the 
-      selector to suggest a value close to this which will
-      evenly divide the current scan.  
-      0 => Use scan average.
-      This is only useful for ReadSelect operations on indexed ObitUVs.
+
+============== ============== ==================================================
+"doCalSelect"  bool (1,1,1)   Select/calibrate/edit data?
+"Stokes"       string (4,1,1) Selected output Stokes parameters:
+                              "    "=> no translation,"I   ","V   ","Q   ", "U
+                              ", "IQU ", "IQUV",  "IV  ", "RR  ", "LL  ", "RL
+                              ", "LR  ", "HALF" = RR,LL, "FULL"=RR,LL,RL,LR.
+                              [default "    "] In the above 'F' can substitute
+                              for "formal" 'I' (both RR+LL).
+"BChan"        int (1,1,1)    First spectral channel selected. [def all]
+"EChan"        int (1,1,1)    Highest spectral channel selected. [def all]
+"chanInc"      int (1,1,1)    channel selected increment. [def 1]
+"BIF"          int (1,1,1)    First "IF" selected. [def all]
+"EIF"          int (1,1,1)    Highest "IF" selected. [def all]
+"IFInc"        int (1,1,1)    "IF" selected increment. [def 1]
+"IFDrop"       int (?,1,1)    List of deselected (1-rel) IFs [def none]
+"doPol"        bool (1,1,1)   True -> calibrate polarization.
+"PDVer"        int (1,1,1)    >0 -> use PD table version PDVer for poln cal.
+"doCalib"      int (1,1,1)    >0 -> calibrate, 2=> also calibrate Weights
+"gainUse"      int (1,1,1)    SN/CL table version number, 0-> use highest
+"flagVer"      int (1,1,1)    Flag table version, 0-> use highest, <0-> none
+"BLVer"        int (1,1,1)    BL table version, 0> use highest, <0-> none
+"BPVer"        int (1,1,1)    Band pass (BP) table version, 0-> use highest
+"Subarray"     int (1,1,1)    Selected subarray, <=0->all [default all]
+"dropSubA"     bool (1,1,1)   Drop subarray info?
+"FreqID"       int (1,1,1)    Selected Frequency ID, <=0->all [default all]
+"timeRange"    float (2,1,1)  Selected timerange in days.
+"UVRange"      float (2,1,1)  Selected UV range in kilowavelengths.
+"InputAvgTime" float (1,1,1)  Input data averaging time (sec).
+                              used for fringe rate decorrelation correction.
+"Sources"      string (?,?,1) Source names selected unless any starts with
+                              a '-' in which case all are deselected (with '-'
+                              sgFtripped).
+"souCode"      string (4,1,1) Source Cal code desired, '    ' => any code 
+                              selected
+                              '*   ' => any non blank code (calibrators only)
+                              '-CAL' => blank codes only (no calibrators)
+"Qual"         int (1,1,1)    Source qualifier, -1 [default] = any
+"Antennas"     int (?,1,1)    a list of selected antenna numbers, if any is 
+                              negative then the absolute values are used and
+                              the specified antennas are deselected.
+"corrtype"     int (1,1,1)    Correlation type, 0=cross corr only, 1=both, 
+                              2=auto only.
+"passAll"      bool (1,1,1)   If True, pass along all data when 
+                              selecting/calibration even if it's all flagged,
+                              data deselected by time, source, antenna etc. is
+                              not passed.
+"doBand"       int (1,1,1)    Band pass application type <0-> none
+                              
+                              (1) if = 1 then all the bandpass data for each 
+                                  antenna will be averaged to form a composite
+                                  bandpass spectrum, this will then be used to
+                                  correct the data.
+                              (2) if = 2 the bandpass spectra nearest in time 
+                                  (in a weighted sense) to the uv data point
+                                  will be used to correct the data.
+                              (3) if = 3 the bandpass data will be interpolated 
+                                  in time using the solution weights to form a
+                                  composite bandpass spectrum, this
+                                  interpolated spectrum will then be used to
+                                  correct the data.
+                              (4) if = 4 the bandpass spectra nearest in time 
+                                  (neglecting weights) to the uv data point
+                                  will be used to correct the data.
+                              (5) if = 5 the bandpass data will be interpolated 
+                                  in time ignoring weights to form a composite
+                                  bandpass spectrum, this interpolated spectrum
+                                  will then be used to correct the data.
+"Smooth"       float (3,1,1)  specifies the type of spectral smoothing
+                              
+                              Smooth(1) = type of smoothing to apply:
+                                0) => no smoothing
+                                1) => Hanning
+                                2) => Gaussian
+                                3) => Boxcar
+                                4) => Sinc (i.e. sin(x)/x)
+                              Smooth(2) = the "diameter" of the function, i.e.
+                                width between first nulls of Hanning triangle
+                                and sinc function, FWHM of Gaussian, width of
+                                Boxcar. Defaults (if < 0.1) are 4, 2, 2 and 3
+                                channels for Smooth(1) = 1 - 4.
+                              Smooth(3) = the diameter over which the convolving
+                                function has value - in channels.
+                                Defaults: 1, 3, 1, 4 times Smooth(2) used when
+"Alpha"        float scalar   If != 0.0 then correct data by spectral index 
+                              Alpha -0.7 is typical for synchrotron.
+"SubScanTime"  float scalar   [Optional] if given, this is the 
+                              desired time (days) of a sub scan.  This is used 
+                              by the selector to suggest a value close to this
+                              which will evenly divide the current scan.  0 =>
+                              Use scan average.  This is only useful for
+                              ReadSelect operations on indexed ObitUVs.
+============== ============== ==================================================
 """
-# $Id: UV.py 187 2010-04-16 08:31:11Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2004-2009
+#  Copyright (C) 2004-2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -120,127 +143,126 @@ Data selection, calibration and editing parameters on List member:
 #-----------------------------------------------------------------------
  
 # Python shadow class to ObitUV class
+from __future__ import absolute_import
+from __future__ import print_function
 import OErr, InfoList, Table, AIPSDir, FITSDir, OSystem
-import Obit, TableList,  UVDesc, string, UVVis
+import Obit, _Obit, TableList,  UVDesc, string, UVVis
 import OData
+from six.moves import range
 #import AIPSData
 
 # class name in C
 myClass = "ObitUV"
 
-class UV (OData.OData):
-    """ Python Obit inteferometer (UV) data class
-    
-    UV Members with python interfaces:
-    List      - used to pass instructions to processing
-    TableList - List of tables attached
-    Desc      - Astronomical labeling of the data
-    VisBuf    - memory pointer into I/O Buffer
+class UV(Obit.UV, OData.OData):
+    """ 
+    Python Obit inteferometer (UV) data class.  UV Members with python interfaces:
+
+    =========  ==========================================================
+    List       used to pass instructions to processing
+    Desc       Astronomical labeling of the data
+    TableList  List of tables attached
+    VisBuf     memory pointer into I/O Buffer
+    =========  ==========================================================
     """
     def __init__(self, name) :
-        self.this = Obit.new_UV(name)
+        super(UV, self).__init__()
+        Obit.CreateUV(self.this, name)
         self.myClass = myClass
-    def __del__(self):
-        if Obit!=None and self.this:
-            Obit.delete_UV(self.this)
+    def __del__(self, DeleteUV=_Obit.DeleteUV):
+        if _Obit!=None:
+            DeleteUV(self.this)
     def __setattr__(self,name,value):
         if name == "me" :
+            if value==None:
+                raise TypeError("None given for UV object")
             # Out with the old
-            Obit.UVUnref(Obit.UV_me_get(self.this))
+            if self.this!=None:
+                Obit.UVUnref(Obit.UV_Get_me(self.this))
             # In with the new
-            Obit.UV_me_set(self.this,value)
+            Obit.UV_Set_me(self.this,value)
             return
         self.__dict__[name] = value
     def __getattr__(self,name):
-        if self.__class__ != UV:
-            return
+        if not isinstance(self, UV):
+            return "Bogus dude"
         if name == "me" : 
-            return Obit.UV_me_get(self.this)
-        # Functions to return members
+            return Obit.UV_Get_me(self.this)
+        # Functions to return memberInfos
         if name=="List":
             if not self.UVIsA():
-                raise TypeError,"input MUST be a Python Obit UV"
+                raise TypeError("input MUST be a Python Obit UV")
             out    = InfoList.InfoList()
-            out.me = Obit.InfoListUnref(out.me)
-            out.me = Obit.UVGetList(self.cast(myClass))
+            out.me = Obit.UVGetList(self.me)
             return out
         if name=="TableList":
             if not self.UVIsA():
-                raise TypeError,"input MUST be a Python Obit UV"
+                raise TypeError("input MUST be a Python Obit UV")
+                print("DEBUG UV Get TL")
             out    = TableList.TableList("TL")
-            out.me = Obit.TableListUnref(out.me)
-            out.me = Obit.UVGetTableList(self.cast(myClass))
+            out.me = Obit.UVGetTableList(self.me)
             return out
         if name=="Desc":
             if not self.UVIsA():
-                raise TypeError,"input MUST be a Python Obit UV"
+                raise TypeError("input MUST be a Python Obit UV")
             out    = UVDesc.UVDesc("None")
-            out.me = Obit.UVGetDesc(self.cast(myClass))
+            out.me = Obit.UVGetDesc(self.me)
             return out
         if name=="IODesc":
             if not self.UVIsA():
-                raise TypeError,"input MUST be a Python Obit UV"
+                raise TypeError("input MUST be a Python Obit UV")
             out    = UVDesc.UVDesc("None")
-            out.me = Obit.UVGetIODesc(self.cast(myClass))
+            out.me = Obit.UVGetIODesc(self.me)
             return out
         if name=="VisBuf":
             if not self.UVIsA():
-                raise TypeError,"input MUST be a Python Obit UV"
-            return Obit.UVGetVisBuf(self.cast(myClass))
-        raise AttributeError,str(name)  # Unknown
+                raise TypeError("input MUST be a Python Obit UV")
+            return Obit.UVGetVisBuf(self.me)
+        raise AttributeError(str(name))  # Unknown
     def __repr__(self):
         if self.__class__ != UV:
             return
-        return "<C UV instance> " + Obit.UVGetName(self.cast(myClass))
+        return "<C UV instance> " + Obit.UVGetName(self.me)
     
-    def cast(self, toClass):
-        """ Casts object pointer to specified class
-        
-        self     = object whose cast pointer is desired
-        toClass  = Class string to cast to ("ObitUV")
-        """
-        # Get pointer with type of this class
-        out =  self.me
-        out = out.replace(self.myClass, toClass)
-        return out
-    # end cast
             
     def Open (self, access, err):
-        """ Open a UV data persistent (disk) form
-
-        Returns 0 on success, else failure
-        self   = Python UV object
-        access = access READONLY (1), WRITEONLY (2), READWRITE(3), READCAL(4)
-        err    = Python Obit Error/message stack
+        """ 
+        Open a UV data persistent (disk) form
+        
+        * Returns: 0 on success, else failure
+        * self   = Python UV object
+        * access = access READONLY (1), WRITEONLY (2), READWRITE(3), READCAL(4)
+        * err    = Python Obit Error/message stack
         """
         inUV = self
         # Checks
         if not self.UVIsA():
-            raise TypeError,"input MUST be a Python Obit UV"
-        if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("input MUST be a Python Obit UV")
+        if not err.IsA():
+            raise TypeError("err MUST be an OErr")
         #
-        ret = Obit.UVOpen(inUV.cast(myClass), access, err.me)
+        ret = Obit.UVOpen(inUV.me, access, err.me)
         if err.isErr:
             OErr.printErrMsg(err, "Error Opening UV data")
         return ret
         # end Open
         
     def Read (self, err, firstVis=None):
-        """ Read a UV  persistent (disk) form
-        
-        Reads into buffer attached to UV data, use VisBuf for access
-        Returns 0 on success, else failure
-        self     = Python UV object
-        err      = Python Obit Error/message stack
-        firstVis = If given the first 1-rel visibility in data set
+        """ 
+        Read a UV  persistent (disk) form.  Reads into buffer attached to UV data, use 
+        VisBuf for access.
+
+        * Returns: 0 on success, else failure
+        * self     = Python UV object
+        * err      = Python Obit Error/message stack
+        * firstVis = If given the first 1-rel visibility in data set
         """
         inUV = self
         # Checks
         if not self.UVIsA():
-            raise TypeError,"input MUST be a Python Obit UV"
-        if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("input MUST be a Python Obit UV")
+        if not err.IsA():
+            raise TypeError("err MUST be an OErr")
         #
         # Set first vis?
         if firstVis:
@@ -248,27 +270,28 @@ class UV (OData.OData):
             d["firstVis"] = firstVis-1
             self.IODesc.Dict = d
         # Do I/O
-        ret = Obit.UVRead (inUV.cast(myClass), err.me)
+        ret = Obit.UVRead (inUV.me, err.me)
         if err.isErr:
             OErr.printErrMsg(err, "Error Reading UV data")
         return ret
         # end Read
         
     def Write (self, err, firstVis=None):
-        """ Write a UV  persistent (disk) form
-
-        Writes buffer attached to UV data, use VisBuf for access
-        returns 0 on success, else failure
-        self     = Python UV object
-        err      = Python Obit Error/message stack
-        firstVis = If given the first 1-rel visibility in data set
+        """ 
+        Write a UV  persistent (disk) form. Writes buffer attached to UV data, use 
+        VisBuf for access.
+        
+        * returns: 0 on success, else failure
+        * self     = Python UV object
+        * err      = Python Obit Error/message stack
+        * firstVis = If given the first 1-rel visibility in data set
         """
         inUV = self
         # Checks
         if not self.UVIsA():
-            raise TypeError,"input MUST be a Python Obit UV"
-        if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("input MUST be a Python Obit UV")
+        if not err.IsA():
+            raise TypeError("err MUST be an OErr")
         #
         # Set first vis?
         if firstVis:
@@ -276,26 +299,26 @@ class UV (OData.OData):
             d["firstVis"] = firstVis-1
             self.IODesc.Dict = d
         # Do I/O
-        ret = Obit.UVWrite (inUV.cast(myClass), err.me)
+        ret = Obit.UVWrite (inUV.me, err.me)
         if err.isErr:
             OErr.printErrMsg(err, "Error Reading UV data")
         return ret
         # end Write
         
     def ReadVis (self, err, firstVis=None):
-        """ Read a UV  persistent (disk) form
-        
-        Reads into UVVis structure
-        Returns UVVis structure
-        self     = Python UV object
-        err      = Python Obit Error/message stack
-        firstVis = If given the first 1-rel visibility in data set
+        """ 
+        Read a UV  persistent (disk) form.  Reads into UVVis structure.
+
+        * Returns: UVVis structure
+        * self     = Python UV object
+        * err      = Python Obit Error/message stack
+        * firstVis = If given the first 1-rel visibility in data set
         """
         # Checks
         if not self.UVIsA():
-            raise TypeError,"input MUST be a Python Obit UV"
-        if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("input MUST be a Python Obit UV")
+        if not err.IsA():
+            raise TypeError("err MUST be an OErr")
         #
         # Set first vis?
         if firstVis:
@@ -310,19 +333,19 @@ class UV (OData.OData):
         # end ReadVis
         
     def WriteVis (self, outVis, err, firstVis=None):
-        """ Write a UVVis to UV  persistent (disk) form
-
-        Writes visibility to UV data
-        self      = Python UV object
-        outVis    = Vis structure to write
-        err       = Python Obit Error/message stack
-        firstVis  = If given the first 1-rel visibility in data set
+        """ 
+        Write a UVVis to UV  persistent (disk) form. Writes visibility to UV data.
+        
+        * self      = Python UV object
+        * outVis    = Vis structure to write
+        * err       = Python Obit Error/message stack
+        * firstVis  = If given the first 1-rel visibility in data set
         """
         # Checks
         if not self.UVIsA():
-            raise TypeError,"input MUST be a Python Obit UV"
+            raise TypeError("input MUST be a Python Obit UV")
         if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("err MUST be an OErr")
         #
         # Set first vis?
         if firstVis:
@@ -337,84 +360,88 @@ class UV (OData.OData):
         # end WriteVis
         
     def Close (self, err):
-        """ Close a UV  persistent (disk) form
+        """ 
+        Close a UV  persistent (disk) form.
         
-        returns 0 on success, else failure
-        self      = Python UV object
-        err       = Python Obit Error/message stack
+        * returns: 0 on success, else failure
+        * self      = Python UV object
+        * err       = Python Obit Error/message stack
         """
         inUV = self
         # Checks
         if not self.UVIsA():
-            raise TypeError,"input MUST be a Python Obit UV"
+            raise TypeError("input MUST be a Python Obit UV")
         if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("err MUST be an OErr")
         #
-        ret = Obit.UVClose (inUV.cast(myClass), err.me)
+        ret = Obit.UVClose (inUV.me, err.me)
         if err.isErr:
             OErr.printErrMsg(err, "Error Closing UV data")
         return ret
         # end Close
         
     def Copy (self, outUV, err):
-        """ Make a deep copy of input object.
-        
-        Makes structure the same as self, copies data, tables
-        self   = Python UV object to copy
-        outUV  = Output Python UV object, must be defined
-        err    = Python Obit Error/message stack
+        """ 
+        Make a deep copy of input object. Makes structure the same as self, copies 
+        data, tables
+
+        * self   = Python UV object to copy
+        * outUV  = Output Python UV object, must be defined
+        * err    = Python Obit Error/message stack
         """
         # Checks
         if not self.UVIsA():
-            raise TypeError,"self MUST be a Python Obit UV"
+            raise TypeError("self MUST be a Python Obit UV")
         if not outUV.UVIsA():
-            raise TypeError,"outUV MUST be a Python Obit UV"
+            raise TypeError("outUV MUST be a Python Obit UV")
         if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("err MUST be an OErr")
         #
-        Obit.UVCopy (self.cast(myClass), outUV.cast(myClass), err.me)
+        Obit.UVCopy (self.me, outUV.me, err.me)
         if err.isErr:
             OErr.printErrMsg(err, "Error copying UV data")
     # end Copy
 
     def Clone (self, outUV, err):
-        """ Make a copy of a object but do not copy the actual data
+        """ 
+        Make a copy of a object but do not copy the actual data. This is useful to 
+        create an UV similar to the input one.
         
-        This is useful to create an UV similar to the input one.
-        self   = Python UV object
-        outUV  = Output Python UV object, must be defined
-        err    = Python Obit Error/message stack
+        * self   = Python UV object
+        * outUV  = Output Python UV object, must be defined
+        * err    = Python Obit Error/message stack
         """
         # Checks
         if not self.UVIsA():
-            raise TypeError,"self MUST be a Python Obit UV"
+            raise TypeError("self MUST be a Python Obit UV")
         if not outUV.UVIsA():
-            raise TypeError,"outUV MUST be a Python Obit UV"
+            raise TypeError("outUV MUST be a Python Obit UV")
         if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("err MUST be an OErr")
         #
-        Obit.UVClone (self.cast(myClass), outUV.cast(myClass), err.me)
+        Obit.UVClone (self.me, outUV.me, err.me)
         if err.isErr:
             OErr.printErrMsg(err, "Error copying UV data")
     # end Clone
 
     def Scratch (self, err):
-        """ Create a scratch file suitable for accepting the data to be read from self
-        
-        A scratch UV is more or less the same as a normal UV except that it is
+        """ 
+        Create a scratch file suitable for accepting the data to be read from self.  A
+        scratch UV is more or less the same as a normal UV except that it is
         automatically deleted on the final unreference.
-        self      = Python UV object
-        err       = Python Obit Error/message stack
+        
+        * self      = Python UV object
+        * err       = Python Obit Error/message stack
         """
         ################################################################
         # Checks
         if not self.UVIsA():
-            raise TypeError,"self MUST be a Python Obit UV"
+            raise TypeError("self MUST be a Python Obit UV")
         if not OErr.OErrIsA(err):
-            raise TypeError,"err MUST be an OErr"
+            raise TypeError("err MUST be an OErr")
         #
         outUV    = UV("None")
-        outUV.me = Obit.UVScratch (self.cast(myClass), err.me);
+        outUV.me = Obit.UVScratch (self.me, err.me);
         if err.isErr:
             OErr.printErrMsg(err, "Error creating scratch file")
             
@@ -422,19 +449,21 @@ class UV (OData.OData):
     # end Scratch
 
     def Header (self, err):
-        """ Write image header on output
-        
-        self   = Python Obit UV object
-        err    = Python Obit Error/message stack
+        """ 
+        Write image header on output
+
+        * self   = Python Obit UV object
+        * err    = Python Obit Error/message stack
         """
         PHeader (self, err)
         # end Header
         
     def Info (self, err):
-        """ Get underlying data file info
-        
-        self   = Python Obit UV object
-        err    = Python Obit Error/message stack
+        """ 
+        Get underlying data file info
+
+        * self   = Python Obit UV object
+        * err    = Python Obit Error/message stack
         """
         PUVInfo(self, err)
         # end Info
@@ -450,7 +479,7 @@ class UV (OData.OData):
         # Checks
         inUV = self
         if not self.UVIsA():
-            raise TypeError,"input MUST be a Python Obit UV"
+            raise TypeError("input MUST be a Python Obit UV")
         #
         # if Desc=None make copy of current contents
         if Desc == None:
@@ -460,7 +489,7 @@ class UV (OData.OData):
         # Open for write
         inUV.Open(READWRITE,err)           # Open
         inUV.Desc.Dict = d                 # Update header
-        Obit.UVDirty(inUV.cast(myClass))   # force update
+        Obit.UVDirty(inUV.me)             # force update
         inUV.Close(err)                    # Close to update
         # end UpdateDesc
         
@@ -472,7 +501,7 @@ class UV (OData.OData):
         """
         ################################################################
         # Allow derived types
-        return Obit.UVIsA(self.cast(myClass))
+        return Obit.UVIsA(self.me)!=0
     # end UVIsA
 
     # End of class member functions (i.e. invoked by x.func())
@@ -484,20 +513,19 @@ READWRITE = OData.READWRITE # 3
 READCAL   = 4
 
 def newPFUV(name, filename, disk, exists, err, verbose=True, nvis=1000):
-    """ Create and initialize an FITS based UV structure
-    
-    Create, set initial access information (full image, plane at a time)
-    and if exists verifies the file.
-    Sets buffer to hold nvis vis.
-    Returns the Python UV object
-    isOK member set to indicate success
-    name     = name desired for object (labeling purposes)
-    filename = name of FITS file
-    disk     = FITS directory number
-    exists   = if true then the file is opened and closed to verify
-    err      = Python Obit Error/message stack
-    verbose  = If true any give error messages, else suppress
-    nvis     = Number of visibilities read/written per call
+    """ 
+Create and initialize an FITS based UV structure.
+Create, set initial access information (full image, plane at a time)
+and if exists verifies the file. Sets buffer to hold nvis vis.
+
+* Return: the Python UV object. isOK member set to indicate success.
+* name     = name desired for object (labeling purposes)
+* filename = name of FITS file
+* disk     = FITS directory number
+* exists   = if true then the file is opened and closed to verify
+* err      = Python Obit Error/message stack
+* verbose  = If true any give error messages, else suppress
+* nvis     = Number of visibilities read/written per call
     """
     ################################################################
     out = UV (name)
@@ -657,6 +685,8 @@ def PScratch (inUV, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.Scratch(err)
     # end PScratch
 
@@ -667,6 +697,9 @@ def PZap (inUV, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        inUV.zap()
+        return
     inUV.Zap(err)
     # end PZap
 
@@ -686,6 +719,9 @@ def PRename (inUV, err, newFITSName=None, \
     newAIPSSeq   = New AIPS Sequence number, 0 => unique value
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV)
+        raise TypeError("Function unavailable for "+inUV.myClass)
     inUV.Rename(err,newFITSName=newFITSName, \
                 newAIPSName=newAIPSName, newAIPSClass=newAIPSClass,
                 newAIPSSeq=newAIPSSeq)
@@ -700,6 +736,8 @@ def PCopy (inUV, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     inUV.Copy(outUV, err)
     # end PCopy
 
@@ -712,12 +750,16 @@ def PClone (inUV, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     inUV.Clone(outUV, err)
     # end PClone
 
 def PNewUVTable (inUV, access, tabType, tabVer, err):
     """ Obsolete use PGetTable
     """
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return  PGetTable (inUV, access, tabType, tabVer, err)
 # end  PNewUVTable
 
@@ -753,6 +795,8 @@ def PGetTable (inUV, access, tabType, tabVer, err, \
     maxis1-5  = Dimension of axes of IDI data matrix
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        return inUV.table(tabType,tabVer)
     return inUV.NewTable(access, tabType, tabVer, err,\
                          numOrb=numOrb, numPCal=numPCal, numIF=numIF, \
                          numPol=numPol, numTerm=numTerm, numChan=numChan,\
@@ -769,6 +813,8 @@ def POpen (inUV, access, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.Open(access, err)
     # end POpen
 
@@ -778,6 +824,8 @@ def PDirty (inUV):
     inUV     = Python UV object
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     inUV.Dirty()
     # end PDirty
 
@@ -788,6 +836,8 @@ def PClose (inUV, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.Close( err)
     # end PClose
 
@@ -801,11 +851,14 @@ def PZapTable (inUV, tabType, tabVer, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        inUV.zap_table(tabType, tabVer)
+        return
     return inUV.ZapTable (tabType, tabVer, err)
     # end PZapTable
 
 def PCopyTables (inUV, outUV, exclude, include, err):
-    """ Copy Tabeles from one image to another
+    """ Copy Tables from one image to another
 
     inUV      = Python UV object
     outUV     = Output Python UV object, must be defined
@@ -815,6 +868,8 @@ def PCopyTables (inUV, outUV, exclude, include, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.CopyTables (outUV, exclude, include, err)
     # end PCopyTables
 
@@ -825,6 +880,8 @@ def PUpdateTables (inUV, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.UpdateTables (err)
     # end PUpdateTables
 
@@ -837,6 +894,8 @@ def PFullInstantiate (inUV, access, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.FullInstantiate (access, err)
     # end PfullInstantiate
 
@@ -847,6 +906,8 @@ def PGetList (inUV):
     inUV   = Python UV object
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.List
     # end PGetList
 
@@ -857,6 +918,8 @@ def PGetTableList (inUV):
     inUV   = Python UV object
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.TableList
     # end PGetTableList
 
@@ -883,8 +946,8 @@ def PHeader (inUV, err):
             count = max (Tdict[item[1]], item[0])
             Tdict[item[1]] = count
         for item,count in Tdict.items():
-            print "Maximum version number of %s tables is %d " % \
-                  (item, count)
+            print("Maximum version number of %s tables is %d " % \
+                  (item, count))
         return
         # end  AIPSUVData
     elif inUV.myClass == 'FITSUVData':
@@ -901,23 +964,23 @@ def PHeader (inUV, err):
             count = max (Tdict[item[1]], item[0])
             Tdict[item[1]] = count
         for item,count in Tdict.items():
-            print "Maximum version number of %s tables is %d " % \
-                  (item, count)
+            print("Maximum version number of %s tables is %d " % \
+                  (item, count))
         return
         # end  FITSUVData
     # ObitTalk Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV data"
+        raise TypeError("inUV MUST be a Python Obit UV data")
     #
     # Fully instantiate
     PFullInstantiate (inUV, READONLY, err)
     # File info
     if inUV.FileType=="AIPS":
-        print "AIPS UV Data Name: %12s Class: %6s seq: %8d disk: %4d" % \
-              (inUV.Aname, inUV.Aclass, inUV.Aseq, inUV.Disk)
+        print("AIPS UV Data Name: %12s Class: %6s seq: %8d disk: %4d" % \
+              (inUV.Aname, inUV.Aclass, inUV.Aseq, inUV.Disk))
     elif inUV.FileType=="FITS":
-        print "FITS UV Data Disk: %5d File Name: %s " % \
-              (inUV.Disk, inUV.FileName)
+        print("FITS UV Data Disk: %5d File Name: %s " % \
+              (inUV.Disk, inUV.FileName))
     # print in UVDesc
     UVDesc.PHeader(inUV.Desc)
     # Tables
@@ -932,8 +995,8 @@ def PHeader (inUV, err):
         count = max (Tdict[item[1]], item[0])
         Tdict[item[1]] = count
     for item,count in Tdict.items():
-        print "Maximum version number of %s tables is %d " % \
-              (item, count)
+        print("Maximum version number of %s tables is %d " % \
+              (item, count))
     # end PHeader
     
 
@@ -944,6 +1007,8 @@ def PGetDesc (inUV):
     inUV   = Python UV object
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.Desc
     # end PGetDesc
 
@@ -955,8 +1020,10 @@ def PGetIODesc (inUV):
     """
     ################################################################
      # Checks
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     if not PIsA(inUV):
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     #
     out    = UVDesc.UVDesc("None")
     out.me = Obit.UVGetIODesc(inUV.me)
@@ -969,8 +1036,10 @@ def PUpdateDesc (inUV, err, Desc=None):
     err    = Python Obit Error/message stack
     Desc   = UV descriptor, if None then use current descriptor
              Contents can be accessed throuth the Dict member
-   """
+    """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     inUV.UpdateDesc (err, Desc=Desc)
     # end PUpdateDesc
 
@@ -982,14 +1051,16 @@ def PUVInfo (inUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # file info
-    info = Obit.UVInfo (inUV.cast(myClass), err.me);
+    info = Obit.UVInfo (inUV.me, err.me);
     if err.isErr:
         OErr.printErrMsg(err, "Error creating scratch file")
     if info["type"]=="AIPS":
@@ -1013,6 +1084,8 @@ def PUVInfo (inUV, err):
     # end PUVInfo
 
 def PGetVisBuf (inUV):
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.VisBuf
 
 def PGetHighVer (inUV, tabType):
@@ -1023,6 +1096,8 @@ def PGetHighVer (inUV, tabType):
     tabType   = Table type, e.g. "OTFSoln"
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return  inUV.GetHighVer (tabType)
     # end PGetHighVer
 
@@ -1034,13 +1109,15 @@ def PGetSubA (inUV, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
-    ret = Obit.UVGetSubA(inUV.cast(myClass), err.me)
+    ret = Obit.UVGetSubA(inUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error getting subarray info")
     # end PGetSubA 
@@ -1052,13 +1129,15 @@ def PGetFreq (inUV, err):
     err       = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
-    ret = Obit.UVGetSubA(inUV.cast(myClass), err.me)
+    ret = Obit.UVGetFreq(inUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error getting frequency info")
     return ret
@@ -1072,13 +1151,15 @@ def PIsScratch (inUV):
     inUV   = Python UV object
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.IsScratch ()
     # end PIsScratch
 
 def PIsA (inUV):
     """ Tells if input really a Python Obit UV
 
-    return true, false (1,0)
+    return True, False
     inUV   = Python UV object
     """
     ################################################################
@@ -1095,6 +1176,8 @@ def PGetName (inUV):
     inUV   = Python UV object
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     return inUV.GetName()
     # end PGetName
 
@@ -1108,14 +1191,16 @@ def PUtilUVWExtrema (inUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     val = [0.0, 0.0] # create array
-    Obit.UVUtil(inUV.cast(myClass), err.me, val)
+    Obit.UVUtil(inUV.me, err.me, val)
     if err.isErr:
         OErr.printErrMsg(err, "Error getting  uv coverage info")
     return val
@@ -1132,20 +1217,22 @@ def PUtilCopyZero (inUV, scratch, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if ((not scratch) and (not outUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-        outUV.me = Obit.UVUtilCopyZero(inUV.cast(myClass), scratch, outUV.me, err.me)
+        outUV.me = Obit.UVUtilCopyZero(inUV.me, scratch, outUV.me, err.me)
     else:
-        Obit.UVUtilCopyZero(inUV.cast(myClass), scratch, outUV.cast(myClass), err.me)
+        Obit.UVUtilCopyZero(inUV.me, scratch, outUV, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error copying UV data to zeroed UV data")
     
@@ -1165,21 +1252,46 @@ def PUtilVisDivide (in1UV, in2UV, outUV, err):
     err     = Python Obit Error/message stack
     """
     ################################################################
+    if in1UV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+in1UV.myClass)
     # Checks
     if not in1UV.UVIsA():
-        raise TypeError,"in1UV MUST be a Python Obit UV"
+        raise TypeError("in1UV MUST be a Python Obit UV")
     if not in2UV.UVIsA():
-        raise TypeError,"in2UV MUST be a Python Obit UV"
+        raise TypeError("in2UV MUST be a Python Obit UV")
     if not outUV.UVIsA():
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
-    Obit.UVUtilVisDivide(in1UV.cast(myClass), in2UV.cast(myClass), \
-                         outUV.cast(myClass), err.me)
+    Obit.UVUtilVisDivide(in1UV.me, in2UV.me, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error dividing UV data")
     # end PUtilVisDivide
+
+def PUtilXPolDivide (inUV, outUV, err):
+    """ Divides cross hand visibilites Stokes I (avg. parallel hand)
+
+    outUV   = Output Python UV object,
+    inUV    = Input Python UV object,
+    outUV   = Output python UV object
+    err     = Python Obit Error/message stack
+    """
+    ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
+    # Checks
+    if not inUV.UVIsA():
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if not outUV.UVIsA():
+        raise TypeError("outUV MUST be a Python Obit UV")
+    if not OErr.OErrIsA(err):
+        raise TypeError("err MUST be an OErr")
+    #
+    Obit.UVUtilXPolDivide(inUV.me, outUV.me, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error dividing X pol UV data")
+    # end PUtilXPolDivide
 
 def PUtilVisSub (in1UV, in2UV, outUV, err):
     """ Subtracts the visibilites in in2UV from those in in1UV
@@ -1191,39 +1303,46 @@ def PUtilVisSub (in1UV, in2UV, outUV, err):
     err     = Python Obit Error/message stack
     """
     ################################################################
+    if in1UV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+in1UV.myClass)
     # Checks
     if not in1UV.UVIsA():
-        raise TypeError,"in1UV MUST be a Python Obit UV"
+        raise TypeError("in1UV MUST be a Python Obit UV")
     if not in2UV.UVIsA():
-        raise TypeError,"in2UV MUST be a Python Obit UV"
+        raise TypeError("in2UV MUST be a Python Obit UV")
     if not outUV.UVIsA():
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
-    Obit.UVUtilVisSub(in1UV.cast(myClass), in2UV.cast(myClass), outUV.cast(myClass), err.me)
+    Obit.UVUtilVisSub(in1UV.me, in2UV.me, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error subtracting UV data")
     # end PUtilVisSub
 
 def PUtilVisCompare (in1UV, in2UV, err):
-    """ Compares the visibilites in in1UV with those in in2UV
+    """ 
+    Compares the visibilites in *in1UV* with those in *in2UV*.
 
-    returns RMS real, imaginary parts/amplitude
-    in1UV   = Numerator  Python UV object
-    in2UV   = Denominator Python UV object
-    err       = Python Obit Error/message stack
+    * return:  RMS ( real, imaginary differences / amplitude of *inUV2* )
+    * in1UV = Numerator Python UV object. Possible infoList parameter printRat 
+          scalar float if given and >0.0 then tell about entries
+          with a real or imaginary difference ratio > printRat
+    * in2UV = Denominator Python UV object
+    * err   = Python Obit Error/message stack
     """
     ################################################################
+    if in1UV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+in1UV.myClass)
     # Checks
     if not in1UV.UVIsA():
-        raise TypeError,"in1UV MUST be a Python Obit UV"
+        raise TypeError("in1UV MUST be a Python Obit UV")
     if not in2UV.UVIsA():
-        raise TypeError,"in2UV MUST be a Python Obit UV"
+        raise TypeError("in2UV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
-    ret = Obit.UVUtilVisCompare(in1UV.cast(myClass), in2UV.cast(myClass), err.me)
+    ret = Obit.UVUtilVisCompare(in1UV.me, in2UV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error comparing UV data")
     return ret
@@ -1238,11 +1357,13 @@ def PUtilIndex (inUV, err, maxScan=None, maxGap=None):
     maxGap  = max. scan gap in min. [def. long]
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Max scan time specified?
     if maxScan !=None:
@@ -1255,7 +1376,7 @@ def PUtilIndex (inUV, err, maxScan=None, maxGap=None):
         dim = [1,1,1,1,1]
         InfoList.PAlwaysPutFloat (inInfo, "maxGap", dim, [maxGap])
     # Index
-    Obit.UVUtilIndex(inUV.cast(myClass), err.me)
+    Obit.UVUtilIndex(inUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error indexing UV data")
     # end PUtilIndex
@@ -1273,17 +1394,52 @@ def PQuack (inUV, err, begDrop=0.0, endDrop=0.0, Reason="    ", flagVer=1):
     flagVer = AIPS FG table in which to put entries.
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
-    Obit.UVUtilQuack(inUV.cast(myClass), begDrop, endDrop, Reason,
-                     flagVer, err.me)
+    Obit.UVUtilQuack(inUV.me, begDrop, endDrop, Reason, flagVer, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error Quacking UV data")
     # end PQuack
+
+def PUtilHann (inUV, outUV, err, scratch=False):
+    """ Hanning smooth a UV data set
+
+    returns smoothed UV data object
+    inUV   = Python UV object to smooth
+             Any selection editing and calibration applied before average.
+    outUV  = Predefined UV data if scratch is False, ignored if
+             scratch is True.
+    err    = Python Obit Error/message stack
+    scratch  = True if this is to be a scratch file (same type as inUV)
+    """
+    ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
+    # Checks
+    if not inUV.UVIsA():
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
+    if not OErr.OErrIsA(err):
+        raise TypeError("err MUST be an OErr")
+    #
+    # Create output for scratch
+    if scratch:
+        outUV = UV("None")
+    outUV.me = Obit.UVUtilHann(inUV.me, scratch, outUV.me, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error Hanning UV data")
+    # Get scratch file info
+    if scratch:
+        PUVInfo (outUV, err)
+    return outUV
+    # end PUtilHann
 
 def PUtilAvgF (inUV, outUV, err, scratch=False, 
                NumChAvg=0, doAvgAll=False, ChanSel=None):
@@ -1311,19 +1467,21 @@ def PUtilAvgF (inUV, outUV, err, scratch=False,
                 3 through 14 and 25 through 30 in each IF.
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if ((not scratch) and (not outUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Save parameters
     dim = [1,1,1,1,1]
     inInfo = PGetList(inUV)    # 
     InfoList.PAlwaysPutBoolean (inInfo, "doAvgAll",  dim, [doAvgAll])
-    InfoList.PAlwaysPutInt     (inInfo, "NumChAvg",  dim, [NumChAvg])
+    InfoList.PAlwaysPutInt      (inInfo, "NumChAvg",  dim, [NumChAvg])
     if ChanSel:
         temp=[]
         for x in ChanSel:
@@ -1332,12 +1490,12 @@ def PUtilAvgF (inUV, outUV, err, scratch=False,
         temp.append(0); temp.append(0); 
         temp.append(0); temp.append(0);
         dim[0] = 4; dim[1] = len(ChanSel)+1
-        InfoList.PAlwaysPutInt  (inInfo, "ChanSel",  dim, temp)
+        InfoList.PAlwaysPutInt   (inInfo, "ChanSel",  dim, temp)
 
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVUtilAvgF(inUV.cast(myClass), scratch, outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVUtilAvgF(inUV.me, scratch, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error averaging UV data")
     # Get scratch file info
@@ -1359,13 +1517,15 @@ def PUtilAvgT (inUV, outUV, err, scratch=False, timeAvg=1.0):
     timeAvg  = Averaging time in min
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
-    if ((not scratch) and (notoutUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Save parameter
     dim = [1,1,1,1,1]
@@ -1375,7 +1535,7 @@ def PUtilAvgT (inUV, outUV, err, scratch=False, timeAvg=1.0):
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVUtilAvgT(inUV.cast(myClass), scratch, outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVUtilAvgT(inUV.me, scratch, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error averaging UV data")
     # Get scratch file info
@@ -1411,13 +1571,15 @@ def PUtilAvgTF (inUV, outUV, err, scratch=False, \
               The list of groups is terminated by a start <=0
               """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
-    if ((not scratch) and (notoutUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Save parameters
     dim = [1,1,1,1,1]
@@ -1428,12 +1590,12 @@ def PUtilAvgTF (inUV, outUV, err, scratch=False, \
     InfoList.PAlwaysPutFloat   (inInfo, "NumChAvg", dim, [NumChAvg])
     InfoList.PAlwaysPutBoolean (inInfo, "doAvgAll", dim, [doAvgAll])
     dim[0] = 4; dim[1] = len(ChanSel)/4
-    InfoList.PAlwaysPutInt     (inInfo, "ChanSel",  dim, ChanSel)
+    InfoList.PAlwaysPutInt      (inInfo, "ChanSel",  dim, ChanSel)
     
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVUtilAvgTF(inUV.cast(myClass), scratch, outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVUtilAvgTF(inUV.me, scratch, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error averaging UV data")
     # Get scratch file info
@@ -1449,6 +1611,7 @@ def PUtilCount (inUV, err, timeInt=1440.0):
     returns a dist with entries:
     numTime  = Number of time intervals
     numCorr  = Number of Correlations per vis
+    Vis      = Number of total visibillities
     Count    = Number of good correlation/visibilities
     Bad      = Number of flagged correlation/visibilities
     Source   = Source ID per interval (or 0 if no source ID)
@@ -1460,13 +1623,15 @@ def PUtilCount (inUV, err, timeInt=1440.0):
     timeInt  = interval  in min (max 500 intervals)
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     #
     list    = InfoList.InfoList()
     # Get values in info List
-    list.me = Obit.UVUtilCount (inUV.cast(myClass), timeInt, err.me)
+    list.me = Obit.UVUtilCount (inUV.me, timeInt, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error counting UV data")
     # Save values
@@ -1509,6 +1674,8 @@ def PEditTD (inUV, outUV, err):
                 amplitude coefficient. 
       "maxBad"  float (1,1,1) Fraction of allowed flagged baselines 
                 [default 0.25]
+      "killAll" boolean (1,1,1) If True and any Stokes correlation is flagged,
+                all Stokes correlations are flagged [def. False]
 
     inUV   = Python UV object to clip/flag
     outUV  = UV data onto which the FG table is to be attached.
@@ -1516,18 +1683,20 @@ def PEditTD (inUV, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
-    if ((not scratch) and (notoutUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVEditTD(inUV.cast(myClass), outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVEditTD(inUV.me, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error in Time domain edit")
     # Get scratch file info
@@ -1589,18 +1758,20 @@ def PEditFD (inUV, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
-    if ((not scratch) and (notoutUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVEditFD(inUV.cast(myClass), outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVEditFD(inUV.me, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error in Frequency domain edit")
     # Get scratch file info
@@ -1629,6 +1800,8 @@ def PEditStokes (inUV, outUV, err):
       "maxBad"  float (1,1,1) Fraction of allowed flagged baselines 
                 to an antenna above which all baselines are flagged.
                 [default 0.25]
+      "killAll" boolean (1,1,1) If True and any Stokes correlation is flagged,
+                all Stokes correlations are flagged [def. False]
  
     inUV   = Python UV object to clip/flag
     outUV  = UV data onto which the FG table is to be attached.
@@ -1636,18 +1809,20 @@ def PEditStokes (inUV, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
-    if ((not scratch) and (notoutUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVEditStokes(inUV.cast(myClass), outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVEditStokes(inUV.me, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error in clipping")
     # Get scratch file info
@@ -1673,18 +1848,20 @@ def PEditClip (inUV, scratch, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if ((not scratch) and (not outUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVEditClip(inUV.cast(myClass), scratch, outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVEditClip(inUV.me, scratch, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error in clipping")
     # Get scratch file info
@@ -1713,19 +1890,20 @@ def PEditClipStokes (inUV, scratch, outUV, err):
     err    = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
-    if ((not scratch) and (notoutUV.UVIsA())):
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     # Create output for scratch
     if scratch:
         outUV = UV("None")
-    outUV.me = Obit.UVEditClipStokes(inUV.cast(myClass), scratch, \
-                                     outUV.cast(myClass), err.me)
+    outUV.me = Obit.UVEditClipStokes(inUV.me, scratch, outUV.me, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error in clipping")
     # Get scratch file info
@@ -1735,23 +1913,27 @@ def PEditClipStokes (inUV, scratch, outUV, err):
     # end PEditClipStokes
 
 def PNoise(inUV, outUV, scale, sigma, err):
-    """ Scale and add Gaussian noise to data in a UV dataset
+    """ 
+Scale and add Gaussian noise to data in a UV dataset.
 
-    out = in*scale + noise(sigma) for each real,imag
-    inUV    = input Python Obit UV
-    outUV   = output Python Obit UV, must be previously defined
-    scale   = multiplicative term
-    sigma   = Std. deviation of noise to be added
-    err     = Python Obit Error/message stack
+out = in*scale + noise(sigma) for each real,imag
+
+* inUV    = input Python Obit UV
+* outUV   = output Python Obit UV, must be previously defined
+* scale   = multiplicative term
+* sigma   = Std. deviation of noise to be added
+* err     = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not outUV.UVIsA():
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
 
     if err.isErr: # existing error?
         return
@@ -1767,13 +1949,15 @@ def PAppend(inUV, outUV, err):
     err     = Python Obit Error/message stack
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not outUV.UVIsA():
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
 
     if err.isErr: # existing error?
         return
@@ -1806,11 +1990,13 @@ def PFlag (inUV, err,
     Reason    = reason string for flagging (max 24 char)
     """
     ################################################################
-    # Checks
+    if ('myClass' in inUV.__dict__) and (inUV.myClass=='AIPSUVData'):
+        raise TypeError("Function unavailable for "+inUV.myClass)
+    # Check
     if not PIsA(inUV):
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be a Python ObitErr"
+        raise TypeError("err MUST be a Python ObitErr")
     if err.isErr: # existing error?
         return
     #
@@ -1818,13 +2004,13 @@ def PFlag (inUV, err,
     inInfo = inUV.List
     dim = InfoList.dim
     dim[0] = 1; dim[1] = 1; dim[2] = 1
-    InfoList.PAlwaysPutInt(inInfo, "flagVer", dim, [flagVer])
-    InfoList.PAlwaysPutInt(inInfo, "subA",    dim, [subA])
-    InfoList.PAlwaysPutInt(inInfo, "freqID",  dim, [freqID])
+    InfoList.PAlwaysPutInt (inInfo, "flagVer", dim, [flagVer])
+    InfoList.PAlwaysPutInt (inInfo, "subA",    dim, [subA])
+    InfoList.PAlwaysPutInt (inInfo, "freqID",  dim, [freqID])
     dim[0] = 2
-    InfoList.PAlwaysPutInt(inInfo, "Ants",  dim, Ants)
-    InfoList.PAlwaysPutInt(inInfo, "IFs",   dim, IFs)
-    InfoList.PAlwaysPutInt(inInfo, "Chans", dim, Chans)
+    InfoList.PAlwaysPutInt (inInfo, "Ants",  dim, Ants)
+    InfoList.PAlwaysPutInt (inInfo, "IFs",   dim, IFs)
+    InfoList.PAlwaysPutInt (inInfo, "Chans", dim, Chans)
     dim[0] = 2
     InfoList.PAlwaysPutFloat(inInfo, "timeRange", dim, timeRange)
     dim[0] = len(Source)
@@ -1845,16 +2031,18 @@ def PTableCLGetDummy (inUV, outUV, ver, err, solInt=10.):
     outUV   = output Python Obit UV, must be previously defined
     ver     = version number of new table, 0=> create new
     err     = Python Obit Error/message stack
-    solint  = time interval (min) of table
+    solint  = time interval (sec) of table
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not outUV.UVIsA():
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
 
     if err.isErr: # existing error?
         return
@@ -1867,7 +2055,96 @@ def PTableCLGetDummy (inUV, outUV, ver, err, solInt=10.):
     outTable    = Table.Table("None")
     outTable.me = Obit.TableCLGetDummy(inUV.me, outUV.me, ver, err.me)
     return outTable
-    # end PDummyCL
+    # end PTableCLGetDummy
+
+def PTableCLfromNX(outUV, nant, err, outVer=1, calInt=1.0):
+    """
+    Create a CL table from an iNdeX table
+
+     * outUV    = Obit UV object
+     * nant     = Maximum antenna number
+     * err      = Python Obit Error/message stack to init
+     * outVer   = output CL table version
+     * calInt   = calibration table interval in min
+    """
+    ################################################################
+    if outUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+outUV.myClass)
+    # If an old table exists, delete it
+    if outUV.GetHighVer("AIPS CL")>=outVer:
+        zz = outUV.ZapTable("AIPS CL", outVer, err)
+        if err.isErr:
+            OErr.printErrMsg(err, "Error zapping old FQ table")
+    noif   = outUV.Desc.Dict["inaxes"][outUV.Desc.Dict["jlocif"]]
+    npol   = outUV.Desc.Dict["inaxes"][outUV.Desc.Dict["jlocs"]]
+    calI = (calInt-(1.0/60))/1440  # Increment in days
+    cltab = outUV.NewTable(Table.READWRITE, "AIPS CL",outVer,err,numIF=noif,numPol=npol,numTerm=1)
+    nxtab = outUV.NewTable(Table.READONLY, "AIPS NX", 1,err)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error with table")
+    cltab.Open(Table.READWRITE, err)
+    nxtab.Open(Table.READONLY, err)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error opening table")
+    # Update header
+    cltab.keys["numAnt"] = nant
+
+    # Create row
+    ia = [];     fa1 = []; fa0 = []
+    for iif in range(0,noif):
+        ia. append(0)
+        fa1.append(1.0)
+        fa0.append(0.0)
+    # One polarization?
+    if npol==1:
+        row = {'Table name':'AIPS CL', '_status':[1], 'NumFields':23,
+               'TIME':[0.0],  'TIME INTERVAL': [0.0], 'ANTENNA NO.':[1], 'SOURCE ID':[1], 'SUBARRAY':[0], 'FREQ ID':[0],
+               'ATMOS':[0.0], 'DATMOS':[0.0], 'DOPPOFF':fa0,  'I.FAR.ROT':[0.0],'GEODELAY':[0.0],  
+               'MBDELAY1':[0.0], 'DISP 1':[0.0], 'DDISP 1':[0.0], 'CLOCK 1':[0.0],  'DCLOCK 1':[0.0],
+               'REAL1':fa1, 'IMAG1':fa0,  'DELAY 1':fa0, 'RATE 1':fa0, 'WEIGHT 1':fa1, 'REFANT 1':ia,
+               }
+    else:
+        row = {'Table name':'AIPS CL', '_status':[1], 'NumFields':34,
+               'TIME':[0.0],  'TIME INTERVAL': [0.0], 'ANTENNA NO.':[1], 'SOURCE ID':[1], 'SUBARRAY':[0], 'FREQ ID':[0],
+               'ATMOS':[0.0], 'DATMOS':[0.0], 'DOPPOFF':fa0,  'I.FAR.ROT':[0.0],'GEODELAY':[0.0],  
+               'MBDELAY1':[0.0], 'DISP 1':[0.0], 'DDISP 1':[0.0], 'CLOCK 1':[0.0],  'DCLOCK 1':[0.0],
+               'MBDELAY2':[0.0], 'DISP 2':[0.0], 'DDISP 2':[0.0], 'CLOCK 2':[0.0],  'DCLOCK 2':[0.0],
+               'REAL1':fa1, 'IMAG1':fa0,  'DELAY 1':fa0, 'RATE 1':fa0, 'WEIGHT 1':fa1, 'REFANT 1':ia,
+               'REAL2':fa1, 'IMAG2':fa0,  'DELAY 2':fa0, 'RATE 2':fa0,'WEIGHT 2':fa1, 'REFANT 2':ia,
+               }
+    # Loop over NX rows
+    nrows = nxtab.Desc.Dict["nrow"]
+    irow = -1
+    for inxrow in range (1,nrows+1):
+        nxrow = nxtab.ReadRow(inxrow,err)
+        if err.isErr:
+            OErr.printErrMsg(err, "Error reading NX table")
+        OErr.printErr(err)
+        # Divvy up scans
+        ntime = max (1, int(0.5+nxrow['TIME INTERVAL'][0]/calI))
+        delta = nxrow['TIME INTERVAL'][0]/ntime
+        time = []
+        for itime in range (0,ntime):
+            time.append(nxrow['TIME'][0]-0.5*nxrow['TIME INTERVAL'][0]+itime*delta)
+        # end of scan
+        ntime += 1
+        time.append(nxrow['TIME'][0]+0.5*nxrow['TIME INTERVAL'][0])
+        row['SOURCE ID'][0] = nxrow['SOURCE ID'][0]   # source number
+        # Loop over times in scan
+        for itime in range (0,ntime):
+            row['TIME']          = [time[itime]]
+            row['TIME INTERVAL'] = [delta]
+            # Loop over antennas
+            for iant in range(1,nant+1):
+                row['ANTENNA NO.'] = [iant]
+                cltab.WriteRow(irow, row,err)
+                if err.isErr:
+                    OErr.printErrMsg(err, "Error writing CL table")
+    cltab.Close(err)
+    nxtab.Close(err)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error closing table")
+    # end PTableCLfromNX
 
 def PTableSNGetZeroFR (inUV, outUV, ver, err, solInt=10., timeInt = 1.0):
     """ Create SN tablethat will counter-rotate the data to a zero fringe rate 
@@ -1884,13 +2161,15 @@ def PTableSNGetZeroFR (inUV, outUV, ver, err, solInt=10., timeInt = 1.0):
     timeInt = Integration time (sec) of data.
     """
     ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
     # Checks
     if not inUV.UVIsA():
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not outUV.UVIsA():
-        raise TypeError,"outUV MUST be a Python Obit UV"
+        raise TypeError("outUV MUST be a Python Obit UV")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
 
     if err.isErr: # existing error?
         return
@@ -1909,3 +2188,151 @@ def PTableSNGetZeroFR (inUV, outUV, ver, err, solInt=10., timeInt = 1.0):
     return outTable
     # end PTableSNGetZeroFR
 
+def PUVAvg2One (inUV, scratch, outUV, err):
+    """ Average all data in a visibility dataset to one vis.
+
+    For single source data single vis, for multisource data, one vis per scan.
+    Data labeled as baseline 1-2
+    returns UV data object
+    inUV   = Python UV object to average
+    scratch= True if this is to be a scratch file (same type as inUV)
+    outUV  = Predefined UV data if scratch is False
+             ignored if scratch True.
+    err    = Python Obit Error/message stack
+    """
+    ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
+    # Checks
+    if not inUV.UVIsA():
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
+    if not OErr.OErrIsA(err):
+        raise TypeError("err MUST be an OErr")
+    #
+    # Create output for scratch
+    if scratch:
+        outUV = UV("None")
+    outUV.me = Obit.UVAvg2One(inUV.me, scratch, outUV.me, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error in averaging all vis")
+    # Get scratch file info
+    if scratch:
+        PUVInfo (outUV, err)
+    return outUV
+    # end PUVAvg2One
+
+def PUVVisSub1 (inUV1, inUV2, outUV, err):
+    """ Subtract the 1st visibility in one ObitUV from those in another.
+
+    outUV = inUV1[*] - inUV2[0]
+    returns UV data object
+    inUV1   = Python UV to subtract from, no calibration/selection
+    inUV2   = Python UV to subtract , calibration/selection allowed
+              inUV2 should have the same structure, only the 1st
+              visibility used and subtracted from all in inUV1
+    outUV  = Predefined UV data.
+    err    = Python Obit Error/message stack
+    """
+    ################################################################
+    if inUV1.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV1.myClass)
+    # Checks
+    if not inUV1.UVIsA():
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if outUV.UVIsA():
+        raise TypeError("outUV MUST be a Python Obit UV")
+    if not OErr.OErrIsA(err):
+        raise TypeError("err MUST be an OErr")
+    #
+    Obit.UVVisSub1(inUV1.me, inUV2.me, outUV.me, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error in subtracting vis")
+    # end PUVVisSub1
+
+def PUVSmoF (inUV, scratch, outUV, err):
+    """ Spectrally smooth the data in ObitUV
+
+    For single source data single vis, for multisource data, one vis per scan.
+    Data labeled as baseline 1-2
+    returns UV data object
+    inUV   = Python UV to smooth, calibration, editing and selection honored
+    Control parameters are on the inUV info member:
+      "NumChSmo" long (1,1,1) Number of channels to average
+                  default = 3
+    scratch= True if this is to be a scratch file (same type as inUV)
+    outUV  = Predefined UV data if scratch is False
+             ignored if scratch True.
+    err    = Python Obit Error/message stack
+    """
+    ################################################################
+    if inUV.myClass=='AIPSUVData':
+        raise TypeError("Function unavailable for "+inUV.myClass)
+    # Checks
+    if not inUV.UVIsA():
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if ((not scratch) and (not outUV.UVIsA())):
+        raise TypeError("outUV MUST be a Python Obit UV")
+    if not OErr.OErrIsA(err):
+        raise TypeError("err MUST be an OErr")
+    #
+    # Create output for scratch
+    if scratch:
+        outUV = UV("None")
+    outUV.me = Obit.UVSmoF(inUV.me, scratch, outUV.me, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error in smoothing vis")
+    # Get scratch file info
+    if scratch:
+        PUVInfo (outUV, err)
+    return outUV
+    # end PUVSmoF
+
+def AExist(Aname, Aclass, disk, seq, err):
+    """
+    Test if AIPS file exists
+    
+    returns True or False
+    * Aname    = AIPS file name
+    * Aclass   = AIPS class name
+    * disk     = AIPS disk number
+    * seq      = AIPS sequence number
+    * err      = Python Obit Error/message stack, 
+    """
+    ################################################################
+    # Checks
+    if err.isErr:
+        return False
+    # Print message stack to clear
+    OErr.printErr(err)
+    user = OSystem.PGetAIPSuser()
+    ret = Obit.AIPSDirFindCNO(disk, user, Aname, Aclass, "UV", seq, err.me)
+    if err.isErr:
+        return rFalse
+    # Clear any couldn't find message
+    OErr.PClear(err)
+    return ret>0
+    # end AExist
+def FExist(filedisk, err):
+    """
+    Test if FITS file exists
+    
+    returns True or False
+    * file    = File name
+    * disk    = disk number, 0->CWD
+    * err      = Python Obit Error/message stack, 
+    """
+    ################################################################
+    # Checks
+    if err.isErr:
+        return False
+    # Print message stack to clear
+    OErr.printErr(err)
+    ret = FITSDir.PExist(file,disk,err)
+    if err.isErr:
+        return False
+    # Clear any couldn't find message
+    OErr.PClear(err)
+    return ret
+# end FExist

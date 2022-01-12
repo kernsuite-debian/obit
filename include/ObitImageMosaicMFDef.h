@@ -1,6 +1,6 @@
-/* $Id: ObitImageMosaicMFDef.h 128 2009-09-23 14:48:29Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -37,3 +37,7 @@ olong maxOrder;
 ofloat maxFBW;
 /** Spectral index correction applied to data making mosaic */
 ofloat alpha;
+/** Reference frequency (Hz) for spectral index */
+odouble alphaRefF;
+/** Is this being restarted? */
+gboolean restart;

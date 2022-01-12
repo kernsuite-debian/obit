@@ -1,8 +1,8 @@
-/* $Id: Table.inc 2 2008-06-10 15:32:27Z bill.cotton $   */  
+/* $Id$   */  
 /*--------------------------------------------------------------------*/
 /* Swig module description for Table type                             */
 /*                                                                    */
-/*;  Copyright (C) 2004-2008                                          */
+/*;  Copyright (C) 2004-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -37,6 +37,7 @@
 #include "ObitTableCC.h"
 #include "ObitTableCL.h"
 #include "ObitTableCQ.h"
+#include "ObitTableCP.h"
 #include "ObitTableCT.h"
 #include "ObitTableFG.h"
 #include "ObitTableFQ.h"
@@ -49,6 +50,8 @@
 #include "ObitTableOB.h"
 #include "ObitTableOF.h"
 #include "ObitTablePC.h"
+#include "ObitTablePD.h"
+#include "ObitTablePO.h"
 #include "ObitTablePS.h"
 #include "ObitTableSN.h"
 #include "ObitTableSU.h"
@@ -58,6 +61,18 @@
 #include "ObitTableWX.h"
 #include "ObitTableUtil.h"
 %}
+
+/* Definitions for Python Shadow class */
+/* A copy of the struct for c */
+%{
+typedef struct {
+  ObitTable *me;
+} Table;
+%}
+/* and a copy of the struct for swig */
+typedef struct {
+  ObitTable *me;
+} Table;
 
 %inline %{
 // Routine to remove trailing blanks from a string 
@@ -75,6 +90,61 @@ static void TableDeeBlank (gchar *in)
 extern ObitTable* TableCreate (gchar* name) {
   return newObitTable (name);
 } // end  TableCreate
+
+extern ObitTable* TableUnref (ObitTable* in) {
+  if (!ObitTableIsA(in)) return NULL;
+  return ObitTableUnref(in);
+}
+
+extern ObitTable*  TableRef (ObitTable* in) {
+  return ObitTableRef(in);
+}
+
+void CreateTable(PyObject *self, char* name) {
+   void *ptr;
+   int ret, flags=0;
+   ret = SWIG_Python_ConvertPtr(self, &ptr, SWIGTYPE_p_Table, flags);
+   if (!SWIG_IsOK(ret)) {
+	PyErr_SetString(PyExc_RuntimeError,"CreateTable: could not recover c struct");
+	return;
+   }
+   if (strcmp(name, "None")) ((Table*)ptr)->me = TableCreate(name);
+   else  ((Table*)ptr)->me = NULL;
+   return;
+ } // end CreateTable
+
+void DeleteTable(PyObject *self) {
+   void *ptr;
+   int ret, flags=0;
+   ret = SWIG_Python_ConvertPtr(self, &ptr, SWIGTYPE_p_Table, flags);
+   if (!SWIG_IsOK(ret)) {
+	PyErr_SetString(PyExc_RuntimeError,"DeleteTable: could not recover c struct");
+	return;
+   }
+   ((Table*)ptr)->me = ObitTableUnref(((Table*)ptr)->me);
+}// end DeleteTable
+
+ObitTable* Table_Get_me(PyObject *self) {
+   void *ptr;
+   int ret,flags=0;
+   ret = SWIG_Python_ConvertPtr(self, &ptr, SWIGTYPE_p_Table, flags);
+   if (!SWIG_IsOK(ret)) {
+	PyErr_SetString(PyExc_RuntimeError,"Table_Get_me: could not recover c struct");
+	return NULL;
+   }
+   return ((Table*)ptr)->me;
+}  // end Table_Get_me
+
+void Table_Set_me(PyObject *self, ObitTable *me) {
+   void *ptr;
+   int ret,flags=0;
+   ret = SWIG_Python_ConvertPtr(self, &ptr, SWIGTYPE_p_Table, flags);
+   if (!SWIG_IsOK(ret)) {
+	PyErr_SetString(PyExc_RuntimeError,"Table_Set_me: could not recover c struct");
+	return;
+   }
+   ((Table*)ptr)->me =  ObitTableRef(me);
+}  // end Table_Set_me
 
 extern ObitTable* TableZap  (ObitTable *in, ObitErr *err) {
   return ObitTableZap (in, err);
@@ -95,7 +165,7 @@ extern void TableConcat  (ObitTable *in, ObitTable *out, ObitErr *err) {
 
 // Open and close to fully instantiate
 // access 1=READONLY, 2=WRITEONLY, 3=READWRITE
-extern int TablefullInstantiate (ObitTable* in, int access, ObitErr *err) {
+extern long TablefullInstantiate (ObitTable* in, long access, ObitErr *err) {
   ObitIOCode ret;
   ObitIOAccess laccess;
 
@@ -108,7 +178,7 @@ extern int TablefullInstantiate (ObitTable* in, int access, ObitErr *err) {
   else return 0;
 } // end TablefullInstantiate
 
-extern int TableOpen (ObitTable *in, int access, ObitErr *err) {
+extern long TableOpen (ObitTable *in, long access, ObitErr *err) {
   ObitIOCode ret;
   ObitIOAccess laccess;
 
@@ -134,6 +204,9 @@ extern int TableOpen (ObitTable *in, int access, ObitErr *err) {
   else if (!strncmp (in->tabType,"AIPS CL", 7)) {
     ret =  ObitTableCLOpen ((ObitTableCL*)in, laccess, err);
   }
+  else if (!strncmp (in->tabType,"AIPS CP", 7)) {
+    ret =  ObitTableCPOpen ((ObitTableCP*)in, laccess, err);
+  }
   else if (!strncmp (in->tabType,"AIPS CQ", 7)) {
     ret =  ObitTableCQOpen ((ObitTableCQ*)in, laccess, err);
   }
@@ -145,6 +218,9 @@ extern int TableOpen (ObitTable *in, int access, ObitErr *err) {
   }
   else if (!strncmp (in->tabType,"AIPS FQ", 7)) {
     ret =  ObitTableFQOpen ((ObitTableFQ*)in, laccess, err);
+  }
+  else if (!strncmp (in->tabType,"AIPS FS", 7)) {
+    ret =  ObitTableFSOpen ((ObitTableFS*)in, laccess, err);
   }
   else if (!strncmp (in->tabType,"AIPS GC", 7)) {
     ret =  ObitTableGCOpen ((ObitTableGC*)in, laccess, err);
@@ -172,6 +248,12 @@ extern int TableOpen (ObitTable *in, int access, ObitErr *err) {
   }
   else if (!strncmp (in->tabType,"AIPS PC", 7)) {
     ret =  ObitTablePCOpen ((ObitTablePC*)in, laccess, err);
+  }
+  else if (!strncmp (in->tabType,"AIPS PD", 7)) {
+    ret =  ObitTablePDOpen ((ObitTablePD*)in, laccess, err);
+  }
+  else if (!strncmp (in->tabType,"AIPS PO", 7)) {
+    ret =  ObitTablePOOpen ((ObitTablePO*)in, laccess, err);
   }
   else if (!strncmp (in->tabType,"AIPS PS", 7)) {
     ret =  ObitTablePSOpen ((ObitTablePS*)in, laccess, err);
@@ -205,7 +287,7 @@ extern void TableDirty (ObitTable *in) {
   in->myStatus = OBIT_Modified;
 } // end Dirty
 
-extern int TableClose (ObitTable *in, ObitErr *err) {
+extern long TableClose (ObitTable *in, ObitErr *err) {
   ObitIOCode ret;
 
   if (!strncmp (in->tabType,"AIPS AN", 7)) {
@@ -226,6 +308,9 @@ extern int TableClose (ObitTable *in, ObitErr *err) {
   else if (!strncmp (in->tabType,"AIPS CL", 7)) {
     ret =  ObitTableCLClose ((ObitTableCL*)in, err);
   }
+  else if (!strncmp (in->tabType,"AIPS CP", 7)) {
+    ret =  ObitTableCPClose ((ObitTableCP*)in, err);
+  }
   else if (!strncmp (in->tabType,"AIPS CQ", 7)) {
     ret =  ObitTableCQClose ((ObitTableCQ*)in, err);
   }
@@ -237,6 +322,9 @@ extern int TableClose (ObitTable *in, ObitErr *err) {
   }
   else if (!strncmp (in->tabType,"AIPS FQ", 7)) {
     ret =  ObitTableFQClose ((ObitTableFQ*)in, err);
+  }
+  else if (!strncmp (in->tabType,"AIPS FS", 7)) {
+    ret =  ObitTableFSClose ((ObitTableFS*)in, err);
   }
   else if (!strncmp (in->tabType,"AIPS GC", 7)) {
     ret =  ObitTableGCClose ((ObitTableGC*)in, err);
@@ -265,6 +353,12 @@ extern int TableClose (ObitTable *in, ObitErr *err) {
   else if (!strncmp (in->tabType,"AIPS PC", 7)) {
     ret =  ObitTablePCClose ((ObitTablePC*)in, err);
   }
+  else if (!strncmp (in->tabType,"AIPS PD", 7)) {
+    ret =  ObitTablePDClose ((ObitTablePD*)in, err);
+  }
+  else if (!strncmp (in->tabType,"AIPS PO", 7)) {
+    ret =  ObitTablePOClose ((ObitTablePO*)in, err);
+  }
   else if (!strncmp (in->tabType,"AIPS PS", 7)) {
     ret =  ObitTablePSClose ((ObitTablePS*)in, err);
   }
@@ -292,11 +386,11 @@ extern int TableClose (ObitTable *in, ObitErr *err) {
   else return 1;
 } // end Close
 
-extern  PyObject *TableReadRow (ObitTable *in, int rowno,
-                         ObitErr *err) {
+extern  PyObject *TableReadRow (ObitTable *in, long rowno, ObitErr *err) {
   ObitIOCode ret = OBIT_IO_SpecErr;
   ObitTableDesc *desc = in->myDesc;
-  olong i, j, j1, j2, k, lrowno = rowno;
+  olong i, j, lrowno = rowno;
+  long j1, j2, k, size;
   ObitTableRow* row = newObitTableRow (in);
   PyObject *outDict = PyDict_New();
   PyObject *list;
@@ -321,7 +415,7 @@ extern  PyObject *TableReadRow (ObitTable *in, int rowno,
   PyDict_SetItemString(outDict, "Table name", o);
   Py_DECREF(o);
   /* number of fields  */
-  o = PyInt_FromLong((long)desc->nfield);
+  o = PyLong_FromLong((long)desc->nfield);
   PyDict_SetItemString(outDict, "NumFields", o);
   Py_DECREF(o);
   /* Loop over fields */
@@ -335,22 +429,22 @@ extern  PyObject *TableReadRow (ObitTable *in, int rowno,
     case OBIT_short:
       idata = ((gshort*)row->myRowData)+desc->offset[i];
       for (j=0; j<desc->repeat[i]; j++) 
-        PyList_SetItem(list, j, PyInt_FromLong((long)idata[j]));
+        PyList_SetItem(list, j, PyLong_FromLong((long)idata[j]));
       break;
     case OBIT_int:
       jdata = ((olong*)row->myRowData)+desc->offset[i];
       for (j=0; j<desc->repeat[i]; j++) 
-        PyList_SetItem(list, j, PyInt_FromLong((long)jdata[j]));
+        PyList_SetItem(list, j, PyLong_FromLong((long)jdata[j]));
       break;
     case OBIT_oint:
       kdata = ((oint*)row->myRowData)+desc->offset[i];
       for (j=0; j<desc->repeat[i]; j++) 
-        PyList_SetItem(list, j, PyInt_FromLong((long)kdata[j]));
+        PyList_SetItem(list, j, PyLong_FromLong((long)kdata[j]));
       break;
     case OBIT_long:
       ldata = ((olong*)row->myRowData)+desc->offset[i];
       for (j=0; j<desc->repeat[i]; j++) 
-        PyList_SetItem(list, j, PyInt_FromLong((long)ldata[j]));
+        PyList_SetItem(list, j, PyLong_FromLong((long)ldata[j]));
       break;
     case OBIT_float:
       fdata = ((ofloat*)row->myRowData)+desc->offset[i];
@@ -366,7 +460,7 @@ extern  PyObject *TableReadRow (ObitTable *in, int rowno,
       cdata = ((gchar*)row->myRowData)+desc->offset[i];
        /* null terminate string */
       ctemp = g_malloc0(desc->dim[i][0]+1);
-      for (j=0; j<desc->repeat[i]/MAX (1,desc->dim[i][0]); j++) {
+      for (j=0; j<desc->repeat[i]/MAX (1,MAX(desc->dim[i][0],desc->dim[i][1])); j++) {
         for (k=0; k<desc->dim[i][0]; k++) ctemp[k] = cdata[k];  ctemp[k] = 0;
         PyList_SetItem(list, j, PyString_InternFromString(ctemp));
 	cdata += desc->dim[i][0];
@@ -376,17 +470,18 @@ extern  PyObject *TableReadRow (ObitTable *in, int rowno,
     case OBIT_bool:
       bdata = ((gboolean*)row->myRowData)+desc->offset[i];
       for (j=0; j<desc->repeat[i]; j++) 
-        PyList_SetItem(list, j, PyInt_FromLong((long)bdata[j]));
+        PyList_SetItem(list, j, PyLong_FromLong((long)bdata[j]));
       break;
     case OBIT_bits:
       kdata = ((oint*)row->myRowData)+desc->offset[i];
       j1 = 0; j2 = 0;
       for (j=0; j<desc->repeat[i]; j++) {
-	if (j2>=sizeof(oint)) {  /* next integer worth? */
+      size = (long)sizeof(oint);
+	if (j2>=size) {  /* next integer worth? */
           j1++;
           j2 = 0;
         }
-	o = PyInt_FromLong((long)((kdata[j1] & (1 << j2)) ? 1 : 0));
+	o = PyLong_FromLong((long)((kdata[j1] & (1 << j2)) ? 1 : 0));
         j2++;
         PyList_SetItem(list, j, o);
       }
@@ -412,18 +507,19 @@ extern  PyObject *TableReadRow (ObitTable *in, int rowno,
   return outDict;	
 } // end TableReadRow
 
-extern int TableWriteRow (ObitTable *in, int rowno, PyObject *inDict,
+extern long TableWriteRow (ObitTable *in, long rowno, PyObject *inDict,
                           ObitErr *err) {
   ObitIOCode ret = OBIT_IO_SpecErr;
   ObitTableDesc *desc = in->myDesc;
-  olong i, j, j1, j2, k, lrowno = rowno;
+  olong i, j, lrowno = rowno;
+  long j1, j2, k, size;
   ObitTableRow* row = newObitTableRow (in);
   PyObject *list = NULL, *TabName=NULL;
   gshort   *idata;
   olong     *jdata;
   oint     *kdata;
   olong    *ldata, ltemp;
-  gchar    *cdata, *ctemp, *tstr;
+  gchar    *cdata, *ctemp, *tstr=NULL;
   gboolean *bdata, bad;
   ofloat   *fdata;
   odouble  *ddata;
@@ -450,7 +546,7 @@ extern int TableWriteRow (ObitTable *in, int rowno, PyObject *inDict,
     return 1;
   }
   /* Check number of fields */
-  ltemp = PyInt_AsLong(PyDict_GetItemString(inDict, "NumFields"));
+  ltemp = PyLong_AsLong(PyDict_GetItemString(inDict, "NumFields"));
   if (ltemp!=desc->nfield) {
     Obit_log_error(err, OBIT_Error, "%s: no. columns %d NOT  %d",
                    routine, ltemp, desc->nfield);
@@ -484,66 +580,84 @@ extern int TableWriteRow (ObitTable *in, int rowno, PyObject *inDict,
     case OBIT_short:
       bad = desc->repeat[i] != PyList_Size(list);
       idata = ((gshort*)row->myRowData)+desc->offset[i];
-      for (j=0; j<desc->repeat[i]; j++) 
-        idata[j] = (gshort)PyInt_AsLong(PyList_GetItem(list, j));
+      if (!bad) {
+        for (j=0; j<desc->repeat[i]; j++) 
+          idata[j] = (gshort)PyLong_AsLong(PyList_GetItem(list, j));
+      }
       break;
     case OBIT_int:
       bad = desc->repeat[i] != PyList_Size(list);
       jdata = ((olong*)row->myRowData)+desc->offset[i];
-      for (j=0; j<desc->repeat[i]; j++) 
-        jdata[j] = (olong)PyInt_AsLong(PyList_GetItem(list, j));
+      if (!bad) {
+        for (j=0; j<desc->repeat[i]; j++) 
+          jdata[j] = (olong)PyLong_AsLong(PyList_GetItem(list, j));
+      }
       break;
     case OBIT_oint:
       bad = desc->repeat[i] != PyList_Size(list);
       kdata = ((oint*)row->myRowData)+desc->offset[i];
-      for (j=0; j<desc->repeat[i]; j++) 
-        kdata[j] = (oint)PyInt_AsLong(PyList_GetItem(list, j));
+      if (!bad) {
+        for (j=0; j<desc->repeat[i]; j++) 
+          kdata[j] = (oint)PyLong_AsLong(PyList_GetItem(list, j));
+      }
       break;
     case OBIT_long:
       bad = desc->repeat[i] != PyList_Size(list);
       ldata = ((olong*)row->myRowData)+desc->offset[i];
-      for (j=0; j<desc->repeat[i]; j++) 
-        ldata[j] = (olong)PyInt_AsLong(PyList_GetItem(list, j));
+      if (!bad) {
+        for (j=0; j<desc->repeat[i]; j++) 
+          ldata[j] = (olong)PyLong_AsLong(PyList_GetItem(list, j));
+      }
       break;
     case OBIT_float:
       bad = desc->repeat[i] != PyList_Size(list);
       fdata = ((ofloat*)row->myRowData)+desc->offset[i];
-      for (j=0; j<desc->repeat[i]; j++) 
-        fdata[j] =  (ofloat)PyFloat_AsDouble(PyList_GetItem(list, j));
+      if (!bad) {
+        for (j=0; j<desc->repeat[i]; j++) 
+          fdata[j] =  (ofloat)PyFloat_AsDouble(PyList_GetItem(list, j));
+      }
       break;
     case OBIT_double:
       bad = desc->repeat[i] != PyList_Size(list);
       ddata = ((odouble*)row->myRowData)+desc->offset[i];
-      for (j=0; j<desc->repeat[i]; j++) 
-        ddata[j] =  (odouble)PyFloat_AsDouble(PyList_GetItem(list, j));
+      if (!bad) {
+        for (j=0; j<desc->repeat[i]; j++) 
+          ddata[j] =  (odouble)PyFloat_AsDouble(PyList_GetItem(list, j));
+      }
       break;
     case OBIT_string:
-      bad = (desc->repeat[i]/MAX (1,desc->dim[i][0])) != PyList_Size(list);
+    if (i==0)  /* Only check first dimension */
+        bad = (desc->repeat[i]/MAX (1,desc->dim[i][0])) != PyList_Size(list);
+      if (bad) break;
       cdata = ((gchar*)row->myRowData)+desc->offset[i];
       /* null terminate string */
-      for (j=0; j<desc->repeat[i]/MAX (1,desc->dim[i][0]); j++) {
+      for (j=0; j<desc->repeat[i]/MAX (1,MAX(desc->dim[i][0],desc->dim[i][1])); j++) {
         ctemp = PyString_AsString(PyList_GetItem(list, j));
-        for (k=0; k<strlen(ctemp); k++) cdata[k] = ctemp[k];
+	size = (long)strlen(ctemp);
+        for (k=0; k<size; k++) cdata[k] = ctemp[k];
 	cdata += desc->dim[i][0];
       }
       break;
     case OBIT_bool:
       bad = desc->repeat[i] != PyList_Size(list);
+      if (bad) break;
       bdata = ((gboolean*)row->myRowData)+desc->offset[i];
       for (j=0; j<desc->repeat[i]; j++) 
-        bdata[j] = (gboolean)PyInt_AsLong(PyList_GetItem(list, j));
+        bdata[j] = (gboolean)PyLong_AsLong(PyList_GetItem(list, j));
       break;
     case OBIT_bits:
       bad = desc->repeat[i] != PyList_Size(list);
+      if (bad) break;
       kdata = ((oint*)row->myRowData)+desc->offset[i];
       kdata[0] = 0;
       j1 = 0; j2 = 0;
       for (j=0; j<desc->repeat[i]; j++) {
-	if (j2>=sizeof(oint)) {  /* next integer worth? */
+        size = (long)sizeof(oint);
+	if (j2>=size) {  /* next integer worth? */
           j1++;
           j2 = 0;
         }
-        kdata[j1] |= (PyInt_AsLong(PyList_GetItem(list, j2)) ? (1 << j) : 0);
+        kdata[j1] |= (PyLong_AsLong(PyList_GetItem(list, j2)) ? (1 << j) : 0);
         j2++;
       }
       break;
@@ -558,8 +672,8 @@ extern int TableWriteRow (ObitTable *in, int rowno, PyObject *inDict,
   /* Check if sizes compatible */
   if (bad) {
       Obit_log_error(err, OBIT_Error, 
-		   "%s: wrong size %d %d", 
-		   routine, desc->repeat[i], PyList_Size(list));
+		   "%s: wrong size %d %d for %s", 
+		   routine, desc->repeat[i], (olong)PyList_Size(list), desc->FieldName[i]);
       return 1;
   }
 
@@ -570,15 +684,6 @@ extern int TableWriteRow (ObitTable *in, int rowno, PyObject *inDict,
   if (ret==OBIT_IO_OK) return 0;
   else return 1;
 } // end TableWriteRow
-
-extern ObitTable* TableUnref (ObitTable* in) {
-  if (!ObitTableIsA(in)) return NULL;
-  return ObitTableUnref(in);
-}
-
-extern ObitTable*  TableRef (ObitTable* in) {
-  return ObitTableRef(in);
-}
 
 extern ObitInfoList* TableGetList (ObitTable* in) {
   return ObitInfoListRef(in->info);
@@ -606,11 +711,11 @@ extern void TableSetDesc (ObitTable* in, ObitTableDesc* desc) {
 }
 
 extern long TableGetVer (ObitTable* in) {
-  return in->myDesc->version;
+  return (long)in->myDesc->version;
 }
 
-extern int TableIsA (ObitTable* in) {
-  return ObitTableIsA(in);
+extern long TableIsA (ObitTable* in) {
+  return (long)ObitTableIsA(in);
 }
 
 extern char* TableGetName (ObitTable* in) {
@@ -622,7 +727,7 @@ extern char* TableGetName (ObitTable* in) {
 }
 
 // Table utilities 
-extern int  TableUtilSort (ObitTable* in, char *colName, int desc, ObitErr *err) {
+extern long TableUtilSort (ObitTable* in, char *colName, long desc, ObitErr *err) {
   ObitIOCode ret;
   gboolean ldesc;
   ldesc = desc != 0;
@@ -632,31 +737,4 @@ extern int  TableUtilSort (ObitTable* in, char *colName, int desc, ObitErr *err)
 }
 
 %}
-
-/* Definitions for Python Shadow class */
-/* A copy of the struct for c */
-%{
-typedef struct {
-  ObitTable *me;
-} Table;
-%}
-/* and a copy of the struct for swig */
-typedef struct {
-  ObitTable *me;
-} Table;
-
-%addmethods Table { 
-  Table(char *name) {
-     Table *out;
-     out = (Table *) malloc(sizeof(Table));
-     if (strcmp(name, "None")) out->me = TableCreate(name);
-     else out->me = NULL;
-     return out;
-   }
-  ~Table() {
-    if (!self) return;
-    self->me = TableUnref(self->me);
-    free(self);
-  }
-};
 

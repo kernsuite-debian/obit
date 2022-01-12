@@ -1,4 +1,4 @@
-/* $Id: ObitRPC.h 61 2008-12-19 18:14:49Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2005-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -30,7 +30,7 @@
 
 #include <xmlrpc_client.h>
 #include <xmlrpc_server.h>
-#include <xmlrpc_server_abyss.h>
+/*#include <xmlrpc_server_abyss.h>*/
 #include <xmlrpc-c/base.h>
 #include <xmlrpc-c/client.h>
 #include <xmlrpc-c/server.h>

@@ -1,6 +1,6 @@
-/* $Id: ObitIOImageAIPS.c 195 2010-06-01 11:39:41Z bill.cotton $   */
+/* $Id$   */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2010                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -269,7 +269,7 @@ void ObitIOImageAIPSZap (ObitIOImageAIPS *in, ObitErr *err)
       if (err->error) Obit_traceback_msg (err, routine, in->name);
     } /* End loop deleting tables */
   } /* end if tableList exists */
-  while (tableList) tableList = ObitTableUnref(tableList);  /* Get table list */
+   /* while (tableList) tableList = ObitTableUnref(tableList); now just a copy */
   in->tableList = NULL;
 
   /* Get MA file */
@@ -423,9 +423,13 @@ ObitIOCode ObitIOImageAIPSOpen (ObitIOImageAIPS *in, ObitIOAccess access,
   /* ???  desc->minval =  1.0e20;*/
     
   /* initialize location in image */
-  desc->row   = 0;
-  desc->plane = 0;
-  in->filePos = 0;
+  desc->row    = 0;
+  desc->plane  = 0;
+  desc->plane4 = 0;
+  desc->plane5 = 0;
+  desc->plane6 = 0;
+  desc->plane7 = 0;
+  in->filePos  = 0;
   
   return OBIT_IO_OK;
 } /* end ObitIOImageAIPSOpen */
@@ -468,9 +472,14 @@ ObitIOCode ObitIOImageAIPSClose (ObitIOImageAIPS *in, ObitErr *err)
 ObitIOCode ObitIOImageAIPSSet (ObitIOImageAIPS *in, ObitInfoList *info, 
 			       ObitErr *err)
 {
+  ObitImageSel* sel=(ObitImageSel*)in->mySel;
   /* Reset values in descriptor */
-  ((ObitImageDesc*)in->myDesc)->plane = 0;
-  ((ObitImageDesc*)in->myDesc)->row   = 0;
+  ((ObitImageDesc*)in->myDesc)->plane  = sel->blc[2]-1;
+  ((ObitImageDesc*)in->myDesc)->plane4 = sel->blc[3]-1;
+  ((ObitImageDesc*)in->myDesc)->plane5 = sel->blc[4]-1;
+  ((ObitImageDesc*)in->myDesc)->plane6 = sel->blc[5]-1;
+  ((ObitImageDesc*)in->myDesc)->plane7 = sel->blc[6]-1;
+  ((ObitImageDesc*)in->myDesc)->row    = sel->blc[1]-1;
 
   return OBIT_IO_OK;
 } /* end ObitIOImageAIPSSet */
@@ -490,7 +499,8 @@ ObitIOCode ObitIOImageAIPSRead (ObitIOImageAIPS *in, ofloat *data,
   ObitImageDesc* desc;
   ObitImageSel* sel;
   gsize size;
-  olong offset, len=0, lRow, iRow, nRows=0, row, plane;
+  olong offset, len=0, lRow, iRow, nRows=0;
+  olong row, plane, plane4, plane5, plane6, plane7;
   ObitFilePos wantPos;
   olong  i, ipos[IM_MAXDIM];
   gchar *routine = "ObitIOImageAIPSRead";
@@ -514,14 +524,17 @@ ObitIOCode ObitIOImageAIPSRead (ObitIOImageAIPS *in, ofloat *data,
   sel  = in->mySel;  /* selector pointer */
 
   /* where are we in image */
-  row   = MAX (desc->row,   sel->blc[1]-1);
-  plane = MAX (desc->plane, sel->blc[2]-1);
-
+  row    = MAX (desc->row,    sel->blc[1]-1);
+  plane  = MAX (desc->plane,  sel->blc[2]-1);
+  plane4 = MAX (desc->plane4, sel->blc[3]);
+  plane5 = MAX (desc->plane5, sel->blc[4]);
+  plane6 = MAX (desc->plane6, sel->blc[5]);
+  plane7 = MAX (desc->plane7, sel->blc[6]);
+ 
   /* set current request by desc->IOsize */
   if (desc->IOsize==OBIT_IO_byRow) {
-    
-    plane = MAX(plane, sel->blc[2]);
-    row++; /* increment row */
+    plane = MAX (sel->blc[2], plane);
+    row++;   /* increment row */
     if (row>sel->trc[1]) { /* next plane */
       row = sel->blc[1];
       plane++;
@@ -537,11 +550,32 @@ ObitIOCode ObitIOImageAIPSRead (ObitIOImageAIPS *in, ofloat *data,
     nRows = sel->trc[1] - sel->blc[1] + 1;
     len = sel->trc[0] - sel->blc[0] + 1;   /* size of a transfer (row) */
   }
-  desc->row   = row;
-  desc->plane = plane;
+  if (plane>sel->trc[2]) { /* next plane4 */
+    plane4++;
+    plane = sel->blc[2];
+  }
+  if (plane4>sel->trc[3]) { /* next plane5 */
+    plane5++;
+    plane4 = sel->blc[3];
+  }
+  if (plane5>sel->trc[4]) { /* next plane6 */
+    plane6++;
+    plane5 = sel->blc[4];
+  }
+  if (plane6>sel->trc[5]) { /* next plane7 */
+    plane7++;
+    plane6 = sel->blc[5];
+  }
+  desc->row    = row;
+  desc->plane  = plane;
+  desc->plane4 = plane4;
+  desc->plane5 = plane5;
+  desc->plane6 = plane6;
+  desc->plane7 = plane7;
 
   /* check if done - starting on the plane past the highest. */
-  if (plane > sel->trc[2]) {
+  if ((plane>sel->trc[2]) || (plane4>sel->trc[3]) || (plane5>sel->trc[4]) ||
+      (plane5>sel->trc[5]) || (plane7>sel->trc[6])) {
     /* ObitIOImageAIPSClose (in, err); Close */
     return OBIT_IO_EOF;
   }
@@ -549,7 +583,11 @@ ObitIOCode ObitIOImageAIPSRead (ObitIOImageAIPS *in, ofloat *data,
   /* position of first pixel to access */
   for (i=0; i<IM_MAXDIM; i++) ipos[i] = sel->blc[i];
   ipos[1] = row;
-  ipos[2] = plane;
+  ipos[2] = MAX(1,plane);
+  ipos[3] = MAX(1,plane4);
+  ipos[4] = MAX(1,plane5);
+  ipos[5] = MAX(1,plane6);
+  ipos[6] = MAX(1,plane7);
 
   size = len * sizeof(ofloat);           /* transfer size in bytes */
   lRow = desc->inaxes[0]*sizeof(ofloat); /* length of transfer in bytes */
@@ -599,7 +637,8 @@ ObitIOCode ObitIOImageAIPSWrite (ObitIOImageAIPS *in, ofloat *data,
   ObitImageSel* sel;
   gsize size;
   ofloat val, fblank = ObitMagicF();
-  olong i, offset, len=0, lRow, iRow, nRows=0, row, plane;
+  olong i, offset, len=0, lRow, iRow, nRows=0;
+  olong row, plane, plane4, plane5, plane6, plane7;
   ObitFilePos wantPos;
   olong  ipos[IM_MAXDIM], inaxes[IM_MAXDIM];
   gchar *routine = "ObitIOImageAIPSWrite";
@@ -615,8 +654,12 @@ ObitIOCode ObitIOImageAIPSWrite (ObitIOImageAIPS *in, ofloat *data,
   sel  = in->mySel;  /* selector pointer */
 
   /* where are we in image */
-  row   = MAX (desc->row,   sel->blc[1]-1);
-  plane = MAX (desc->plane, sel->blc[2]-1);
+  row    = MAX (desc->row,    sel->blc[1]-1);
+  plane  = MAX (desc->plane,  sel->blc[2]-1);
+  plane4 = MAX (desc->plane4, sel->blc[3]);
+  plane5 = MAX (desc->plane5, sel->blc[4]);
+  plane6 = MAX (desc->plane6, sel->blc[5]);
+  plane7 = MAX (desc->plane7, sel->blc[6]);
 
   /* set current request by desc->IOsize */
   if (desc->IOsize==OBIT_IO_byRow) {
@@ -639,8 +682,28 @@ ObitIOCode ObitIOImageAIPSWrite (ObitIOImageAIPS *in, ofloat *data,
     len = sel->trc[0] - sel->blc[0]+1;   /* size of a transfer (row) */
   }
 
-  desc->row   = row;
-  desc->plane = plane;
+  if (plane>sel->trc[2]) { /* next plane4 */
+    plane4++;
+    plane = sel->blc[2];
+  }
+  if (plane4>sel->trc[3]) { /* next plane5 */
+    plane5++;
+    plane4 = sel->blc[3];
+  }
+  if (plane5>sel->trc[4]) { /* next plane6 */
+    plane6++;
+    plane5 = sel->blc[4];
+  }
+  if (plane6>sel->trc[5]) { /* next plane7 */
+    plane7++;
+    plane6 = sel->blc[5];
+  }
+  desc->row    = row;
+  desc->plane  = plane;
+  desc->plane4 = plane4;
+  desc->plane5 = plane5;
+  desc->plane6 = plane6;
+  desc->plane7 = plane7;
 
   /* check if done - starting on the plane past the highest. */
   if (plane > sel->trc[2]) {
@@ -651,8 +714,12 @@ ObitIOCode ObitIOImageAIPSWrite (ObitIOImageAIPS *in, ofloat *data,
   for (i=0; i<IM_MAXDIM; i++) inaxes[i] = desc->inaxes[i];
   /* position of first pixel to access */
   for (i=0; i<IM_MAXDIM; i++) ipos[i] = sel->blc[i];
-  ipos[1] = row;
-  ipos[2] = plane;
+  ipos[1]  = row;
+  ipos[2]  = MAX(1,plane);
+  ipos[3]  = MAX(1,plane4);
+  ipos[4]  = MAX(1,plane5);
+  ipos[5]  = MAX(1,plane6);
+  ipos[6]  = MAX(1,plane7);
 
   size = len * sizeof(ofloat);           /* transfer size in bytes */
   lRow = desc->inaxes[0]*sizeof(ofloat); /* length of a row in bytes */
@@ -681,7 +748,6 @@ ObitIOCode ObitIOImageAIPSWrite (ObitIOImageAIPS *in, ofloat *data,
     if ((retCode!=OBIT_IO_OK) || (err->error)) /* add traceback on error */
       Obit_traceback_val (err, routine, in->name, retCode);
     in->filePos = in->myFile->filePos; /* remember current file position */
-
     ipos[1]++;            /* next row */
     offset  += len;       /* offset on data buffer */
     wantPos += lRow;      /* where we want to start next read */  
@@ -689,13 +755,13 @@ ObitIOCode ObitIOImageAIPSWrite (ObitIOImageAIPS *in, ofloat *data,
     /* next file position offset (AIPS images have funny rules) */
     wantPos = ObitAIPSImageFileOffset(desc->naxis, (olong*)desc->inaxes, ipos);
 
-    /* Do we need to pad out a block just finished? */
+    /* Do we need to pad out a block just finished?  */
     if ((in->myFile->access == OBIT_IO_WriteOnly) && 
 	(iRow>0) && (wantPos>in->myFile->filePos)) {
       retCode = ObitFilePad (in->myFile, wantPos, (gchar*)data, size, err);
-      if ((retCode!=OBIT_IO_OK) || (err->error)) /* add traceback on error */
+      if ((retCode!=OBIT_IO_OK) || (err->error))  /* add traceback on error */
 	Obit_traceback_val (err, routine, in->name, retCode);
-      in->filePos = in->myFile->filePos; /* remember current file position */
+	in->filePos = in->myFile->filePos; /* remember current file position */
     }
 
   }  /* end loop writing rows */
@@ -846,8 +912,8 @@ ObitIOImageAIPSReadDescriptor (ObitIOImageAIPS *in, ObitErr *err)
 	/* Save on ObitInfoList */
 	dim[0] = 1;
 	if (keyType == OBIT_string) dim[0] = 8;
-	ObitInfoListPut(desc->info, keyName, keyType, dim, 
-			(gconstpointer)blob, err);
+	ObitInfoListAlwaysPut(desc->info, keyName, keyType, dim, 
+			      (gconstpointer)blob);
 	if (err->error)  /* add trace and return on error */
 	  Obit_traceback_val (err, routine,  in->name, retCode);
 	ip +=5; /* next unit in record */

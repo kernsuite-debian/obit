@@ -1,4 +1,4 @@
-/* $Id: ObitSkyModelVMSquint.h 61 2008-12-19 18:14:49Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2006-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

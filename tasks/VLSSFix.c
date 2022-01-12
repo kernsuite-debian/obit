@@ -1,7 +1,7 @@
-/* $Id: VLSSFix.c 2 2008-06-10 15:32:27Z bill.cotton $  */
+/* $Id$  */
 /* VLSSFix:  Determine and correct position errors in VLSS images     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2008                                          */
+/*;  Copyright (C) 2006-2011                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -45,7 +45,7 @@ void Usage(void);
 /* Set default inputs */
 ObitInfoList* defaultInputs(ObitErr *err);
 /* Set default outputs */
-ObitInfoList* defaultOutputs(ObitErr *err);
+ObitInfoList* defaultOutputs(olong nZern, ObitErr *err);
 /* Get input image */
 ObitImage* getInputImage (ObitInfoList *myInput, ObitErr *err);
 /* Define output image */
@@ -81,7 +81,7 @@ int main ( int argc, char **argv )
   ObitErr      *err= NULL;
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar *parms[] = { /* Control parameters */
-    "Catalog", "catDisk", "MaxRMS", "OutlierFlux", "OutlierSI", 
+    "Catalog", "CatDisk", "MaxRMS", "OutlierFlux", "OutlierSI", 
     "nZern", "MaxQual", "prtLv", 
     NULL };
   olong         nZern, prtLv, Plane[5] = {1, 1, 1, 1, 1};
@@ -90,7 +90,11 @@ int main ( int argc, char **argv )
    /* Startup - parse command line */
   err = newObitErr();
   myInput = VLSSFixIn (argc, argv, err);
-  if (err->error) ierr = 1;
+  if (err->error) {ierr = 1;  ObitErrLog(err);  goto exit;}
+
+  /* Initialize logging */
+  ObitErrInit (err, (gpointer)myInput);
+
   ObitErrLog(err); /* show any error messages on err */
   if (ierr!=0) return ierr;  /* really bad juju */
 
@@ -128,7 +132,7 @@ int main ( int argc, char **argv )
   /* Fit position offsets */
   MinFlux = 1.0;
   ObitInfoListGetTest(myInput, "OutlierFlux", &type, dim, &MinFlux);
-  ObitInfoListAlwaysPut(ionCal->info, "MinFlux", type, dim, &MinFlux);
+  ObitInfoListAlwaysPut(ionCal->info, "MinPeak", type, dim, &MinFlux);
   ObitIonCalPosMul (ionCal, inImage, err);
   if (err->error) ierr = 1;  ObitErrLog(err);  if (ierr!=0) goto exit;
 
@@ -192,7 +196,7 @@ ObitInfoList* VLSSFixIn (int argc, char **argv, ObitErr *err)
 /*      argv   Array of strings from command line                         */
 /*   Output:                                                              */
 /*      err    Obit Error stack                                           */
-/*   return  ObitInfoList with defaults/parsed values                     */
+/*   return    ObitInfoList with defaults/parsed values                   */
 /*----------------------------------------------------------------------- */
 {
   olong ax;
@@ -203,6 +207,7 @@ ObitInfoList* VLSSFixIn (int argc, char **argv, ObitErr *err)
   gchar *strTemp;
   oint    itemp, i, j, k;
   ObitInfoList* list;
+  olong         nZern;
   gchar *routine = "VLSSFixIn";
 
   /* Make default inputs InfoList */
@@ -311,6 +316,8 @@ ObitInfoList* VLSSFixIn (int argc, char **argv, ObitErr *err)
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
   /* Extract basic information to program globals */
+  nZern = 5;
+  ObitInfoListGetTest(list, "nZern",     &type, dim, &nZern);
   ObitInfoListGet(list, "pgmNumber", &type, dim, &pgmNumber, err);
   ObitInfoListGet(list, "AIPSuser",  &type, dim, &AIPSuser,  err);
   ObitInfoListGet(list, "nAIPS",     &type, dim, &nAIPS,     err);
@@ -347,7 +354,7 @@ ObitInfoList* VLSSFixIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
+  myOutput = defaultOutputs(nZern, err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -501,7 +508,7 @@ ObitInfoList* defaultInputs(ObitErr *err)
   /* Catalog FITS disk number */
   dim[0] = 1;dim[1] = 1;
   itemp = 1; 
-  ObitInfoListPut (out, "catDisk", OBIT_oint, dim, &itemp, err);
+  ObitInfoListPut (out, "CatDisk", OBIT_oint, dim, &itemp, err);
   if (err->error) Obit_traceback_val (err, routine, "DefInput", out);
 
   /* Target max. rms residual (asec) */
@@ -541,11 +548,8 @@ ObitInfoList* defaultInputs(ObitErr *err)
 /*  Create default output ObitInfoList                                    */
 /*   Return                                                               */
 /*       ObitInfoList  with default values                                */
-/*  Values:                                                               */
-/*     Mean     Int        Image pixel mean  [0.0]                        */
-/*     RMS      Int        Image pixel rms   [0.0]                        */
 /*----------------------------------------------------------------------- */
-ObitInfoList* defaultOutputs(ObitErr *err)
+ObitInfoList* defaultOutputs(olong nZern, ObitErr *err)
 {
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ofloat farray[50];
@@ -554,7 +558,7 @@ ObitInfoList* defaultOutputs(ObitErr *err)
   gchar *routine = "defaultOutputs";
 
   /* Fitted coefficients */
-  dim[0] = 50; dim[1] = 1;
+  dim[0] = nZern; dim[1] = 1;
   for (i=0; i<dim[0]; i++) farray[i] = 0.0;
   ObitInfoListPut (out, "coef", OBIT_float, dim, farray, err);
   if (err->error) Obit_traceback_val (err, routine, "DefInput", out);
@@ -799,9 +803,10 @@ void VLSSFixHistory (ObitInfoList* myInput, ObitImage* inImage,
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq",
-    "nZern",  "correct", "Catalog", "catDisk", "MaxQual", 
+    "nZern",  "correct", "Catalog", "CatDisk", "MaxQual", 
     "OutlierFlux", "OutlierSI", "MaxRMS", 
     NULL};
+  odouble drms;
   gchar *routine = "VLSSFixHistory";
 
   /* error checks */
@@ -843,7 +848,8 @@ void VLSSFixHistory (ObitInfoList* myInput, ObitImage* inImage,
 
   /* Add RMS residual as image header "SEEING" keyword */
   ObitImageOpen (outImage, OBIT_IO_ReadWrite, err);
-  ObitImageWriteKeyword(outImage, "SEEING", OBIT_float, dim, &rms, err);
+  drms = rms;   /* This gets converted to double as keyword */
+  ObitImageWriteKeyword(outImage, "SEEING", OBIT_double, dim, &drms, err);
   ObitImageClose (outImage, err);
   if (err->error) Obit_traceback_msg (err, routine, outImage->name);
 

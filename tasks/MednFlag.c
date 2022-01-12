@@ -1,7 +1,7 @@
-/* $Id: MednFlag.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit task to automatically edit visibility data                    */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2007-2010                                          */
+/*;  Copyright (C) 2007-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -86,7 +86,7 @@ int main ( int argc, char **argv )
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitErr      *err= NULL;
   gchar        *editParms[] = {  /* Parameters to edit data */
-    "flagTab", "flagSig",  "alpha", "timeWind", 
+    "flagTab", "flagSig",  "alpha", "timeWind", "killAll",
     NULL};
 
    /* Startup - parse command line */
@@ -238,6 +238,7 @@ ObitInfoList* MednFlagIn (int argc, char **argv, ObitErr *err)
 
   /* Make default inputs InfoList */
   list = defaultInputs(err);
+  myOutput = defaultOutputs(err);
 
   /* command line arguments */
   if (argc<=1) Usage(); /* must have arguments */
@@ -365,7 +366,6 @@ ObitInfoList* MednFlagIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -685,8 +685,9 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
     "Sources", "Stokes", "timeRange", "BChan", "EChan",   "BIF", "EIF", "subA",
-    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", "doPol",
-    "avgTime",  "avgFreq",  "chAvg", "ChanSel", 
+    "FreqID", "souCode", "Qual", 
+    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", 
+    "doPol", "PDVer", "avgTime",  "avgFreq",  "chAvg", "ChanSel", 
     NULL};
   gchar *routine = "getInputData";
 
@@ -904,10 +905,11 @@ void MednFlagHistory (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq", 
+    "FreqID", "souCode", "Qual", 
     "outFile",  "outDisk", "outName", "outClass", "outSeq", 
     "Sources", "Stokes", "timeRange",  "subA",
     "doCalSelect",  "doCalib",  "gainUse",  "doBand ",  "BPVer",  "flagVer", 
-    "doPol",  
+    "doPol",  "PDVer", "killAll",
     "flagTab", "flagSig", "alpha", "avgTime", "timeWind", 
     "avgFreq", "chAvg", "ChanSel", "nThreads",
     NULL};

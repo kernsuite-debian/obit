@@ -1,4 +1,4 @@
-/* $Id: ObitSkyModelVMIon.c 155 2010-02-04 13:17:17Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2006-2009                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -97,6 +97,8 @@ typedef struct {
   ObitErr      *err;
   /* UV Interpolator for FTGrid */
   ObitCInterpolate *Interp;
+  /* Start time (days) of validity of model */
+  ofloat begVMModelTime;
   /* End time (days) of valildity of model */
   ofloat endVMModelTime;
   /* Thread copy of Components list */

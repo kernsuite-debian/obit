@@ -1,4 +1,4 @@
-/* $Id: ObitErr.h 199 2010-06-15 11:39:58Z bill.cotton $         */
+/* $Id$         */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2002-2010                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

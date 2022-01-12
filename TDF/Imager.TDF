@@ -1,10 +1,10 @@
-; $Id: Imager.TDF 199 2010-06-15 11:39:58Z bill.cotton $
+; $Id$
 ; Imager 
 ;---------------------------------------------------------------
 ;! Obit Radio interferometry imaging software
 ;# Task Obit Imaging calibration
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2005-2010
+;;  Copyright (C) 2005-2017
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -58,11 +58,11 @@ Stokes                              Stokes to process
 **PARAM** int 1
 FreqID                              Freq. ID to select.
 **PARAM** int 1
-BChan            0.0     8192.0     Low freq. channel 0 for cont.
+BChan            0.0    65536.0     Low freq. channel 0 for cont.
 **PARAM** int 1
-EChan            0.0     8192.0     Highest freq channel
+EChan            0.0    65536.0     Highest freq channel
 **PARAM** int 1
-RChan            0.0     8192.0     Channel to restart CLEAN
+RChan            0.0    65536.0     Channel to restart CLEAN
 **PARAM** int 1  **DEF** 0
 chInc                               Increment between channels
 **PARAM** int 1  **DEF** 0
@@ -85,6 +85,9 @@ BPVer                               Bandpass table version
 flagVer                             Flag table version
 **PARAM** boo 1 **DEF** F
 doPol                               Apply polarization cal?
+**PARAM** int 1 **DEF** 1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
 **PARAM** float 1  **DEF** 0.0
 Alpha           -20.       20.      Spectral Index to correct
 **PARAM** float 1 **DEF** 0.999
@@ -96,7 +99,7 @@ BLchAvg                             If True, and BLFact >1.0 then also
                                     average channels.
 **PARAM** str 4
 outDType                            "FITS" or "AIPS" type of output
-**PARAM** str 48 **DEF** .fits
+**PARAM** str 128 **DEF** .fits
 outFile                             Output FITS image file ending
 **PARAM** str 12
 outName                             Output AIPS image name
@@ -108,7 +111,7 @@ outSeq          -1.0     9999.0     Output AIPS image seq. no.
 outDisk                             Output image disk drive #
 **PARAM** int 1
 CCVer                               Output CC table version number
-**PARAM** str 48 **DEF** .uvtab
+**PARAM** str 128 **DEF** .uvtab
 out2File                            Output FITS uvdata file ending
 **PARAM** str 12
 out2Name                            Output AIPS uvdata name
@@ -159,10 +162,14 @@ WtFunc                             Box function type when WtBox
 doFull                             Make full field (flattened) image?
 **PARAM** boo 1  **DEF** T
 doRestore                          Restore CCs to images?
-**PARAM** boo 1 **DEF** T
+**PARAM** boo 1 **DEF** F
 do3D                               3D imaging, else 2D
-**PARAM** str 48  **DEF** NVSSVZ.FIT
+**PARAM** boo 1 **DEF** F
+doLine                             Fast Line/shallow CLEAN mode
+**PARAM** str 128  **DEF** NVSSVZ.FIT
 Catalog                            Outlier catalog name (NVSSVZ.FIT)
+**PARAM** int 1 **DEF** 1
+CatDisk                            Catalog FITS disk number
 **PARAM** float 1
 OutlierDist                        Maximum distance to add outliers (deg)
 **PARAM** float 1 **DEF** 0.01
@@ -171,6 +178,8 @@ OutlierFlux                        Minimum estimated outlier flux density (Jy)
 OutlierSI                          Spectral index to estimate flux density
 **PARAM** int 1  **DEF** 100
 OutlierSize                        Size of outlier field in pixels
+**PARAM** str 200
+CLEANFile                          Name of file with CLEAN window positions
 **PARAM** int 4 50
 CLEANBox        -2.0       8192.   Four coordinates for each box
 **PARAM** boo 1   **DEF** F
@@ -204,8 +213,8 @@ antSize                            Diameter of ant. for PBCor (m)
 CCFilter                           Clean component filter
                                     [0] min. sum flux.
                                     [1] radius of search
-**PARAM** int 1  **DEF** 50000
-maxPixel           0.0    500000   Maximum pixels searched
+**PARAM** int 1  **DEF** 200000
+maxPixel           0.0   5000000   Maximum pixels searched
 
                                        Selfcal info
 **PARAM** int 1
@@ -236,7 +245,7 @@ WtUV              0.0              Weight outside full wt uvrange
 avgPol                             Avg. poln?
 **PARAM** boo 1 **DEF** F
 avgIF                              Avg. IFs?
-**PARAM** boo 1 **DEF** F
+**PARAM** boo 1 **DEF** T
 noNeg                              exclude negative summed CLEAN comps?
 **PARAM** boo 1  **DEF** F
 doMGM                              Apply mean gain modulus
@@ -268,12 +277,22 @@ PeelMinFlux                        Minimum Peel Clean component (Jy)
 PeelAvgPol                         Avg. poln in peel self cal?
 **PARAM** boo 1 **DEF** F
 PeelAvgIF                          Avg. IFs in peel self cal?
+                                       Multiresolution info
+**PARAM** int 1 
+nTaper            0                Number of additional tapers
+**PARAM** float 10
+Tapers            0                List of tapers (asec)
+**PARAM** float 10
+MResKnob          0                Multiresolution controls 
+
 **PARAM** int 1 
 prtLv             0                Print level in selfcal
-**PARAM** str 48 **DEF** ObitView
+**PARAM** str 128 **DEF** ObitView
 dispURL                            Display server URL
 **PARAM** int 1 **DEF** 1
 nThreads            0              Number of threads to use
+**PARAM** boo 1 **DEF** F
+doGPU            0                 Use GPU if available
 **PARAM** str 128
 taskLog                            Logfile to write task messages to
 **PARAM** int 10
@@ -292,6 +311,8 @@ are "flattened" onto a single image.
    If multiple sources are being processed, some failures are allowed.
 In this case, the error messages will be displayed and the Status in
 the PS table set to "Failed  " rather than "Done    ".
+   Multiple resolution CLEANing is allowed using parameters nTaper,
+Tapers and MResKnob.
    Greisen variant of Steer-Dewdney-Ito CLEAN implemented via 
 SDIGain
    If BLFact > 1.0 then the input data will be subjected to a 
@@ -348,9 +369,9 @@ Adverbs:
   EIF........Highest IF to process 0=> do BIF to highest.
              Note: not all data sets will have IFs.
   subA.......Sub-array number to use. 0=>all.
-  doCalib....If true, apply SN or CL table
+  doCalib....If >0, apply SN or CL table
   gainUse....CL/SN table version number to apply. 0=> highest.
-  doBand.....If true (>0) then correct the data for the shape of the
+  doBand.....If >0 then correct the data for the shape of the
              antenna bandpasses using the BP table specified by BPVer.
              The correction has five modes:
              (a) if doBand=1 all entries for an antenna in the table
@@ -371,7 +392,10 @@ Adverbs:
                 0 => highest numbered table.
                <0 => no bandpass correction to be applied.
   flagVer....AIPS FG table to use for editing. 0 => highest.
-  doPol......>=1 apply polarization calibration
+  doPol......If True, apply polarization calibration
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   Alpha......If != 0.0 then correct data by spectral index Alpha before 
              imaging and self calibration. 
              -0.7 is typical for synchrotron.
@@ -405,37 +429,34 @@ Adverbs:
   outFile....Ending of output FITS image file name
              filename = source_name+Stokes+outFile
   outName....Ending of output AIPS Image Name, 
-             Name = source_name+Stokes+outName
-  outClass...Output image class.  Default = 'ICLEAN'
+             Name = source_name+outName
+  outClass...Output image class.  Default = 'IClean'
              Only the last 5 characters given are used and the
              first is replaced with the Stokes.
-             Output image name = pointing name (SOURCES)
+             Output image name = pointing name (Sources)
              The output CLEAN image will be used during
              execution as the residual image.
   outSeq.....Output image sequence number.
-  outDisk....The disk drive # of output images.  0 => highest
-             with space (note: map and Beam go on same disk.
-  outSeq.....Output sequence number.
+  outDisk....The disk drive # of output images.  no default
+             note: maps and beams go on same disk.
+  outSeq.....Output sequence number.  def new.
   CCVer......CC table version number for continuum data only.  
              For line data the channel number is used for the 
              version number.
   out2File...Ending of output FITS UV data file name
-             filename = source_name+Stokes+out2File
-             Defaults to 'UV'
+             filename = source_name+out2File
              This file will contain the last selected data 
              with any calibration tables.
   out2Name...Ending of output AIPS UV data Name, 
              Name = source_name+Stokes+out2Name
-             Defaults to 'UV'
              This file will contain the last selected data 
              with any calibration tables.
-  out2Class..Output uv data class.  Default = 'IMAGER'
-  out2Seq....Output AIPS uv data sequence number.
-  out2Disk...The disk drive # of output uv date.  0 => highest
-             with space. default  = outDisk
+  out2Class..Output uv data class.  Default = 'Imager'
+  out2Seq....Output AIPS uv data sequence number. def new.
+  out2Disk...The disk drive # of output uv date. no default
 
    The following control imaging:
-  FOV........Radius of the desired field of view.
+  FOV........Radius of the desired field of view in deg.
   NField.....Optional parameter to specify fields and overrides
              the FOV parameter.  Up to 64 may be specified as 
              parameters; you should have a good reason for doing
@@ -455,6 +476,7 @@ Adverbs:
              Default  NVSSVZ.FIT
              This must be in the form of an "AIPS VZ" table.
              'None' =. Use no outliers
+  CatDisk......FITS disk number for Catalog, 0=>cwd, 1=>$FITS
   OutlierDist..max. distance from pointing to include (deg)
                default = 10
   OutlierFlux..min. estimated flux density (Jy)
@@ -492,14 +514,30 @@ Adverbs:
   do3D.......If True, make the reference pixel in each facet tangent
              to the celestial sphere, else on single tangent plane.
              If False, CLEAN components are left on flattened image.
+  doLine.....If making a line image (multiple channels out) and if the 
+             CLEAN in most channels is shallow, and nThreads>~4, 
+             then doLine=True may speed the processing by imaging
+             and CLEANing nThreads channels at a time.  In this case,
+             Robust weighting will use blocks of nThreads channels.
+             Interactive setting of CLEAN box is disabled for 
+	     doLine=True.  See explain section.
 
    The following control CLEANing:
+  CLEANFile..If non blank, the path of a text file containing positions
+             and radii of CLEAN windows to be added to the Fly's Eye 
+             (i.e NOT outlyers or specified facets).  
+	     One position per line:
+               hh mm ss.s dd mm ss.s radius
+               where radius is radius of round box in pixels,
+               negative radius -> unbox, max radius = 50
   CLEANBox...A 4x50 array with the specification of a search
              area.
              Box(1,i)=-1 indicates a circle of radius Box(2,i)
              pixels centered on (Box(3,i), Box(4,i))
              Box(1,i) >= 0 indicates a rectangular box.
              0 => full and inner fields.
+             If a round box is specified with pixel positions<=0 then
+             the box will be centered on the center of the image.
              Note: the default boxes are set on the basis of
              the image size, tilling pattern and autoWindow
   autoWindow.If true, automatically set boxes around significant 
@@ -571,12 +609,12 @@ Adverbs:
               SN table attached to the output uv data which is needed to
               fully calibrate it.
   maxPSCLoop..Maximum number of phase self calibration loops
-  maxPSCLoop..Min. peak flux density required for phase self cal (Jy)
+  minFluxPSC..Min. peak flux density required for phase self cal (Jy)
   solPInt.....phase SC Solution interval (min)
   solPType....phase SC Solution Type: '  ', 'L1', 
   solPMode....phase SC Solution Mode:'A&P', 'P', 'P!A',
-  maxASCLoop..Maximum number of phase self calibration loops
-  maxASCLoop..Min. peak flux density required for phase self cal (Jy)
+  maxASCLoop..Maximum number of A&P self calibration loops
+  minFluxASC..Min. peak flux density required for phase self cal (Jy)
   solAInt.....A&P SC Solution interval (min)
   solAType....A&P SC Solution Type: '  ', 'L1', 
   solAMode....A&P SC Solution Mode:'A&P', 'P', 'P!A',
@@ -623,6 +661,43 @@ Adverbs:
   PeelAvgPol..Average Polarizations in Peel self calibration? 
   PeelAvgIF ..Average IFs in Peel self calibration? 
 
+                      Multiresolution CLEAN
+                 A multiresolution CLEAN is enabled using nTaper>0.
+              This allows multiple circular imaging tapers to be 
+              specified in units of pixels; full resolution is 
+              generally 3-8 pixels. The full mosaic is reproduced in 
+              each resolution
+                 Each major cycle, which resolution is to be used is
+              picked on the basis of image statistics, the weightings 
+              of which are controled by MResKnob.
+              The objective function used to chose the resolution is 
+              given by:
+                fact1 * (maxTaper - Taper)/maxTaper +
+                fact2 * (resid_peak/resid_RMS) +
+                fact3 * quality
+              where
+                fact1 is from the reduced MResKnob[0]
+                fact2 = MResKnob[1]
+                fact3 = MResKnob[2]
+                maxTaper is the highest beam taper (lowest res)
+                Taper is the beam taper of the given resolution
+                resid_peak is the peak residual in the facet
+                resid_RMS is the robust RMS of the residual
+                quality is the measure used to pick amoung the facets 
+                   at a given resolution and is a function of peak and 
+                   average residual.
+              The comparison is performed on the facet at each 
+              resolution with the highest "quality".
+  nTaper......Number of resolutions expressed as the number of tapers
+              to be applied to the data
+  Tapers......List of circular Gaussian tapers in (x) pixels.
+  MResKnob....Controls on selecting resolution to be CLEAned next.
+              [0] Bias towards higher resolution, 0=>0.2
+                  As the CLEAN progresses, this factor is reduced by
+                  (1-iteration/niter)**3
+              [1] SNR factor,                     0=>0.35
+              [2] "Quality" factor,               0=>0.2
+
                           Interactive display
   dispURL.....The URL of the display server to use. "None"=>none
               "ObitView" =  "http://localhost:8765/RPC2" 
@@ -633,16 +708,22 @@ Adverbs:
               where myhost is the network name and port is the port
               number (usually 8765), Example:
               dispURL="http://canis.cv.nrao.edu:8765/RPC2"
+                 If the TV display is turned off, it can be 
+              restarted by creating a file from the command line:
+              % touch /tmp/MFImage.doTV
+              This will be deleted when the display restarts.
   nThreads....If The Obit libraries are compiled with multiple
               thread operation enabled, this parameter sets the 
               number of threads that can be used for parallel 
               operations. 
               NB: This only improves performance if there are 
               multiple processors and/or cores in the host.
+  doGPU.......If software is built for a GPU and one is available
+              True=use it, otherwise use CPU
   taskLog.....Log file to write messages to INSTEAD of the terminal
               This is useful in long runs or batch files where
-              a bug in the ObitTalk message handling may cause
-              tasks to hang.  Path is absolute or relative to where
+              a bug in the ObitTalk message handling may lose
+              messages.  Path is absolute or relative to where
               the task executes.
   noScrat.....A list of AIPS disk numbers on which you do not 
               wish scratch files
@@ -660,33 +741,26 @@ Related Programs:
       - Imaging consists of a mosaic of fields covering FOV
       - Additional fields are added for NVSS sources
       - This step may be repeated if the peak in any of the fields
-        exceeds a specified limit (BPARM(1)) then the images 
+        exceeds a specified limit (autoCen) then the images 
         are remade, if necessary, to center the peaks on a pixel.
-   4) Self calibration
+   4) Self calibration if image peak exceeds maxPSCLoop
       - Use CLEAN model
       - Phase self calibrate
       - Image and deconvolve
-   5) Amplitude self calibration
+   5) Amplitude self calibration if image peak exceeds maxASCLoop
       - Use CLEAN model
-      - Phase self calibrate
+      - Amp & Phase self calibrate
       - Image and deconvolve
-   6) Ipol editing
-      - Subtract latest CLEAN model
-      - Clip
-      - Add latest CLEAN model back
-      - Correct for frequency dependent antenna gain.
+   6) Peeling if any image peak exceeds PeelFlux
    7) Final image and deconvolve
-   8) Reject weak isolated components (CCFILT), subtract
+   8) Reject weak isolated components (CCFilter), subtract
       surviving components and restore.
    9) "Flatten" the field images onto the output image.
-  10) Image, deconvolve and flatten Q polarization is requested
-  11) Image, deconvolve and flatten U polarization is requested
+  10) Image, deconvolve and flatten Q polarization if requested
+  11) Image, deconvolve and flatten U polarization if requested
+  12) Image, deconvolve and flatten V polarization if requested
 
-Note: until step 8) all model calculation correct for IF
-dependent primary beam corrections.
-Note: using multi-resolution Clean will turn off any requested 
-self-calibration (NGAUS>1).
-Note: sime number of failures are tolerated if multiple sources
+Note: some number of failures are tolerated if multiple sources
 are being processed; see PS table for summary.
 
    The products of this task are a CLEAN image and a calibrated
@@ -697,6 +771,27 @@ the CLEAN fields covering the specified field of view (FOV).
 input uv data.  This table can be used to determine the current
 processing status of a field as well as limited information and
 quality measures for the field.
+
+****************************************************************
+******************  SPECTRAL LINE IMAGING    *****************
+****************************************************************
+
+The image output of Imager is a spectral cube if 1 IF is selected,
+chAvg>0 and chAvg<number of channels selected. The option doLine
+can be used to specify a potentially faster mode where blocks of 
+nThreads channels are processed in parallel.  doLine==True MAY
+be faster than doLine==False if there is little to no CLEANing of
+each channel image and in some cases is slower.  In addition,
+the Robust weighting is in blocks of nThread channels rather than 
+one channel at a time.  Furthermore, the CLEANing drops the 
+middle loop used when autoWindow==True resulting in more major 
+cycles.
+   In general, it is better to form line cubes from continuum 
+subtracted images.  The quality of the continuum model derived 
+from wideband data is much better than that derived from each 
+channel.
+   If Doppler corrections for the Earth's velocity and rotation
+are needed, use CVel prior to Imager.
 
 ****************************************************************
 ******************   EXTENDED SOURCE OPTIONS   *****************

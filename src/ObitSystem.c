@@ -1,6 +1,6 @@
-/* $Id: ObitSystem.c 132 2009-09-30 11:40:24Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -27,6 +27,12 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/times.h>
+/* Bah humbug 
+   #  ifndef CLK_TCK
+   #   include <bits/types.h>
+   extern long int __sysconf (int);
+   #   define CLK_TCK ((__clock_t) __sysconf (2))   2 is _SC_CLK_TCK */
+/* #  endif*/
 #include <sys/resource.h>
 #include "Obit.h"
 #include "ObitSystem.h"
@@ -36,6 +42,7 @@
 #include "ObitImage.h"
 #include "ObitTable.h"
 #include "ObitUV.h"
+#include "ObitVersion.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -123,6 +130,7 @@ ObitSystemStartup (gchar *pgmName, olong pgmNumber,
 		   olong numberFITSdisk, gchar* FITSdir[], 
 		   oint F_TRUE, oint F_FALSE, ObitErr *err)
 {
+  gchar *version=NULL;
   ObitSystem* out;
 
   /* Init system error flag */
@@ -166,12 +174,19 @@ ObitSystemStartup (gchar *pgmName, olong pgmNumber,
   /* Save error/message stack object */
   out->err = ObitErrRef (err);
 
+  /* Get svn version */
+  version = ObitVersion();
+
   /* Startup message if program name given */
-  if ((strlen(out->pgmName)>0) && strncmp (out->pgmName, "NameLess", 8))
-    Obit_log_error(out->err, OBIT_InfoErr, "%s Begins", out->pgmName);
-  ObitErrTimeStamp(out->err);  /* Add Timestamp */
+  if ((strlen(out->pgmName)>0) && strncmp (out->pgmName, "NameLess", 8)) {
+    Obit_log_error(out->err, OBIT_InfoErr, "%s Begins, svn ver. %s", 
+		   out->pgmName, version);
+    ObitErrTimeStamp(out->err);  /* Add Timestamp */
+  }
  
   ObitErrLog(out->err);
+
+  if (version) g_free(version);  /* Cleanup */
 
   return out;
 } /*  end ObitSystemStartup */
@@ -202,6 +217,8 @@ ObitSystem* ObitSystemShutdown (ObitSystem* in)
    ObitClassInfo *myClass;
    Obit *tst;
    GSList *tmp;
+   gchar *version=NULL;
+   /*struct tms buf;*/
    struct rusage ru;
    time_t endTime;
    ofloat cputim, realtim;
@@ -245,12 +262,20 @@ ObitSystem* ObitSystemShutdown (ObitSystem* in)
   /* Shutdown RPC */
   ObitRPCClassShutdown();
 
+  /* Get svn version */
+  version = ObitVersion();
+
   /* Shutdown message if program name given */
   if ((strlen(in->pgmName)>0) && strncmp (in->pgmName, "NameLess", 8))
-    Obit_log_error(in->err, OBIT_InfoErr, "%s Ends", in->pgmName);
+    Obit_log_error(in->err, OBIT_InfoErr, "%s Ends, svn ver. %s", 
+		   in->pgmName, version);
   ObitErrTimeStamp(in->err);  /* Add Timestamp */
+  if (version) g_free(version);  /* Cleanup */
+
 
   /* CPU Usage */
+  /*times (&buf);
+    cputim = (buf.tms_utime + buf.tms_stime) / (ofloat) CLK_TCK;*/
   getrusage(RUSAGE_SELF, &ru);
   cputim = ru.ru_utime.tv_sec + (ofloat) ru.ru_utime.tv_usec / 1000000;
   cputim += ru.ru_stime.tv_sec + (ofloat) ru.ru_stime.tv_usec / 1000000;
@@ -321,7 +346,22 @@ void ObitSystemGetScratch (ObitIOType FileType,gchar *type,
       if (!ObitAIPSisNoScrat(mySystemInfo->lastDisk)) break;
       /* Keep going */
       mySystemInfo->lastDisk++; /* spread scratch files out */
+      /* Writeable? */
+      if (!ObitAIPSisNoScrat(mySystemInfo->lastDisk)) continue;
+      /* Keep disk number in bounds */
+      if (mySystemInfo->lastDisk>mySystemInfo->numberAIPSdisk)
+	mySystemInfo->lastDisk = 1;
     } /* End of loop checking */
+    
+    /* If it failed, try harder */
+    if (!ObitAIPSisNoScrat(mySystemInfo->lastDisk)) {
+      mySystemInfo->lastDisk = 1;
+      for (i=0; i<mySystemInfo->numberAIPSdisk; i++) {
+	if (!ObitAIPSisNoScrat(mySystemInfo->lastDisk)) break;
+	/* Keep going */
+	mySystemInfo->lastDisk++; /* spread scratch files out */
+      }
+    } /* end try harder */
 
     /* Make sure some allowed */
     Obit_return_if_fail ((!ObitAIPSisNoScrat(mySystemInfo->lastDisk)), err,
@@ -478,7 +518,7 @@ void ObitSystemSetPgmNumber (olong pgmNumber)
 
 /**
  * Tell AIPS user number
- * \return AIPS user number
+ * \return AIPS user number (sec)
  */
 olong ObitSystemGetAIPSuser (void)
 {
@@ -486,7 +526,8 @@ olong ObitSystemGetAIPSuser (void)
     g_warning ("Obit not initialized");
     return 0;
   }
-  return mySystemInfo->AIPSuser;
+  return mySystemInfo->AIPSuser;  
+
 } /* end ObitSystemGetAIPSuser */
 
 /**
@@ -499,8 +540,77 @@ void ObitSystemSetAIPSuser (olong AIPSuser)
     g_warning ("Obit not initialized");
     return;
   }
-   mySystemInfo->AIPSuser  = AIPSuser;
+  mySystemInfo->AIPSuser  = AIPSuser;
 } /* end ObitSystemSetAIPSuser */
+
+/**
+ * Am I running out of time
+ * \param fract Fraction of allowed time (maxRealTime)
+ * \param err   Obit message/error object for shutdown essage
+ * \return True if time to start shutting down
+ */
+gboolean ObitSystemOutOfTime (ofloat fract, ObitErr *err)
+{
+  gboolean doShutdown=FALSE;
+  ofloat curtime;
+  if (err->error) return doShutdown;  /* previous error? */
+  if (mySystemInfo==NULL) {
+    g_warning ("Obit not initialized");
+    return doShutdown;
+  }
+  /* Max time set? */
+  if (mySystemInfo->maxRealTime<=0.0) return FALSE;
+  curtime = ObitSystemGetCurrRuntime();
+  doShutdown = (curtime>=(fract*mySystemInfo->maxRealTime));
+  if (doShutdown)
+      Obit_log_error(err, OBIT_InfoErr, 
+		     "Running out of allowed time, shutting down.");
+
+  return doShutdown;
+} /* end ObitSystemOutOfTime */
+
+/**
+ * Get current run time 
+ * \return Current elapsed wall clock time
+ */
+ofloat ObitSystemGetCurrRuntime (void)
+{
+  time_t currTime;
+  ofloat realtim;
+  if (mySystemInfo==NULL) {
+    g_warning ("Obit not initialized");
+    return 0.0;
+  }
+  time(&currTime);
+  realtim = (ofloat)(currTime - mySystemInfo->startTime);
+  return realtim;
+}  /* end ObitSystemGetCurrRuntime */
+
+/**
+ * Get maximum run time 
+ * \return maximum wall clock time
+ */
+ofloat ObitSystemGetMaxRuntime (void)
+{
+  if (mySystemInfo==NULL) {
+    g_warning ("Obit not initialized");
+    return 0.0;
+  }
+  return mySystemInfo->maxRealTime;  
+}  /* end ObitSystemGetMaxRuntime */
+
+/**
+ * Set maximum run time 
+ * \param maxRealTime)  Maximum allowed wall clock time
+ */
+void ObitSystemSetMaxRuntime  (ofloat  maxRealTime)
+{
+  if (mySystemInfo==NULL) {
+    g_warning ("Obit not initialized");
+    return;
+  }
+  mySystemInfo->maxRealTime = maxRealTime;  
+}  /* end ObitSystemGetMaxRuntime */
 
 /**
  * Initialize global ClassInfo Structure.
@@ -587,6 +697,7 @@ void ObitSystemInit  (gpointer inn)
   in->numberScratch = 0;
   in->lastDisk      = 0;
   in->number        = 0;
+  in->maxRealTime   = -1.0;
   in->scratchList   = NULL;
   in->err           = NULL;
 

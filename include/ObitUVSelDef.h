@@ -1,6 +1,6 @@
-/* $Id: ObitUVSelDef.h 109 2009-06-10 12:11:14Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2013                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -51,12 +51,24 @@ olong jincs;
 olong startChann;
 /** Number of channels */
 olong numberChann;
+/** Channel increment */
+olong channInc;
 /** Increment in visibility float array between Frequencies */
 olong jincf;
 /** Start IF (1-rel) */
 olong startIF;
 /** Number of IFs */
 olong numberIF;
+/** IF increment */
+olong IFInc;
+/** Zero terminated list of IFs not to copy  */
+olong *IFDrop;
+/** Flag per input IF it is selected  */
+gboolean *IFSel;
+/** number of elements in IFSel */
+olong nifsel;
+/** Fitse (0-rel) selected element in IFSel */
+olong ifsel1;
 /** Increment in visibility float array between IFs */
 olong jincif;
 /** Selected Subarray number. <=0 -> all */
@@ -106,8 +118,10 @@ ofloat UVRange[2];
  *            Defaults: 1, 3, 1, 4 times SMOOTH(2) used when
  */
 ofloat smooth[3];
-/** Spectral index to apply to data (wrt ref Freq) */
+/** Spectral index to apply to data (wrt alphaRefF) */
 ofloat alpha;
+/** Reference frequency (Hz) for spectral index */
+odouble alphaRefF;
 /** do Polarization Calibration? */
 gboolean doPolCal;
 /** do Baseline dependent calibration? */

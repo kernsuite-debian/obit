@@ -1,4 +1,4 @@
-/* $Id: ObitDConCleanPxHist.h 128 2009-09-23 14:48:29Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2004-2009                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

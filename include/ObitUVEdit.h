@@ -1,6 +1,6 @@
-/* $Id: ObitUVEdit.h 122 2009-08-19 12:59:05Z bill.cotton $   */
+/* $Id$   */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005-2009                                          */
+/*;  Copyright (C) 2005-2013                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -66,5 +66,14 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
 
 /** Public: Flag visibilities by running median */
 void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err);
+
+/** Public: Append contents of highest FG to flagTab and delete highest */
+void ObitUVEditAppendFG (ObitUV *inUV, olong flagTab, ObitErr *err);
+
+/** Public: Flag visibilities by Elevation */
+void ObitUVEditElev (ObitUV *inUV, ObitUV *outUV, ObitErr *err);
+
+/** Public: Shadowing/cross talk flagging */
+void ObitUVEditShadCross (ObitUV *inUV, ObitUV *outUV, ObitErr *err);
 
 #endif /* OBITIUVEDIT_H */ 
