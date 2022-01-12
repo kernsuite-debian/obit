@@ -1,10 +1,10 @@
-; $Id: FndSou.TDF 199 2010-06-15 11:39:58Z bill.cotton $
+; $Id$
 ; FndSou
 ;---------------------------------------------------------------
 ;! fits Gaussians to portions of an image
 ;# Obit Task 
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2006-2010
+;;  Copyright (C) 2006-2019
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -35,7 +35,7 @@ FndSou:  Task to fit Gaussian models to an image by least-squares
 DataType                          "FITS" or "AIPS" type of input
 **PARAM** str 12
 inName                             Image Name (Name) 1
-**PARAM** str 8
+**PARAM** str 6
 inClass                            Image Name (Class) 1
 **PARAM** int   1
 inSeq             0         9999   Image Name (Seq. #) 1
@@ -44,10 +44,10 @@ inDisk            0            9   Disk drive # 1
 **PARAM** str 48
 inFile                             Filename 1 if FITS image
 **PARAM** int 7
-BLC              0.0       4096.0  Bottom left corner of image
+BLC              0.0      64000.0  Bottom left corner of image
                                      0=>entire image
 **PARAM** int 7
-TRC              0.0       4096.0  Top right corner of image
+TRC              0.0      64000.0  Top right corner of image
                                      0=>entire image
 **PARAM** boo 1 
 doVL                               Convert to VL table?
@@ -68,36 +68,52 @@ outDisk           0            9   output Disk drive
 **PARAM** str 48
 outFile                            Output Filename if FITS image
 **PARAM** int   1
-NGauss          0.0     10000.0    Max. Number of islands
+NGauss          0.0    100000.0    Max. Number of islands
 **PARAM** int   1 **DEF** 1
 NPass           0.0     10000.0    Number of passes through resid.
 **PARAM** float 1
 CutOff          0.0      9999.0    Flux cutoff level
 **PARAM** float 1
 Retry           0.0      9999.0    Retry level
+**PARAM** float 1
+Blank                              Blanking level
 **PARAM** str 1
 Sort                               Sort Order of output ' '=RA
 **PARAM** str 128
 OutPrint                           Printer disk file to save
 **PARAM** boo 1 
-doMult         -1.0         1.0    >0 => fit multiple peaks
+doMult         -1.0         1.0    fit multiple peaks per island?
 **PARAM** boo 1 
-doWidth        -1.0         1.0    >0 => fit widths
+doWidth        -1.0         1.0    fit widths?
 **PARAM** float 1  **DEF** 0.05
 Gain            0.0         1.0    Amp-dependent part of retry
                                    and warning levels
-**PARAM** float 5
+**PARAM** float 10
 Parms                              Components constraints
-                                   [0] flux < Parms[0]
-                                   [1] widths>Parms[1] cells
-                                   [2] peaks>Parms[2] cells
+                                   [0] ignore those w/ flux < Parms[0]
+                                   [1] constrain widths<=Parms[1] asec
+                                   [2] constrain peaks>Parms[2] cells
                                    outside fitting region
                                    [3] if >0 don't allow Gauss 
                                    smaller than CLEAN beam
+                                   [4] min width of island in pixels
+                                   [5] max. false detection rate
+				   [6] Allowed fraction blanked (def 0.5)
+**PARAM** float 4
+sizeLim                            Component size limits
+				   [0] if > 0, max size w/ flux<sizeLim[2]
+				   [1] max. size w/ flux>sizeLim[3]
+				   [2] lower flux for linear ramp
+				   [2] upper flux for linear ramp
 **PARAM** int   1
 RMSsize                            Size of region to determine RMS
 **PARAM** int   1
+FDRsize                            Size of region to determine false 
+                                   detection rate
+**PARAM** int   1
 prtLv          0.0      1023.0     Debug print level
+**PARAM** int 1 **DEF** 1
+nThreads            0              Number of threads to use
 **PARAM** str 128
 taskLog                            Logfile to write task messages to
 
@@ -122,6 +138,9 @@ Use:  Find and fit Gaussians to sources in a specified region of an
       width of the display allows, the max residual is displayed
       with the deconvolution results and an * is placed near
       excessive residuals.
+         Fitted components may be selected based on an estimate
+      of the probability of a false detection.  See FndSou explain
+      for details.
          This task was translated from the AIPSish VSAD
       by W. Cotton which was a reworking of E. Griesen's reworking 
       of W. Jaffe's SAD.
@@ -129,7 +148,7 @@ Adverbs:
   DataType...."FITS" or AIPS
   inName......Image to be fitted Name(Name). 
   inClass.....Image to be fitted Class
-  inSeq.......Image to be fitted  Seq. #
+  inSeq.......Image to be fitted Seq. #
   inDisk......Image to be fitted disk drive # 
   inFile......Input File Name if a FITS file
   BLC.........The Bottom Left-hand pixel of the subarray of the image to
@@ -154,11 +173,15 @@ Adverbs:
               fitted iteratively for a total of NPass search/fit cycles
   CutOff......Search for potential sources down to this level.
               0 => 3 * true rms.
-  Retry......If the peak residual in an island, after fitting a
+  Retry.......If the peak residual in an island, after fitting a
               single Gaussian exceeds Retry adjusted in
               quadrature by Gain*flux, then the program will
               attempt a 2-Gaussian fit to the island.
               0 => CutOff.
+  Blank.......Blank pixel values less than Blank.  0=>no blanking
+              Blanked pixels are not used in the fitting but are
+              used in noise estimation.  Also used in the 
+	      redefinition of islands just prior to fitting.
   Sort........Sort order of output.
               ' ' -> 'X'-> RA (Default)
               'Y' -> DEC
@@ -181,8 +204,9 @@ Adverbs:
               rectangular in shape.  Constraints may be imposed on
               components with:
               [0] peak > Parms[0].  No default; 0 or CutOff ok.
-                  Not enforces in fitting but component will be dropped.
-              [1] widths < Parms[1] cells
+                  Not enforced in fitting but component will be
+                  dropped.  Not used if Parms[5]>0.
+              [1] widths < Parms[1] in arcsec
                   This will be applied as a constraint on the
                   solution. Default no constraint.
               [2] peaks > Parms[2] cells outside the fitting
@@ -195,19 +219,49 @@ Adverbs:
                   smaller than the clean beam minor axis
                   This will be applied as a constraint on the
                   solution. 
+              [4] Minimum width of an island in each dimension.
+                  default = minimum = 2 pixels.
+              [5] Target max. fractional false detection rate.
+                  If <=0, then the Parms[1] test used instead.
+                  See FndSou explain.
+	      [6] if > 0.0, reject components with islands with more 
+                  than a fraction blanked of Parms[6], def = 0.5
+		  NB: this is determined after blanking out of 
+		  island pixels.
+  sizeLim.....Peak flux density limits on maximum size, 
+              If sizeLim[0]>0 these override Parms[1].
+              These specify a constant maximum size below a 
+	      given peak flux level and above anotherand a 
+	      linear ramp between the two.
+	      [0] if > 0, max. size (") for sources with peak
+	          brightness <sizeLim[2].
+	      [1] Maximum size (") for sources with peak
+	          brightness <sizeLim[3].
+              [2] Lower flux limit for linear ramp.
+              [3] Upper flux limit for linear ramp.
   RMSsize.....If > 1, then the half width of a square box centered
               on each source within which to determine the local 
               noise.  This is used when an MF table is converted
-              to a VL table. 0=> use whole image.
+              to a VL table. <=0 => use whole image plane.
               The RMS is determined using a histogram analysis
               which should be relatively insensitive to sources.
               Values less than 10 are probably a bad idea.
+  FDRsize.....The half width of a square box centered on each 
+              source used to determine the false detection rate.
+              See FndSou explain.
+              Used if Parms[5] specified.  Default = whole image.
   prtLv.......Set level of output.
               0 = none
               >=1 progress, summary and listing on OutPrint of 
                   components
               >=2 list islands fitted
               >=3 Fitting routine diagnostics (very large)
+  nThreads....If The Obit libraries are compiled with multiple
+              thread operation enabled, this parameter sets the 
+              number of threads that can be used for parallel 
+              operations. 
+              NB: This only improves performance if there are 
+              multiple processors and/or cores in the host.
   taskLog.....Log file to write messages to INSTEAD of the terminal
               This is useful in long runs or batch files where
               a bug in the ObitTalk message handling may cause
@@ -219,29 +273,31 @@ Mostly listed from AIPS Task VSAD and as such may not be a
 completely accurate description of the Obit version.
 FndSou: Task to find potential sources and fit Gaussian models
      to an image by least squares.
-DOCUMENTORS: W. Jaffe, Leiden
+DOCUMENTORS: W. Jaffe, Leiden, W. Cotton
 RELATED PROGRAMS : 
 
                       PURPOSE
 
 FndSou attempts to find all sources in a subimage whose peak is
-brighter than a given level.  It searches the subimage specified
-by BLC and TRC for all points above this level and merges such
-points in contiguous "islands".  For each island, initial
-estimates of the strength and size are generated.  Then a
-gaussian fitting algorithm is called to determine
-the least square Gaussian fit.  If doMult is < 0., only one
-Gaussian is fit per island, with initial estimates generated
-from 2nd moments.  If doMult is TRUE and multiple peaks (above
-CutOff) are found within the island, then up to 4 Gaussians are
-fit.  If the peak residual of a single Gaussian fit exceeds Retry
-then a more complex 2-Gaussian fit is attempted.  The results of
-the fit are printed on the screen or the line printer and
-written into a ModelFit (MF) extension table.  If DORESID is
-TRUE, the Gaussians are subtracted from the input subimage, and
-a residual image is cataloged, using OUTDISK, OUTNAME etc.  If
-doWidth(1) is negative, a Gaussian with fixed size = CLEAN beam
-will be fit.
+brighter than a given level.  It searches the subimage specified by
+BLC and TRC for all points above this level and merges such points in
+contiguous "islands".  For each island, initial estimates of the
+strength and size are generated.  Then a Gaussian fitting algorithm is
+called to determine the least square Gaussian fit.  If doMult is < 0.,
+only one Gaussian is fit per island, with initial estimates generated
+from 2nd moments.  If doMult is True and multiple peaks (above CutOff)
+are found within the island, then up to 4 Gaussians are fit.  If the
+peak residual of a single Gaussian fit exceeds Retry then a more
+complex 2-Gaussian fit is attempted.  The results of the fit may be
+given in the log and written into a ModelFit (MF) table.  
+If doResid is True, the Gaussians are subtracted from the input 
+subimage, and a residual image is cataloged, using outDisk, outName etc.  
+If doWidth==False, a Gaussian with fixed size = CLEAN beam will be fit. 
+If doVL is True, the MF table is converted to a VL table.
+   Before fitting, islands are redetermined containing all of the 
+sources to be fitted in a given rectangle. Pixels not in an island are 
+blanked.  In this case, the borders of islande are set by the value of\
+Blank unless it is <= 0 in which case Cutoff is used.
 
                 WARNING!!!
 
@@ -260,7 +316,7 @@ completeness Walter Jaffe recommends:
        it.
 
 Suggestion from Eric Greisen:
-    doWidth <= 0 always produces poor results even for only
+    doWidth = False always produces poor results even for only
 slightly extended objects.  For decent S/N, the width fitting is
 quite reliable.
 
@@ -297,6 +353,30 @@ determine the local noise level.  The RMS is determined from a
 histogram analysis making it relatively insensitive to sources.
 If no value is specified, the whole image is used.
 
+             FALSE DETECTION PROBABILITY:
+  Fitted components can be selected after fitting based on an estimate
+of the probability of a false detection  derived from the image pixel
+statistics.  The image statistics are assumed symmetric about zero.  A
+pixel histogram is formed and the fractional excess of positive values
+over negative values at a given flux density level is used as the
+probability of a given pixel value being from a valid source.  
+   The target false detection rate is specified in Parms[5] are the
+fractional probabality of the minimum acceptable peak flux density
+being due to random pixel fluctuations.  For example, Parms[5]=0.05
+means that a false detection rate (fraction of noise peaks picked as
+sources) of 5% is acceptable.  This image pixel histogram used is that
+with halfwidth FDRsize centered on the peak of the component in
+question.  If the peak flux density of a components does not exceed
+the level determined to correspond to the acceptable false detection
+rate, it is dropped from further consideration.
+   NB: A low false detection rate will also reject faint but real
+sources.  Maximum acceptable false detection rates below 0.05 are
+probably a bad idea as a very large number (many 100s pixels^2) are
+required to accurately determine the pixel statistics at this level.
+The FDRsize needed depends on the target false detection rate; values
+of 100-300 should be adequate for targets of 0.5-0.10.
+
+
                  COMMENTS ON THE USE OF FndSou
 
 FLUX DENSITY DETERMINATION:
@@ -306,13 +386,6 @@ values in a specified rectangle, is often more accurate than
 fitting the source with several Gaussian components and summing
 the integrated flux densities.  Of course for a well resolved
 source a Gaussian fit is only a crude approximation in any case.
-
-PEAK FLUX DENSITY DETERMINATION:
-
-     The verb MAXFIT, a simple fitting of the peak of a
-component with a second degree interpolation, is much faster
-than JMFIT and useful to obtain the approximate peak and
-position of a component.
 
 ERRORS OF PARAMETERS:
      The error estimates should be regarded as tentative, but
@@ -365,7 +438,7 @@ of the best fit major axis, minor axis and position angle.
 (arcsec, arcsec, degrees), followed by the one-sigma lower
 limits on these quantities and the one sigma upper limits.
 
-ON THE MEANING OF BMAX, BMIN, AND BPA
+ON THE MEANING OF BMAJ, BMIN, AND BPA
 
      Formally the position angle of anything, such as the major
 axis of a gaussian source, is defined as the angle of the thing

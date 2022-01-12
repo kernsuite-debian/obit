@@ -1,4 +1,4 @@
-/* $Id: ObitData.h 52 2008-11-11 21:40:09Z bill.cotton $       */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2005-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -151,7 +151,7 @@ typedef struct {
 #define ObitDataSetFITS(in,disk,file,err)  G_STMT_START{       \
        in->info->dim[0]=1; in->info->dim[1]=1; in->info->dim[2]=1;  \
        in->info->dim[3]=1; in->info->dim[4]=1;                      \
-       in->info->work[0] = OBIT_IO_FITS;                            \
+       in->info->work[0] = OBIT_IO_FITS; in->info->work[2]= disk;   \
        ObitInfoListPut (in->info, "FileType", OBIT_long,             \
 		  in->info->dim, (gpointer)&in->info->work[0], err);\
        in->info->dim[0] = 1;                                        \

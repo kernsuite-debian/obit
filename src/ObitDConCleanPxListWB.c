@@ -1,6 +1,6 @@
-/* $Id: ObitDConCleanPxListWB.c 128 2009-09-23 14:48:29Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2011                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -298,7 +298,7 @@ ObitDConCleanPxListWBCreate (gchar* name, ObitImageMosaic *mosaic,
     out->iterField[i] = 0;
     out->CCver[i]     = 0;
     out->fluxField[i] = 0.0;
-    out->circGaus[i]  = 0.0;
+    out->circGaus[i]  = mosaic->BeamTaper[i];
     out->gain[i]      = 0.1;
     out->minFlux[i]   = 0.0;
     out->factor[i]    = 0.0;
@@ -410,6 +410,11 @@ void ObitDConCleanPxListWBReset (ObitDConCleanPxList *inn, ObitErr *err)
     ObitTableClearRows ((ObitTable*)in->CCTable[i], err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
    
+    /* Init number of CCs to 1*/
+    ObitImageOpen(in->mosaic->images[i], OBIT_IO_ReadWrite, err);
+    in->mosaic->images[i]->myDesc->niter = 1;
+    in->mosaic->images[i]->myStatus = OBIT_Modified;
+    ObitImageClose(in->mosaic->images[i], err);
   } /* end loop over images */
 
 } /* end ObitDConCleanPxListWBReset */
@@ -619,6 +624,7 @@ void ObitDConCleanPxListWBUpdate (ObitDConCleanPxList *inn,
     if (image->myDesc->crpix[1]>0.0)  
       yoff = (olong)(image->myDesc->crpix[1]+0.5);
     else yoff = (olong)(image->myDesc->crpix[1]-0.5);
+    xoff--; yoff--;  /* to zero rel */
     /* Spectral planes */
     if (order>=1)  data1 = ObitFArrayIndex(inFArrays[1], pos);
     if (order>=2)  data2 = ObitFArrayIndex(inFArrays[2], pos);
@@ -651,8 +657,8 @@ void ObitDConCleanPxListWBUpdate (ObitDConCleanPxList *inn,
 	  } else { /* skip this one to make them fit */
 	    skipCnt++;
 	  }
-	}
-      }
+	} /* end loop in x */
+      } /* end if in window */
       /* Update pointers to next row */
       data += nx;
       if (order>=1) data1 += nx;
@@ -886,6 +892,7 @@ gboolean ObitDConCleanPxListWBCLEAN (ObitDConCleanPxList *inn, ObitErr *err)
     if (desc->crpix[1]>0.0)  
       yoff = (olong)(desc->crpix[1]+0.5);
     else yoff = (olong)(desc->crpix[1]-0.5);
+    xoff--; yoff--;  /* to zero rel */
     /* What's in AIPS is a bit more complex and adds field offset from tangent */
     CCRow->DeltaX = (iXres - desc->crpix[0]+1+xoff)*desc->cdelt[0];
     CCRow->DeltaY = (iYres - desc->crpix[1]+1+yoff)*desc->cdelt[1];
@@ -932,8 +939,8 @@ gboolean ObitDConCleanPxListWBCLEAN (ObitDConCleanPxList *inn, ObitErr *err)
       } /* end add Spectral components */
     } /* end if need spectral component */
     /* DEBUG  */
-    fprintf (stderr,"Component: field %d flux %f total %f pos %d  %d si %6.3f curve %6.3f\n",
-	     field, subval, in->totalFlux+totalFlux, iXres+1, iYres+1, alpha, beta);
+    fprintf (stderr,"Component: field %d flux %f total %f pos %6d  %6d si %6.3f curve %6.3f\n",
+	     field, subval, in->totalFlux+totalFlux, iXres, iYres, alpha, beta);
     
 
     irow = in->iterField[field-1];
@@ -1417,11 +1424,11 @@ gpointer ThreadCLEAN1 (gpointer args)
   peak = (A11*in->pixelFlux[ipeak]  - A01*in->pixelFlux1[ipeak]) * iDelta;
   si   = (A00*in->pixelFlux1[ipeak] - A10*in->pixelFlux[ipeak])  * iDelta;
 
-  /* Sanity check - resolution will appear to steepen spectrum */
+  /* Sanity check - resolution will appear to steepen spectrum 
   if ((si/peak)> 2.0)    si =  0.0;
   if ((si/peak)<-10.0)   si =  0.0;
   if ((si/peak)>1.0)     si =  peak;
-  if ((si/peak)<-5.)     si = -5.0*peak;
+  if ((si/peak)<-5.)     si = -5.0*peak;*/
   
   /* Return values */
   largs->peak   = peak;
@@ -1539,8 +1546,8 @@ gpointer ThreadCLEAN2 (gpointer args)
     xflux = A12*A12*R0*R0 + (A02*A02-A00*A22)*R1*R1 + A01*A01*R2*R2 +
       2.0*A01*R1*(A22*R0 - A02*R2) - 2.0*A12*(A02*R0*R1 + (A01*R0-A00*R1)*R2) -
       A11*(A22*R0*R0 + R2*(-2.0*A02*R0 + A00*R2)); 
-    if (fabs(xflux)>peak) {
-      peak = fabs(xflux);
+    if ((xflux)>peak) {
+      peak = (xflux);
       ipeak = iresid;
     }
   }

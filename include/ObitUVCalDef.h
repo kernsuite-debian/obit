@@ -1,6 +1,6 @@
-/* $Id: ObitUVCalDef.h 109 2009-06-10 12:11:14Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2012                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -94,8 +94,10 @@ ofloat selFact[4][2];
  *            Defaults: 1, 3, 1, 4 times SMOOTH(2) used when
  */
 ofloat smooth[3];
-/** Spectral index to apply to data (wrt ref Freq) */
+/** Spectral index to apply to data (wrt alphaRefF) */
 ofloat alpha;
+/** Reference frequency (Hz) for spectral index */
+odouble alphaRefF;
 /** Start channel number for smoothing (1-rel) {BCHANS}*/
 olong bChanSmo;
 /** highest channel for smoothing (1-rel) {ECHANS} */
@@ -140,4 +142,8 @@ Obit *FGTable;
 Obit *SNTable;
 /* Source  table, NULL -> none */
 Obit *SUTable;
+/* Channel Poln cal table, NULL -> none */
+Obit *PDTable;
+/** Requested PD table for channel/IF poln cal. */
+olong PDVer;
 

@@ -1,6 +1,6 @@
-/* $Id: ObitTableSel.c 2 2008-06-10 15:32:27Z bill.cotton $    */
+/* $Id$    */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2010                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -179,8 +179,8 @@ void ObitTableSelDefault (ObitTableDesc* in, ObitTableSel* sel)
   g_assert (ObitIsA(in, ObitTableDescGetClass()));
   g_assert (ObitIsA(sel, &myClassInfo));
 
-  /* Index as well */
-  ObitTableDescIndex(in);
+  /* Index as well if needed */
+  if (in->lrow<=0) ObitTableDescIndex(in);  
 } /* end ObitTableSelDefault */
 
 /**

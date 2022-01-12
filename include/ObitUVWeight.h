@@ -1,4 +1,4 @@
-/* $Id: ObitUVWeight.h 33 2008-09-22 13:24:26Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2003-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

@@ -1,8 +1,8 @@
-/* $Id: UVSoln.inc 64 2009-01-01 14:57:18Z bill.cotton $ */  
+/* $Id$ */  
 /*--------------------------------------------------------------------*/
 /* Swig module description for UV data self calibration utilities     */
 /*                                                                    */
-/*;  Copyright (C) 2006-2008                                          */
+/*;  Copyright (C) 2006-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -36,24 +36,24 @@
 
 %inline %{
 // Utility routines from ObitUVSoln class
-extern int UVSolnRefAnt (ObitTable *SNTab, int isuba, int refant, ObitErr* err)
+extern long UVSolnRefAnt (ObitTable *SNTab, long isuba, long refant, ObitErr* err)
 {
    olong lisuba, lrefant;
    lisuba  = isuba;
    lrefant = isuba;
    ObitUVSolnRefAnt ((ObitTableSN*)SNTab, lisuba, &lrefant, err);
-   return lrefant;
+   return (long)lrefant;
 } // end UVSolnRefAnt
 
-extern void UVSolnSNSmo (ObitTable *SNTab, int isuba, ObitErr* err)
+extern void UVSolnSNSmo (ObitTable *SNTab, long isuba, ObitErr* err)
 {
    olong lisuba;
    lisuba = isuba;
    ObitUVSolnSNSmo ((ObitTableSN*)SNTab, lisuba, err);
 } // end UVSelfSNSmo
 
-extern void UVSolnDeselSN (ObitTable *SNTab, int isuba, int fqid, int nantf, 
-                           int *ants, int nsou, int *sources,
+extern void UVSolnDeselSN (ObitTable *SNTab, long isuba, long fqid, long nantf, 
+                           long *ants, long nsou, long *sources,
                            float timerange[2], ObitErr* err)
 {
   olong lisuba, lfqid, lnantf, lnsou, i;
@@ -76,8 +76,8 @@ extern void UVSolnDeselSN (ObitTable *SNTab, int isuba, int fqid, int nantf,
   g_free(lsources);
 } // end UVSolnDeselSN
 
-extern void UVSolnDeselCL (ObitTable *CLTab, int isuba, int fqid, int nantf, 
-                           int *ants, int nsou, int *sources,
+extern void UVSolnDeselCL (ObitTable *CLTab, long isuba, long fqid, long nantf, 
+                           long *ants, long nsou, long *sources,
                            float timerange[2], ObitErr* err)
 {
   olong lisuba, lfqid, lnantf, lnsou, i;
@@ -100,14 +100,14 @@ extern void UVSolnDeselCL (ObitTable *CLTab, int isuba, int fqid, int nantf,
   g_free(lsources);
 } // end UVSolnDeselCL
 
-extern ObitTable* SNInvert (ObitTable *inSN, ObitData *outData, long tabVer,
-                            int doRepl, ObitErr* err)
+extern ObitTable* SNInvert (ObitTable *inSN, ObitUV *outData, long tabVer,
+                            long doRepl, ObitErr* err)
 {
   olong ltabVer = tabVer;
   gboolean ldoRepl = (gboolean)doRepl;
   ObitTable *outSN=NULL;
 
-  outSN = (ObitTable*)ObitTableSNUtilInvert ((ObitTableSN*)inSN, outData, 
+  outSN = (ObitTable*)ObitTableSNUtilInvert ((ObitTableSN*)inSN, (ObitData*)outData, 
     &ltabVer, ldoRepl, err);
 
   return outSN;

@@ -1,6 +1,6 @@
-/* $Id: ObitUVDesc.c 194 2010-05-27 14:23:22Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -208,12 +208,9 @@ ObitUVDesc* ObitUVDescCopy (ObitUVDesc* in, ObitUVDesc* out, ObitErr *err)
    for (i=0; i<UVLEN_KEYWORD; i++) out->ptype[j][i] = in->ptype[j][i];
   }
 
-  /* Free any existing info members */
-  if (in->info!=NULL) {
-    if (out->info) out->info = ObitInfoListUnref (out->info); 
-    out->info = ObitInfoListCopy (in->info);
-  }
-
+  /* Copy info members */
+  out->info = ObitInfoListCopyData (in->info,out->info );
+  
   /* Release frequency related arrays - use ObitUVDescGetFreq to rebuild */
   if (out->freqArr)  g_free(out->freqArr);  out->freqArr = NULL;
   if (out->fscale)   g_free(out->fscale);   out->fscale = NULL;
@@ -290,6 +287,9 @@ void ObitUVDescCopyDesc (ObitUVDesc* in, ObitUVDesc* out,
   /* index output */
   ObitUVDescIndex (out);
 
+  /* Copy list */
+  ObitInfoListCopyData(in->info, out->info);
+
   return;
 } /* end ObitUVDescCopyDesc */
 
@@ -327,9 +327,9 @@ void ObitUVDescCopyFreq (ObitUVDesc* in, ObitUVDesc* out,
   /* Frequency Scaling */
   if (in->fscale) {
     if (out->fscale)
-      out->fscale = g_realloc(out->fscale, size*sizeof(odouble));
+      out->fscale = g_realloc(out->fscale, size*sizeof(ofloat));
     else
-      out->fscale = g_malloc0(size*sizeof(odouble));
+      out->fscale = g_malloc0(size*sizeof(ofloat));
     for (i=0; i<size; i++) out->fscale[i] = in->fscale[i];
   }
   
@@ -399,6 +399,9 @@ void ObitUVDescIndex (ObitUVDesc* in)
   in->ilocw  = -1;
   in->iloct  = -1;
   in->ilocb  = -1;
+  in->iloca1 = -1;
+  in->iloca2 = -1;
+  in->ilocsa = -1;
   in->ilocsu = -1;
   in->ilocfq = -1;
   in->ilocit = -1;
@@ -407,10 +410,13 @@ void ObitUVDescIndex (ObitUVDesc* in)
   /* loop over parameters looking for labels */
   for (i=0; i<in->nrparm; i++) {
     /* ignore projection codes */
-    if (!strncmp (in->ptype[i], "UU-",      3)) in->ilocu  = i;
-    if (!strncmp (in->ptype[i], "VV-",      3)) in->ilocv  = i;
-    if (!strncmp (in->ptype[i], "WW-",      3)) in->ilocw  = i;
+    if (!strncmp (in->ptype[i], "UU",       2)) in->ilocu  = i;
+    if (!strncmp (in->ptype[i], "VV",       2)) in->ilocv  = i;
+    if (!strncmp (in->ptype[i], "WW",       2)) in->ilocw  = i;
     if (!strncmp (in->ptype[i], "BASELINE", 8)) in->ilocb  = i;
+    if (!strncmp (in->ptype[i], "ANTENNA1", 8)) in->iloca1 = i;
+    if (!strncmp (in->ptype[i], "ANTENNA2", 8)) in->iloca2 = i;
+    if (!strncmp (in->ptype[i], "SUBARRAY", 8)) in->ilocsa = i;
     if (!strncmp (in->ptype[i], "TIME1",    5)) in->iloct  = i;
     if (!strncmp (in->ptype[i], "TIME",     4)) in->iloct  = i;
     if (!strncmp (in->ptype[i], "DATE",     4)) in->iloct  = i;
@@ -478,7 +484,7 @@ olong ObitUVDescRegularIndices(ObitUVDesc* in)
     else
     {
       /* Unknown regular parameter, means trouble. */
-      g_error("Unknown regular parameter");
+      g_warning("Unknown regular parameter %s", in->ctype[i]);
     }
   }  
 
@@ -503,7 +509,7 @@ void ObitUVDescGetFreq (ObitUVDesc* in, Obit *fqtab, odouble *SouIFOff,
   olong size, i, j, fqid, nfreq;
   oint  *sideBand=NULL, nif, tnif;
   odouble *freqOff=NULL, *freq=NULL;
-  ofloat *chBandw=NULL;
+  ofloat *chBandw=NULL, deltaf=0.0;
   ObitIOCode retCode;
   ObitTableFQ *FQtable = (ObitTableFQ*)fqtab;
   gchar *routine = "ObitUVDescGetFreq";
@@ -578,9 +584,10 @@ void ObitUVDescGetFreq (ObitUVDesc* in, Obit *fqtab, odouble *SouIFOff,
   if ((in->jlocf < in->jlocif) || (in->jlocif<=0)) {
     /* Frequency first */
     for (j=0; j<nif; j++) {
+      deltaf = chBandw[j];
+      if (sideBand[j]<0) deltaf = -fabs(deltaf);  /* Trap lower sideband */
       for (i=0; i<nfreq; i++) {
-	*freq = freqOff[j] + in->freq + 
-	  (i+1.0 - in->crpix[in->jlocf]) * in->cdelt[in->jlocf];
+	*freq = freqOff[j] + in->freq + (i+1.0 - in->crpix[in->jlocf]) * deltaf;
 	freq++;
       }
     }
@@ -588,8 +595,8 @@ void ObitUVDescGetFreq (ObitUVDesc* in, Obit *fqtab, odouble *SouIFOff,
     /* IF first */
     for (i=0; i<nfreq; i++) {
       for (j=0; j<nif; j++) {
-	*freq = freqOff[j] + in->freq + 
-	  (i+1.0 - in->crpix[in->jlocf]) * in->cdelt[in->jlocf];
+	if (sideBand[j]<0) deltaf = -fabs(deltaf);  /* Trap lower sideband */
+	*freq = freqOff[j] + in->freq + (i+1.0 - in->crpix[in->jlocf]) * deltaf;
 	freq++;
       }
     }
@@ -604,6 +611,7 @@ void ObitUVDescGetFreq (ObitUVDesc* in, Obit *fqtab, odouble *SouIFOff,
   for (j=0; j<nif; j++) {
     in->freqIF[j]  = in->freq + freqOff[j];
     in->chIncIF[j] = chBandw[j];
+    if (sideBand[j]<0) in->chIncIF[j] = -fabs(in->chIncIF[j]); /* LSB */
     in->sideband[j]= sideBand[j];
   }
 
@@ -739,8 +747,14 @@ void ObitUVDescShiftPhase (ObitUVDesc* uvDesc,
     imra  = imDesc->crval[imDesc->jlocr];
     imdec = imDesc->crval[imDesc->jlocd];
   } else { /* 2D reference is tangent - calculate position of center */
-    inPixel[0] = 1.0 + imDesc->inaxes[imDesc->jlocr]*0.5;
-    inPixel[1] = 1.0 + imDesc->inaxes[imDesc->jlocd]*0.5;
+    if ((imDesc->xshift!=0.0) || (imDesc->yshift!=0.0)) {
+      /* Shifted image */
+      inPixel[0] = 1.0 + imDesc->inaxes[imDesc->jlocr]*0.5;
+      inPixel[1] = 1.0 + imDesc->inaxes[imDesc->jlocd]*0.5;
+    } else {
+      /* Unshifted image */
+      inPixel[0] = imDesc->crpix[0]; inPixel[1] = imDesc->crpix[1]; 
+    }
     ObitImageDescGetPos (imDesc, inPixel, pos, err);
     imra  = pos[0];
     imdec = pos[1];
@@ -750,11 +764,11 @@ void ObitUVDescShiftPhase (ObitUVDesc* uvDesc,
   /* which projection type? Use projection code on first image axis to decide. */
   if (!strncmp(&imDesc->ctype[0][4], "-NCP", 4)) {
     
-    /* correct positions for shift since not 3D imaging */
+    /* correct positions for shift since not 3D imaging ???
     uvra  += uvDesc->xshift;
     uvdec += uvDesc->yshift;
     imra  += imDesc->xshift;
-    imdec += imDesc->yshift;
+    imdec += imDesc->yshift; */
 
     /*  -NCP projection */
     ObitSkyGeomShiftNCP (uvra, uvdec, maprot, imra, imdec, dxyzc);
@@ -1369,6 +1383,62 @@ gboolean ObitUVDescShift3DPos (ObitUVDesc *uvDesc, ofloat shift[2], ofloat mrota
 
   return do3Dmul; /* need to apply? */
 } /* end ObitUVDescShift3DMatrix */
+
+/**
+ * Set number of vis per IO for a UV data set
+ * Limit not to exceed 0.5 GByte
+ * \param uvDesc   UV data descriptor , data should have been fully 
+ *                 instantiated to get this filled in.
+ * \param info     InfoList potentially with nThreads
+ * \param nvis     Desired (max) number of visibilities per thread
+ * \return number of visibilities per I/O
+ */
+olong ObitUVDescSetNVis (ObitUVDesc *uvDesc, ObitInfoList* info, olong nvis)
+{
+  olong nvispio;
+  ollong tsize, maxsize;
+  olong nThreads, lrec;
+  ObitInfoType type;
+  gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+
+  nThreads = 1;
+  ObitInfoListGetTest(info, "nThreads", &type, dim, &nThreads);
+  lrec = uvDesc->lrec;
+  /* Sanity check */
+  lrec = MAX (10, lrec);
+    
+  tsize = nvis * MAX (1, nThreads);                       /* How big is what is desired? */
+  maxsize = 500000000 / (lrec*sizeof (ofloat));   /* How big is allowed */
+  if (tsize>maxsize) {
+    nvispio = (olong)(maxsize);
+  } else nvispio = (olong)(tsize);
+  
+  nvispio = MAX (1, nvispio);   /* At least 1 */
+
+  return nvispio;
+} /* end ObitUVDescSetNVis  */
+
+
+/**
+ * Get data projection code
+ * \param uvDesc   UV data descriptor
+ * \return Projection type, one of
+ *  OBIT_SkyGeom_SIN,  OBIT_SkyGeom_TAN, OBIT_SkyGeom_ARC, OBIT_SkyGeom_NCP, 
+ *  OBIT_SkyGeom_GLS,  OBIT_SkyGeom_MER, OBIT_SkyGeom_AIT, OBIT_SkyGeom_STG
+ */
+ObitSkyGeomProj ObitUVDescGetProj (ObitUVDesc *uvDesc)
+{
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-SIN", 4)) return OBIT_SkyGeom_SIN;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-NCP", 4)) return OBIT_SkyGeom_NCP;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "    ", 4)) return OBIT_SkyGeom_SIN;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-TAN", 4)) return OBIT_SkyGeom_TAN;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-ARC", 4)) return OBIT_SkyGeom_ARC;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-GLS", 4)) return OBIT_SkyGeom_GLS;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-MER", 4)) return OBIT_SkyGeom_MER;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-AIT", 4)) return OBIT_SkyGeom_AIT;
+  if (!strncmp(&uvDesc->ptype[uvDesc->ilocu][4], "-STG", 4)) return OBIT_SkyGeom_STG;
+  return OBIT_SkyGeom_SIN;  /* Default */
+} /* end ObitUVDescGetProj  */
 
 /**
  * Initialize global ClassInfo Structure.

@@ -1,6 +1,6 @@
-/* $Id: ObitUVImagerSquint.c 61 2008-12-19 18:14:49Z bill.cotton $     */
+/* $Id$     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2008                                          */
+/*;  Copyright (C) 2006-2011                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -295,7 +295,7 @@ void ObitUVImagerSquintWeight (ObitUVImager *in, ObitErr *err)
   gchar *controlList[] = 
     {"FOV", "doFull", "NField", "xCells", "yCells", "nx", "ny", 
      "RAShift", "DecShift", "Sources", 
-     "Catalog",  "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
+     "Catalog", "CatDisk", "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
      "nuGrid", "nvGrid", "WtBox", "WtFunc", "UVTaper", "Robust", "WtPower",
      NULL};
   gchar *routine = "ObitUVImagerWeight";
@@ -305,11 +305,7 @@ void ObitUVImagerSquintWeight (ObitUVImager *in, ObitErr *err)
   if (err->error) return;
   g_assert (ObitIsA(in, &myClassInfo));
 
-  /* Create scratch uvwork if it doesn't exist */
-  if (in->uvwork==NULL) in->uvwork = newObitUVScratch (in->uvdata, err);
-  if (err->error) Obit_traceback_msg (err, routine, in->name);
- 
- /* Get Stokes being imaged */
+  /* Get Stokes being imaged */
   strncpy (IStokes, "F   ", 4); 
   ObitInfoListGetTest (in->uvdata->info, "Stokes", &type, dim, IStokes);
 
@@ -317,6 +313,15 @@ void ObitUVImagerSquintWeight (ObitUVImager *in, ObitErr *err)
   dim[0] = 4;
   ObitInfoListAlwaysPut (in->uvdata->info, "Stokes", OBIT_string, dim, Stokes);
 
+  /* Open and close uvdata to set descriptor for scratch file */
+  ObitUVOpen (in->uvdata, OBIT_IO_ReadCal, err);
+  ObitUVClose (in->uvdata, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
+  /* Create scratch uvwork if it doesn't exist */
+  if (in->uvwork==NULL) in->uvwork = newObitUVScratch (in->uvdata, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+ 
   /* Copy/calibrate/select uvdata to uvwork */
   in->uvwork = ObitUVCopy (in->uvdata, in->uvwork, err);
   if (err->error) Obit_traceback_msg (err, routine, in->name);

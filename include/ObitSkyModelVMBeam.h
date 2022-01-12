@@ -1,6 +1,6 @@
-/* $Id:  $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2009                                               */
+/*;  Copyright (C) 2009-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -37,6 +37,7 @@
 #include "ObitUV.h"
 #include "ObitSkyModelVM.h"
 #include "ObitImageInterp.h"
+#include "ObitBeamShape.h"
 
 /*-------- Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -115,6 +116,7 @@
  * \li  "EComp" OBIT_int (?,1,1) Highest CC to use per table, 1-rel [def to end ]
  * \li  "UpdateInt" OBIT_float (1,1,1) Model update interval (min)  [def 1 min]
  * \li  "Threshold" OBIT_float (1,1,1) Threshold for high accuracy model [1.0e20]
+ * \li  "BeamCorClean" OBIT_bool (1,1,1) Is this part of a CLEAN?
  * \li  "maxResid"  OBIT_float (1,1,1) Current maximum abs residual flux density
  *       if maxResid==0.0 then use accurate model for merged CC abs flux > Threshold and
  *       the gridded method for weaker summed components.
@@ -166,11 +168,14 @@ void ObitSkyModelVMBeamFromInfo (ObitSkyModel *out, gchar *prefix,
 /** Public: Create/initialize ObitSkyModelVMBeam structures */
 ObitSkyModelVMBeam* ObitSkyModelVMBeamCreate (gchar* name, ObitImageMosaic* mosaic,
 					      ObitUV *uvData,
-					      ObitImage *IBeam,  ObitImage *VBeam, 
-					      ObitImage *QBeam,  ObitImage *UBeam, 
-					      ObitImage *IBeamPh,  ObitImage *VBeamPh, 
-					      ObitImage *QBeamPh,  ObitImage *UBeamPh, 
+					      ObitImage *RXBeam,   ObitImage *LYBeam, 
+					      ObitImage *RLBeam,   ObitImage *LRBeam, 
+					      ObitImage *RXBeamPh, ObitImage *LYBeamPh, 
+					      ObitImage *RLBeamPh, ObitImage *LRBeamPh, 
 					      ObitErr *err);
+
+/** Public: Get Inputs. */
+void  ObitSkyModelVMBeamGetInput (ObitSkyModel* inn, ObitErr *err);
 
 /** Public: initialize ObitSkyModelVMBeam structures */
 void ObitSkyModelVMBeamInitMod (ObitSkyModel* in,  ObitUV *uvdata, ObitErr *err);
@@ -180,7 +185,7 @@ void ObitSkyModelVMBeamShutDownMod (ObitSkyModel* in,  ObitUV *uvdata,
 				    ObitErr *err);
 
 /** Public: initialize model for pass through data */
-void ObitSkyModelVMInitModel (ObitSkyModel* in, ObitErr *err);
+void ObitSkyModelVMBeamInitModel (ObitSkyModel* in, ObitErr *err);
 
 /** Public: ClassInfo pointer */
 gconstpointer ObitSkyModelVMBeamGetClass (void);

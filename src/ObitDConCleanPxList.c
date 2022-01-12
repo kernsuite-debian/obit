@@ -1,6 +1,6 @@
-/* $Id: ObitDConCleanPxList.c 158 2010-02-24 16:27:22Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2010                                          */
+/*;  Copyright (C) 2004-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -195,6 +195,12 @@ ObitDConCleanPxListCopy  (ObitDConCleanPxList *in, ObitDConCleanPxList *out,
     }
     out->CCTable   =  ObitMemFree (out->CCTable);
   }
+  if (out->CCRow) {
+    for (i=0; i<nfield; i++) {
+      out->CCRow[i]   = ObitTableCCRowUnref(out->CCRow[i]);
+    }
+    out->CCRow   =  ObitMemFree (out->CCRow);
+  }
   if (out->BeamPatch) {
     nfield = in->mosaic->numberImages;
     for (i=0; i<nfield; i++) {
@@ -244,6 +250,7 @@ ObitDConCleanPxListCopy  (ObitDConCleanPxList *in, ObitDConCleanPxList *out,
   out->minFlux   = ObitMemAlloc0Name (nfield*sizeof(ofloat), "PxList Clean Min flux");
   out->factor    = ObitMemAlloc0Name (nfield*sizeof(ofloat), "PxList Clean factor");
   out->CCTable   = ObitMemAlloc0Name (nfield*sizeof(ObitTableCC*), "PxList CC tables");
+  out->CCRow     = ObitMemAlloc0Name (nfield*sizeof(ObitTableCCRow*), "PxList CC rows");
   out->BeamPatch = ObitMemAlloc0Name (nfield*sizeof(ObitFArray*), "PxList Beam");
   for (i=0; i<nfield; i++) {
     out->fluxField[i] = in->fluxField[i];
@@ -254,6 +261,7 @@ ObitDConCleanPxListCopy  (ObitDConCleanPxList *in, ObitDConCleanPxList *out,
     out->minFlux[i]   = in->minFlux[i];
     out->factor[i]    = in->factor[i];
     if (in->CCTable[i])   out->CCTable[i]   = ObitTableCCRef(in->CCTable[i]);
+    if (in->CCRow[i])     out->CCRow[i]     = ObitTableCCRowRef(in->CCRow[i]);
     if (in->BeamPatch[i]) out->BeamPatch[i] = ObitFArrayRef(in->BeamPatch[i]);
  }
 
@@ -270,7 +278,7 @@ ObitDConCleanPxListCopy  (ObitDConCleanPxList *in, ObitDConCleanPxList *out,
 void ObitDConCleanPxListClone  (ObitDConCleanPxList *in, ObitDConCleanPxList *out, ObitErr *err)
 {
   const ObitClassInfo *ParentClass;
-  olong i, j, nfield;
+  olong i, j, nfield=1;
   gchar *routine = "ObitDConCleanPxListClone";
 
   /* error checks */
@@ -301,12 +309,18 @@ void ObitDConCleanPxListClone  (ObitDConCleanPxList *in, ObitDConCleanPxList *ou
   if (out->gain)      out->gain     =  ObitMemFree (out->gain);
   if (out->minFlux)   out->minFlux  =  ObitMemFree (out->minFlux);
   if (out->factor)    out->factor   =  ObitMemFree (out->factor);
+  nfield = in->mosaic->numberImages;
   if (out->CCTable) {
-    nfield = in->mosaic->numberImages;
     for (i=0; i<nfield; i++) {
       out->CCTable[i] = ObitTableCCUnref(out->CCTable[i]);
     }
     out->CCTable   =  ObitMemFree (out->CCTable);
+  }
+  if (out->CCRow) {
+    for (i=0; i<nfield; i++) {
+      out->CCRow[i]   = ObitTableCCRowUnref(out->CCRow[i]);
+    }
+    out->CCRow   =  ObitMemFree (out->CCRow);
   }
   if (out->BeamPatch) {
     nfield = in->mosaic->numberImages;
@@ -357,6 +371,7 @@ void ObitDConCleanPxListClone  (ObitDConCleanPxList *in, ObitDConCleanPxList *ou
   out->minFlux   = ObitMemAlloc0Name (nfield*sizeof(ofloat), "PxList Clean Min flux");
   out->factor    = ObitMemAlloc0Name (nfield*sizeof(ofloat), "PxList Clean factor");
   out->CCTable   = ObitMemAlloc0Name (nfield*sizeof(ObitTableCC*), "PxList CC tables");
+  out->CCRow     = ObitMemAlloc0Name (nfield*sizeof(ObitTableCCRow*), "PxList CC rows");
   out->BeamPatch = ObitMemAlloc0Name (nfield*sizeof(ObitFArray*),  "PxList Beam");
   for (i=0; i<nfield; i++) {
     out->fluxField[i] = in->fluxField[i];
@@ -367,6 +382,7 @@ void ObitDConCleanPxListClone  (ObitDConCleanPxList *in, ObitDConCleanPxList *ou
     out->minFlux[i]   = in->minFlux[i];
     out->factor[i]    = in->factor[i];
     if (in->CCTable[i])   out->CCTable[i]   = ObitTableCCRef(in->CCTable[i]);
+    if (in->CCRow[i])     out->CCRow[i]     = ObitTableCCRowRef(in->CCRow[i]);
     if (in->BeamPatch[i]) out->BeamPatch[i] = ObitFArrayRef(in->BeamPatch[i]);
  }
 
@@ -396,7 +412,7 @@ ObitDConCleanPxListCreate (gchar* name, ObitImageMosaic *mosaic,
   out = newObitDConCleanPxList (name);
 
   /* Create arrays */
-  out->maxPixel = maxPixel;
+  out->maxPixel  = maxPixel;
   out->pixelX    = ObitMemAlloc0Name (maxPixel*sizeof(olong),  "PxList X pixel");
   out->pixelY    = ObitMemAlloc0Name (maxPixel*sizeof(olong),  "PxList Y pixel");
   out->pixelFld  = ObitMemAlloc0Name (maxPixel*sizeof(gshort), "PxList pixel field");
@@ -416,16 +432,18 @@ ObitDConCleanPxListCreate (gchar* name, ObitImageMosaic *mosaic,
   out->minFlux   = ObitMemAlloc0Name (nfield*sizeof(ofloat), "PxList Clean Mix flux");
   out->factor    = ObitMemAlloc0Name (nfield*sizeof(ofloat), "PxList Clean factor");
   out->CCTable   = ObitMemAlloc0Name (nfield*sizeof(ObitTableCC*), "PxList CC tables");
+  out->CCRow     = ObitMemAlloc0Name (nfield*sizeof(ObitTableCCRow*), "PxList CC rows");
   out->BeamPatch = ObitMemAlloc0Name (nfield*sizeof(ObitFArray*), "PxList Beampatch");
   for (i=0; i<nfield; i++) {
     out->iterField[i] = 0;
     out->CCver[i]     = 0;
     out->fluxField[i] = 0.0;
-    out->circGaus[i]  = 0.0;
+    out->circGaus[i]  = mosaic->BeamTaper[i];
     out->gain[i]      = 0.1;
     out->minFlux[i]   = 0.0;
     out->factor[i]    = 0.0;
     out->CCTable[i]   = NULL;
+    out->CCRow[i]     = NULL;
   }
   
   return out;
@@ -508,8 +526,8 @@ void  ObitDConCleanPxListGetParms (ObitDConCleanPxList *in, ObitErr *err)
   if ((in->nfield>1) && (dim[0]==1))
     for (i=1; i<in->nfield; i++) in->factor[i] = in->factor[0];
 
-  /* Gaussian convolution per field */
-  ObitInfoListGetTest(in->info, "fGauss", &type, (gint32*)dim, in->circGaus);
+  /* Gaussian convolution per field 
+  ObitInfoListGetTest(in->info, "fGauss", &type, (gint32*)dim, in->circGaus);*/
 
   /* Print level */
   in->prtLv = 2;  /* default = normal */
@@ -563,13 +581,19 @@ void ObitDConCleanPxListReset (ObitDConCleanPxList *in, ObitErr *err)
 			     &ver, OBIT_IO_WriteOnly, noParms, err);
       if (err->error) Obit_traceback_msg (err, routine, in->name);
       in->CCver[i] = ver;  /* save if defaulted (0) */
-      
-    }  /* End create table object */
+      /* Delete old row */
+      if (in->CCRow[i]) in->CCRow[i] = ObitTableCCUnref(in->CCRow[i]);
+     }  /* End create table object */
 
     /* Reset and instantiate if needed */
     ObitTableClearRows ((ObitTable*)in->CCTable[i], err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
    
+    /* Init number of CCs to 1*/
+    ObitImageOpen(in->mosaic->images[i], OBIT_IO_ReadWrite, err);
+    in->mosaic->images[i]->myDesc->niter = 1;
+    in->mosaic->images[i]->myStatus = OBIT_Modified;
+    ObitImageClose(in->mosaic->images[i], err);
   } /* end loop over images */
 
 } /* end ObitDConCleanPxListReset */
@@ -600,7 +624,6 @@ void ObitDConCleanPxListResize (ObitDConCleanPxList *in, olong maxPixel,
   in->pixelFlux = ObitMemRealloc (in->pixelFlux, maxPixel*sizeof(ofloat));
   for (i=0; i<in->nSpecTerm; i++)
       in->pixelSpectra[i] = ObitMemRealloc (in->pixelSpectra[i], maxPixel*sizeof(ofloat));
-
 
 } /* end ObitDConCleanPxListResize */
 
@@ -845,8 +868,8 @@ gboolean ObitDConCleanPxListCLEAN (ObitDConCleanPxList *in, ObitErr *err)
 {
   gboolean done = FALSE;
   olong iter, ipeak=0, field, iXres, iYres, beamPatch, tipeak=0;
-  olong i, j, lpatch, irow, xoff, yoff, lastField=-1;
-  ofloat peak, tpeak, minFlux=0.0, factor, CCmin, atlim, xfac=1.0, xflux;
+  olong i, j, lpatch, irow, xoff, yoff;
+  ofloat peak, tpeak, minFlux=0.0, CCmin, atlim, xfac=1.0, xflux;
   ofloat subval, ccfLim=0.5;
   odouble totalFlux, *fieldFlux=NULL;
   gchar reason[51];
@@ -867,6 +890,7 @@ gboolean ObitDConCleanPxListCLEAN (ObitDConCleanPxList *in, ObitErr *err)
   if (in->nPixel<=0) {
     Obit_log_error(err, OBIT_InfoWarn,"%s NO Residuals to CLEAN in %s",
 		   routine, in->name);
+    in->complCode = OBIT_CompReasonNoPixel;
     return TRUE;
   }
 
@@ -906,8 +930,8 @@ gboolean ObitDConCleanPxListCLEAN (ObitDConCleanPxList *in, ObitErr *err)
   /* Only thread large cases */
   if (in->nPixel>1000) maxThread = 1000;
   else maxThread = 1;
-  /* Threading doesn't seem to help much */
-  maxThread = 1;
+  /* Threading doesn't seem to help much 
+  maxThread = 1;*/
   nThreads = MakeCLEANArgs (in, maxThread, &targs);
 
   /* Divide up work */
@@ -963,7 +987,6 @@ gboolean ObitDConCleanPxListCLEAN (ObitDConCleanPxList *in, ObitErr *err)
     field   = in->pixelFld[ipeak];
     doField[field-1] = TRUE;
     minFlux = in->minFlux[field-1];
-    factor  = in->factor[field-1];
     xflux   = in->pixelFlux[ipeak];
     subval  = xflux * in->gain[field-1];
     iXres   = in->pixelX[ipeak];
@@ -1018,10 +1041,9 @@ gboolean ObitDConCleanPxListCLEAN (ObitDConCleanPxList *in, ObitErr *err)
 	Obit_traceback_val (err, routine, in->name, done);
     }
     
-    /* Need Table Row - if different field then it may be different */
-    if (field!=lastField) CCRow = ObitTableCCRowUnref(CCRow);
-    lastField = field;
-    if (!CCRow) CCRow = newObitTableCCRow (in->CCTable[field-1]);
+    /* Create row if needed */
+    if (!in->CCRow[field-1]) in->CCRow[field-1] = newObitTableCCRow (in->CCTable[field-1]);
+    CCRow = in->CCRow[field-1];   /* Get local pointer to  Table Row  */
     
     /* Set value */
     desc = in->mosaic->images[field-1]->myDesc;
@@ -1128,19 +1150,21 @@ gboolean ObitDConCleanPxListCLEAN (ObitDConCleanPxList *in, ObitErr *err)
       retCode = ObitTableCCClose (in->CCTable[i], err);
       if ((retCode != OBIT_IO_OK) || (err->error))
 	Obit_traceback_val (err, routine, in->name, done);
+      in->CCRow[i] = ObitTableCCRowUnref(in->CCRow[i]);
     }
   } /* end loop closing tables */
   
     /* Cleanup */
-  CCRow = ObitTableCCRowUnref(CCRow);  
   KillCLEANArgs (nThreads, targs);
   ObitThreadPoolFree (in->thread);
    
   /* Tell about results */
-  if (in->prtLv>1) {
+  if (in->prtLv>=1) {
     Obit_log_error(err, OBIT_InfoErr,"Clean stopped because: %s", reason);
     Obit_log_error(err, OBIT_InfoErr,"Min. Flux density %f",
 		   xflux);
+  }
+  if (in->prtLv>1) {
     if (in->nfield>1) /* Multiple fields? */
       for (i=0; i<in->nfield; i++) {
 	if (doField[i]) {
@@ -1149,6 +1173,8 @@ gboolean ObitDConCleanPxListCLEAN (ObitDConCleanPxList *in, ObitErr *err)
 	}
       }
     
+  }
+  if (in->prtLv>=1) {
     Obit_log_error(err, OBIT_InfoErr,"Total CLEAN %d CCs with %g Jy",
 		   in->currentIter, in->totalFlux);
   }
@@ -1172,8 +1198,8 @@ gboolean ObitDConCleanPxListSDI (ObitDConCleanPxList *in, ObitErr *err)
 {
   gboolean done = FALSE;
   olong iter, iresid, field=0, beamPatch, lpatch=0, ipeak, iXres, iYres;
-  olong lastField=-1, xoff, yoff, irow, i, j;
-  ofloat minFlux=0.0, xflux;
+  olong xoff, yoff, irow, i, j;
+  ofloat minFlux=0.0, xflux=0.0;
   ofloat minVal=-1.0e20, sum, wt, mapLim;
   odouble totalFlux, *fieldFlux=NULL;
   gchar reason[51];
@@ -1194,6 +1220,7 @@ gboolean ObitDConCleanPxListSDI (ObitDConCleanPxList *in, ObitErr *err)
   if (in->nPixel<=0) {
     Obit_log_error(err, OBIT_InfoWarn,"%s NO Residuals to CLEAN in %s",
 		   routine, in->name);
+    in->complCode = OBIT_CompReasonNoPixel;
     return TRUE;
   }
 
@@ -1323,10 +1350,10 @@ gboolean ObitDConCleanPxListSDI (ObitDConCleanPxList *in, ObitErr *err)
 	Obit_traceback_val (err, routine, in->name, done);
     }
     
-    /* Need Table Row - if different field then it may be different */
-    if (field!=lastField) CCRow = ObitTableCCRowUnref(CCRow);
-    lastField = field;
-    if (!CCRow) CCRow = newObitTableCCRow (in->CCTable[field-1]);
+    /* Create row if needed */
+    if (!in->CCRow[field-1]) in->CCRow[field-1] = newObitTableCCRow (in->CCTable[field-1]);
+    /* Need Table Row  */
+    CCRow = in->CCRow[field-1];  /* Get local pointer to Table Row  */
     
     /* Set value */
     desc = in->mosaic->images[field-1]->myDesc;
@@ -1409,20 +1436,22 @@ gboolean ObitDConCleanPxListSDI (ObitDConCleanPxList *in, ObitErr *err)
       retCode = ObitTableCCClose (in->CCTable[i], err);
       if ((retCode != OBIT_IO_OK) || (err->error))
 	Obit_traceback_val (err, routine, in->name, done);
+      in->CCRow[i] = ObitTableCCRowUnref(in->CCRow[i]);
     }
   } /* end loop closing tables */
   
   /* Cleanup */
-  CCRow = ObitTableCCRowUnref(CCRow);  
   KillCLEANArgs (nThreads, targs);
   ObitThreadPoolFree (in->thread);
   
  
   /* Tell about results */
-  if (in->prtLv>1) {
+  if (in->prtLv>=1) {
     Obit_log_error(err, OBIT_InfoErr,"Clean stopped because: %s", reason);
-    Obit_log_error(err, OBIT_InfoErr,"%s: Min. Flux density %f",
-		   routine, minVal);
+    Obit_log_error(err, OBIT_InfoErr,"Min. Flux density %f",
+		   xflux);
+  }
+  if (in->prtLv>1) {
     if (in->nfield>1) /* Multiple fields? */
       for (i=0; i<in->nfield; i++) {
 	if (doField[i]) {
@@ -1431,6 +1460,8 @@ gboolean ObitDConCleanPxListSDI (ObitDConCleanPxList *in, ObitErr *err)
 	}
       }
     
+  }
+  if (in->prtLv>=1) {
     Obit_log_error(err, OBIT_InfoErr,"Total CLEAN %d CCs with %g Jy",
 		   in->currentIter, in->totalFlux);
   }
@@ -1569,6 +1600,7 @@ void ObitDConCleanPxListInit  (gpointer inn)
   in->minFlux   = NULL;
   in->factor    = NULL;
   in->CCTable   = NULL;
+  in->CCRow     = NULL;
   in->pixelSpectra = NULL;
   in->resMax    = -1.0e20;
   in->nSpecTerm = 0;
@@ -1604,11 +1636,17 @@ void ObitDConCleanPxListClear (gpointer inn)
       in->CCTable[i]   = ObitTableCCUnref(in->CCTable[i]);
     }
   }
+  if (in->CCRow) {
+    for (i=0; i<in->nfield; i++) {
+      in->CCRow[i]   = ObitTableCCRowUnref(in->CCRow[i]);
+    }
+  }
   in->thread    = ObitThreadUnref(in->thread);
   in->info      = ObitInfoListUnref(in->info);
   in->mosaic    = ObitImageMosaicUnref(in->mosaic);
   in->window    = ObitDConCleanWindowUnref(in->window);
   if (in->CCTable)   in->CCTable  =  ObitMemFree (in->CCTable);
+  if (in->CCRow)     in->CCRow    =  ObitMemFree (in->CCRow);
   if (in->BeamPatch) in->BeamPatch=  ObitMemFree (in->BeamPatch);
   if (in->pixelX)    in->pixelX   =  ObitMemFree (in->pixelX);
   if (in->pixelY)    in->pixelY   =  ObitMemFree (in->pixelY);
@@ -1662,13 +1700,14 @@ gpointer ThreadCLEAN (gpointer args)
   ofloat xflux, subval, *beam=NULL;
   olong iresid, iXres, iYres, lpatch, beamPatch, iBeam, field, pos[2];
  
+  xflux = 0.0;
   /* Do subtraction if peak non zero */
   if (fabs(peak)>0.0) {
+    peak   = -1.0;   /* find new one */
     field  = in->pixelFld[ipeak];
     lpatch = in->BeamPatch[field-1]->naxis[0];
     beamPatch = (lpatch-1)/2;
     pos[0] = pos[1] = 0;
-    field  = in->pixelFld[ipeak];
     beam = ObitFArrayIndex(in->BeamPatch[field-1], pos); /* Beam patch pointer */
     xflux  = in->pixelFlux[ipeak];
     subval = xflux * in->gain[field-1];
@@ -1685,19 +1724,25 @@ gpointer ThreadCLEAN (gpointer args)
 	in->pixelFlux[iresid] -= subval * beam[iBeam];
       }
       /* May not be ordered if (in->pixelY[iresid]-iYres > (beamPatch+5)) break; No more in Y? */
+      /* Now find peak */
+      xflux = fabs(in->pixelFlux[iresid]);
+      if (xflux>peak) {
+	peak  = xflux;
+	ipeak = iresid;
+      }
     } /* end loop over array */
-  }
+  } else { /* Only find peak */
     
-  /* Find peak abs residual */
-  peak  = -1.0;
-  xflux = 0.0;
-  for (iresid=loPix; iresid<hiPix; iresid++) {
-    xflux = fabs(in->pixelFlux[iresid]);
-    if (xflux>peak) {
-      peak = xflux;
-      ipeak = iresid;
+    /* Find peak abs residual */
+   peak  = -1.0;
+   for (iresid=loPix; iresid<hiPix; iresid++) {
+      xflux = fabs(in->pixelFlux[iresid]);
+      if (xflux>peak) {
+	peak = xflux;
+	ipeak = iresid;
+      }
     }
-  }
+  } /* end only peak */
   
   /* Return values */
   largs->peak  = peak;

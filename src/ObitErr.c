@@ -1,6 +1,6 @@
-/* $Id: ObitErr.c 199 2010-06-15 11:39:58Z bill.cotton $         */
+/* $Id$         */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2010                                          */
+/*;  Copyright (C) 2002-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include <stdio.h>
+#include <glib.h>
 #include "ObitErr.h"
 #include "ObitMem.h"
 #include "ObitSystem.h"
@@ -215,7 +216,7 @@ void ObitErrInit (ObitErr* in, gpointer info)
   ObitInfoListGetTest(theInfo, "prtLv", &type, dim, &in->prtLv);
 
   /* task log file */
-  ObitInfoListGetP(theInfo, "taskLog", &type, dim, &tstr);
+  ObitInfoListGetP(theInfo, "taskLog", &type, dim, (gpointer)&tstr);
   /* If given and non empty and non blank*/
   if ((tstr) && (dim[0]>3) && (tstr[0]!= ' ') && (tstr[1]!= ' ')) { 
     ObitTrimTrail (tstr);
@@ -322,8 +323,8 @@ void ObitErrPush (ObitErr *in, ObitErrCode errLevel, gchar *errMsg)
   /* add to stack */
   g_queue_push_head (in->stack, (gpointer)elem);
   in->number++;   /* add one to the count */
-  /* Is this an error or info?*/
-  in->error = in->error || (errLevel >= OBIT_Traceback);
+  /* Is this an error or info? save higher value than 1 */
+  if (in->error<=1) in->error = (in->error || (errLevel >= OBIT_Traceback));
 } /* end ObitErrPush */
 
 /**
@@ -416,10 +417,10 @@ gchar *ObitErrorLevelString[] = {
 	   lp->tm_year, lp->tm_mon+1, lp->tm_mday,
 	   lp->tm_hour, lp->tm_min, lp->tm_sec,
 	   errMsg);
-    if (errMsg) g_free(errMsg); errMsg=NULL;
+    if (errMsg) {g_free(errMsg);} errMsg=NULL;
     ObitErrPop (in, &errLevel, &errMsg, &timeTag);
   }
-  if (errMsg) g_free(errMsg); errMsg=NULL;
+  if (errMsg) {g_free(errMsg);} errMsg=NULL;
 
   /* Clear any error condition */
   in->error = FALSE;
@@ -510,6 +511,11 @@ gboolean ObitErrIsA (ObitErr* in)
   /* error checks */
   if (in == NULL) return FALSE;
   if (in->className == NULL) return FALSE;
+
+  /* sanity checks */
+  if ((in->number<0) || (in->number>50000) || 
+      (in->ReferenceCount<0) || (in->ReferenceCount>1000)  ||
+      (in->error>100)) return FALSE;
 
   /* compare class name member */
   out = !strcmp(in->className, myClassName);

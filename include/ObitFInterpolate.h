@@ -1,6 +1,6 @@
-/* $Id: ObitFInterpolate.h 2 2008-06-10 15:32:27Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -94,6 +94,10 @@ ObitFInterpolate* ObitFInterpolateCopy  (ObitFInterpolate *in, ObitFInterpolate 
 
 /** Public: Copy (shallow) constructor. */
 ObitFInterpolate* ObitFInterpolateClone (ObitFInterpolate *in, ObitFInterpolate *out);
+
+/** Public: Copy (less shallow shallow) constructor. */
+ObitFInterpolate* ObitFInterpolateClone2 (ObitFInterpolate *in, ObitFInterpolate *out, 
+			   ObitErr *err);
 
 /** Public: Replace member ObitFArray*/
 void ObitFInterpolateReplace (ObitFInterpolate *in, ObitFArray *newArray);

@@ -1,7 +1,7 @@
-/* $Id: SNSmo.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit Radio interferometry calibration software                     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -108,6 +108,7 @@ olong  nFITS=0;         /* Number of FITS directories */
 gchar **FITSdirs=NULL; /* List of FITS data directories */
 ObitInfoList *myInput  = NULL; /* Input parameter list */
 ObitInfoList *myOutput = NULL; /* Output parameter list */
+olong inSNVer, outSNVer;       /* Input and output SN tables */
 
 int main ( int argc, char **argv )
 /*----------------------------------------------------------------------- */
@@ -207,6 +208,9 @@ ObitInfoList* SNSmoIn (int argc, char **argv, ObitErr *err)
 
   /* Make default inputs InfoList */
   list = defaultInputs(err);
+
+  /* Initialize output */
+  myOutput = defaultOutputs(err);
 
   /* command line arguments */
   /* fprintf (stderr,"DEBUG arg %d %s\n",argc,argv[0]); DEBUG */
@@ -311,7 +315,6 @@ ObitInfoList* SNSmoIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -523,7 +526,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   gchar        Aname[13], Aclass[7], *Atype = "UV";
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
     "Sources", "timeRange", "BChan", "EChan",   "BIF", "EIF", "subA",
-    "Antennas", "FredID", 
+    "Antennas", "FredID", "souCode", "Qual", 
      NULL};
   gchar *routine = "getInputData";
 
@@ -625,7 +628,7 @@ void SNSmoHistory (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq", 
-    "Sources", "FreqID", "timeRange",  "subA", "Antennas", 
+    "Sources", "FreqID", "souCode", "Qual", "timeRange",  "subA", "Antennas", 
     "solnIn", "solnOut", "smoFunc", "smoParm", "doBlank", "smoType", 
     "refAnt",
     NULL};
@@ -658,18 +661,10 @@ void SNSmoHistory (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
 
 
 /**
- * Routine to deselect records in an SN table if they match a given
- * subarray, have a selected FQ id, appear on a list of antennas and
- * are in a given timerange.
- * \param SNTab      SN table object 
- * \param isub       Subarray number, <=0 -> any
- * \param fqid       Selected FQ id, <=0 -> any
- * \param nantf      Number of antennas in ants
- * \param ants       List of antennas, NULL or 0 in first -> flag all
- * \param nsou       Number of source ids in sources
- * \param sources    List of sources, NULL or 0 in first -> flag all
- * \param timerange  Timerange to flag, 0s -> all
- * \param err        Error/message stack, returns if error.
+ * Routine to copy the iinput table to the output.
+ *  \param     myInput   Input parameters on InfoList 
+ *  \param     inData    ObitUV with tables  
+ *  \param     err       Obit Error stack                
  */
 void SNSmoCopy (ObitInfoList* myInput, ObitUV* inData,  ObitErr* err)
 {
@@ -698,6 +693,7 @@ void SNSmoCopy (ObitInfoList* myInput, ObitUV* inData,  ObitErr* err)
   /* Save to inputs */
   dim[0] = dim[1] = dim[2] = 1; itemp = solnIn;
   ObitInfoListAlwaysPut(myInput, "solnIn", OBIT_long, dim, &itemp);
+  inSNVer = itemp;
 
   ObitInfoListGetTest(myInput, "solnOut", &type, dim, &itemp);
   solnOut = itemp;
@@ -705,7 +701,7 @@ void SNSmoCopy (ObitInfoList* myInput, ObitUV* inData,  ObitErr* err)
   /* Save to inputs */
   dim[0] = dim[1] = dim[2] = 1; itemp = solnOut;
   ObitInfoListAlwaysPut(myInput, "solnOut", OBIT_long, dim, &itemp);
-
+  outSNVer = itemp;
 
   inTab = newObitTableSNValue (inData->name, (ObitData*)inData, &solnIn, 
 			       OBIT_IO_ReadWrite, 0, 0, err);
@@ -1036,8 +1032,9 @@ void SNSmoSmooth (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   SNver = itemp;
   highVer = ObitTableListGetHigh (inData->tableList, "AIPS SN");
   if (SNver==0) SNver = highVer;
-  SNTable = newObitTableSNValue (inData->name, (ObitData*)inData, &SNver, 
-				 OBIT_IO_ReadWrite, 0, 0, err);
+  outSNVer = SNver;
+  SNTable  = newObitTableSNValue (inData->name, (ObitData*)inData, &SNver, 
+				  OBIT_IO_ReadWrite, 0, 0, err);
   if (err->error) Obit_traceback_msg (err, routine, inData->name);
 
   /* desired subarray */
@@ -1045,7 +1042,11 @@ void SNSmoSmooth (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   numSub = (olong)ObitTableListGetHigh (inData->tableList, "AIPS AN");
   ObitInfoListGetTest(myInput, "subA",  &type, dim, &subA);
 
-  /* copy smoothing parameters to SNTable */
+  /* Tell */
+  Obit_log_error(err, OBIT_InfoErr, 
+		 "Smooth SN %d to SN %d", inSNVer, outSNVer);
+
+ /* copy smoothing parameters to SNTable */
   ObitInfoListCopyList (myInput, SNTable->info, smoParms);
   if (err->error) Obit_traceback_msg (err, routine, inData->name);
 
@@ -1313,8 +1314,14 @@ void clipDly (ObitTableSN *SNTable, ObitUVSel *sel, olong iif,
       ObitTableSNReadRow (SNTable, isnrno, row, err);
       if (err->error) Obit_traceback_msg (err, routine, SNTable->name);
 
-      bad = FALSE;
-      diff = fabs (row->Delay1[iif-1] - work1[itime]);
+      /* Blanked? */
+      if ((row->Real1[iif-1]==fblank) || (row->Imag1[iif-1]==fblank)) {
+	diff = 10.0*mxdela;
+	bad = TRUE;
+      } else {
+	bad = FALSE;
+	diff = fabs (row->Delay1[iif-1] - work1[itime]);
+      }
       if (diff > mxdela) {
 	row->Delay1[iif-1] = fblank;
 	bad = TRUE;
@@ -1454,7 +1461,14 @@ void clipRat (ObitTableSN *SNTable, ObitUVSel *sel,
       bad = FALSE;
       for (i=0; i<SNTable->numIF; i++) { /* loop 20 */
 
-	diff = fabs (row->Rate1[i] - work1[itime]);
+	/* Blanked? */
+	if ((row->Real1[i-1]==fblank) || (row->Imag1[i-1]==fblank)) {
+	  diff = 10.0*mxrate;
+	  bad = TRUE;
+	} else {
+	  
+	  diff = fabs (row->Rate1[i] - work1[itime]);
+	}
 	if (diff > mxrate) {
 	  row->Rate1[i] = fblank;
 	  bad = TRUE;
@@ -1595,10 +1609,17 @@ void clipRat (ObitTableSN *SNTable, ObitUVSel *sel,
       ObitTableSNReadRow (SNTable, isnrno, row, err);
       if (err->error) Obit_traceback_msg (err, routine, SNTable->name);
 
-      bad = FALSE;
-      diff = fabs (sqrt (row->Real1[iif-1]*row->Real1[iif-1] + 
-			 row->Imag1[iif-1]*row->Imag1[iif-1]) 
-		   - work1[itime]);
+      /* Blanked? */
+      if ((row->Real1[iif-1]==fblank) || (row->Imag1[iif-1]==fblank)) {
+	diff = 10.0*mxamp;
+	bad = TRUE;
+      } else {
+	
+	bad = FALSE;
+	diff = fabs (sqrt (row->Real1[iif-1]*row->Real1[iif-1] + 
+			   row->Imag1[iif-1]*row->Imag1[iif-1]) 
+		     - work1[itime]);
+      }
       if (diff > mxamp) {
 	row->Real1[iif-1] = fblank;
 	row->Imag1[iif-1] = fblank;

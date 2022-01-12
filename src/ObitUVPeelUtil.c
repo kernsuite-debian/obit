@@ -1,6 +1,6 @@
-/* $Id: ObitUVPeelUtil.c 195 2010-06-01 11:39:41Z bill.cotton $   */
+/* $Id$   */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2007-2010                                          */
+/*;  Copyright (C) 2007-2015                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -30,6 +30,7 @@
 #include "ObitUVUtil.h"
 #include "ObitUVImager.h"
 #include "ObitUVImagerIon.h"
+#include "ObitUVImagerMF.h"
 #include "ObitImageMosaic.h"
 #include "ObitSkyGeom.h"
 #include "ObitSkyModel.h"
@@ -39,6 +40,7 @@
 #include "ObitUVSelfCal.h"
 #include "ObitTableCCUtil.h"
 #include "ObitTableSNUtil.h"
+#include "ObitDConCleanVisMF.h"
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
  * \file ObitUVPeelUtil.c
@@ -204,9 +206,12 @@ void ObitUVPeelUtilLoop (ObitInfoList* myInput, ObitUV* inUV,
     /* Append CCs */
     ObitTableCCUtilAppend (peelCCTable, outCCTable, 1, 0, err);
     if (err->error) Obit_traceback_msg (err, routine, myClean->name);
+
+    /* register in CLEAN */
+    myClean->Pixels->iterField[i] = outCCTable->myDesc->nrow;
+    
     peelCCTable = ObitTableCCUnref(peelCCTable);
     outCCTable  = ObitTableCCUnref(outCCTable);
-    
   } /* end loop copying peeled CCs */
   if (peeled) g_free(peeled); peeled = NULL;  /* Done with array */
 
@@ -279,6 +284,7 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
   ObitInfoType      type;
   const ObitSkyModelClassInfo *skyModelClass;
   const ObitUVImagerClassInfo *imagerClass;
+  const ObitImageMosaicClassInfo *mosaicClass;
   ObitUVImager      *tmpImager=NULL; 
   ObitImageMosaic   *tmpMosaic=NULL; 
   ObitUV            *scrUV=NULL, *tmpUV=NULL;
@@ -292,8 +298,9 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
   oint         noParms, numPol, numIF;
   olong        ver;
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-  ofloat       PeelFlux, ftemp, xCells, yCells, ccShift[2];
-  gboolean     converged, didSC=FALSE, Fl=FALSE, Tr=TRUE, init, noSCNeed, btemp; 
+  ofloat       PeelFlux, ftemp, xCells, yCells, ccShift[2]={0.,0.};
+  gboolean     converged, didSC=FALSE, Fl=FALSE, Tr=TRUE, init, noSCNeed=FALSE, btemp; 
+  gboolean     doIn3D=FALSE;
   gchar        stemp[5], *pmode = "P   ";
   gchar        *imgParms[] = {  /* Imaging, weighting parameters */
     "PBCor", "antSize", 
@@ -336,23 +343,25 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
     ObitSkyModelCompressCC (myClean->skyModel, err);
     if (err->error) Obit_traceback_val (err, routine, myClean->name, peeled);
 
-    /* Make list of fields already peeled to ignore */
+    /* Make list of fields already peeled or lower resolution to ignore */
     ignore = g_malloc0((myClean->mosaic->numberImages+1)*sizeof(olong));
     k = 0;
     for (j=0; j<=myClean->mosaic->numberImages; j++) ignore[j] = 0;
     for (j=0; j<myClean->mosaic->numberImages; j++) {
-      if (donePeel[j]>0) ignore[k++] = j+1;  /* 1-rel */
+      if ((donePeel[j]>0) || (myClean->mosaic->BeamTaper[j]>0.0)) 
+	  ignore[k++] = j+1;  /* 1-rel */
     }
 
     /* Get ImageMosaic for brightest field if any exceeds PeelFlux */
-    tmpMosaic = ObitImageMosaicMaxField (myClean->mosaic, PeelFlux, 
-					 ignore, &peelField, err);
+    mosaicClass = (const ObitImageMosaicClassInfo*)myClean->mosaic->ClassInfo;
+    tmpMosaic = mosaicClass->ObitImageMosaicMaxField (myClean->mosaic, PeelFlux, 
+						      ignore, &peelField, err);
     if (ignore) g_free(ignore); ignore = NULL;
     if (err->error) Obit_traceback_val (err, routine, myClean->name, peeled);
     if (tmpMosaic==NULL) goto DonePeel;
 
     /* Convert 2D model to 3D if necessary */
-    Convert2Dto3D (tmpMosaic->images[0], ccShift, err);
+    if (doIn3D) Convert2Dto3D (tmpMosaic->images[0], ccShift, err);
     if (err->error) goto cleanup;
 
     Obit_log_error(err, OBIT_InfoErr, 
@@ -381,14 +390,19 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
     if (bcomp) g_free(bcomp); bcomp = NULL;
     if (ecomp) g_free(ecomp); ecomp = NULL;
 
+    /* Need all stokes */
+    dim[0] = 4;
+    stemp[0] = stemp[1] = stemp[2] = stemp[3] = ' ';  stemp[4] = 0;
+    ObitInfoListAlwaysPut (inUV->info, "Stokes", OBIT_string, dim, stemp);
+    ObitUVOpen (inUV, OBIT_IO_ReadCal, err);
+    ObitUVClose (inUV, err);
+    if (err->error) goto cleanup;
+
     /* Scratch file */
     scrUV = newObitUVScratch (inUV, err);
     /* Give more sensible name */
     if (scrUV->name) g_free(scrUV->name);
     scrUV->name = g_strdup("Peel data");
-    dim[0] = 4;
-    stemp[0] = stemp[1] = stemp[2] = stemp[3] = ' ';  stemp[4] = 0;
-    ObitInfoListAlwaysPut (inUV->info, "Stokes", OBIT_string, dim, stemp);
 
     /* Subtract */
     Obit_log_error(err, OBIT_InfoErr, " ******  Subtract non-peel sources from uv data");
@@ -419,8 +433,20 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
     } else {
       imagerClass = (const ObitUVImagerClassInfo*)myClean->imager->ClassInfo;
     }
-    tmpImager   = imagerClass->ObitUVImagerCreate2("Peel imager", scrUV, tmpMosaic, err);
+    if(ObitUVImagerMFIsA(myClean->imager)) {
+      /* Needs extra parameter */
+      tmpImager   = (ObitUVImager*) ObitUVImagerMFCreate2("Peel imager", 
+							 ((ObitImageMosaicMF*)myClean->mosaic)->maxOrder, 
+							 scrUV, (ObitImageMosaicMF*)tmpMosaic, err);
+    } else {
+      tmpImager   = imagerClass->ObitUVImagerCreate2("Peel imager", scrUV, tmpMosaic, err);
+    }
     if (err->error) goto cleanup;
+
+   /* Make sure have imager */
+    Obit_retval_if_fail((ObitUVImagerIsA((ObitUVImager*)tmpImager)), err, peeled,
+			"%s: Failed to create an Imager", 
+			routine);
 
     /* Trap Ion variation  SkyModel */
     if (ObitSkyModelVMIonIsA(myClean->skyModel)) {
@@ -441,9 +467,21 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
     ObitInfoListAlwaysPut (tmpSkyModel->info, "Mode", OBIT_long, dim, &dft);
 
     /* Make temp CleanVis */
-    tmpClean = ObitDConCleanVisCreate2("Peel Clean Object", scrUV, 
-				      (ObitUVImager*)tmpImager, 
-				      (ObitSkyModel*)tmpSkyModel, err);
+    if(ObitDConCleanVisMFIsA(myClean)) {
+      /* Needs extra parameter */
+      tmpClean = ObitDConCleanVisMFCreate2("Peel Clean Object", scrUV, 
+					   (ObitUVImager*)tmpImager, 
+					   (ObitSkyModel*)tmpSkyModel, 
+					   ((ObitImageMosaicMF*)myClean->mosaic)->maxOrder,
+					   ((ObitImageMosaicMF*)myClean->mosaic)->maxFBW,
+					   ((ObitImageMosaicMF*)myClean->mosaic)->alpha,
+					   ((ObitImageMosaicMF*)myClean->mosaic)->alphaRefF,
+					   err);
+    } else {
+      tmpClean = ObitDConCleanVisCreate2("Peel Clean Object", scrUV, 
+					 (ObitUVImager*)tmpImager, 
+					 (ObitSkyModel*)tmpSkyModel, err);
+    }
     if (err->error) goto cleanup;
     /* Share display with myClean */
     tmpClean->display = ObitDisplayRef(myClean->display);
@@ -512,6 +550,10 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
     ObitInfoListAlwaysPut(selfCal->info, "doSmoo", OBIT_bool, dim, &Tr);
     /* Copy control info */
     ObitInfoListCopyList (myInput, selfCal->info, SCParms);
+    /* Use DFT model */
+    dim[0] = dim[1] = 1;
+    dft = (olong)OBIT_SkyModel_DFT;
+    ObitInfoListAlwaysPut (selfCal->info, "Mode", OBIT_long, dim, &dft);
 
     /* Add outer window */
     nx = tmpMosaic->images[0]->myDesc->inaxes[0]; 
@@ -706,6 +748,9 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
     ObitDConCleanVisDeconvolve ((ObitDCon*)myClean, err);
     if (err->error) goto cleanup;
 
+    /* Make sure CLEAN indicates some cleaning */
+    myClean->Pixels->currentIter = MAX (1, myClean->Pixels->currentIter);
+
     /* Copy CCs from peeled table (CC # 2) */
     ver = 2;
     noParms = 0;
@@ -735,9 +780,9 @@ olong ObitUVPeelUtilPeel (ObitInfoList* myInput, ObitUV* inUV,
     ObitTableClearRows((ObitTable*)outCCTable, err);
     if (err->error) goto cleanup;
 
-    /*ObitTableCCUtilAppend (peelCCTable, outCCTable, 1, 0, err);*/
     /* Copy Peel CC to CC2 reverting any 2D to 3D shift */
-    MoveBack (peelCCTable, outCCTable, ccShift, err);
+    if (doIn3D) MoveBack (peelCCTable, outCCTable, ccShift, err);
+    else ObitTableCCUtilAppend (peelCCTable, outCCTable, 1, 0, err);
     peelCCTable = ObitTableCCUnref(peelCCTable);
     outCCTable  = ObitTableCCUnref(outCCTable);
 
@@ -796,7 +841,11 @@ void Convert2Dto3D (ObitImage *image,ofloat ccShift[2],  ObitErr* err)
   /* If already 3D just return */
   xPxOff = image->myDesc->xPxOff;
   yPxOff = image->myDesc->yPxOff;
-  if ((image->myDesc->do3D) && (xPxOff==0.0) && (yPxOff==0.0)) return;
+  if ((image->myDesc->do3D) && (xPxOff==0.0) && (yPxOff==0.0)) {
+    ObitImageClose (image, err);
+    if (err->error) Obit_traceback_msg (err, routine, image->name);
+    return;
+  }
 
   /* Old image stuff */
   nx   = image->myDesc->inaxes[0];

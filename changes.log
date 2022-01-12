@@ -1,0 +1,4746 @@
+Log of changes made to the Obit tree.
+-------------------------------------
+
+Obit/tasks/MFImage.c:
+  Default initial alphaRefF
+Obit/src/ObitImageMF.c:
+  SetSpec: move frequency summer initilization out of loop 
+Obit/src/ObitTableCCUtil.c:
+  T2Spec: Fix logic with plane RMSes
+Obit/src/ObitThread.c:
+  Iterator: up timeout to 60 min
+Obit/include/ObitUVImager.h Obit/src/ObitUVImager.c
+Obit/include/ObitUVImagerIon.h Obit/src/ObitUVImagerIon.c
+Obit/include/ObitUVImagerMF.h Obit/src/ObitUVImagerMF.c
+Obit/include/ObitUVImagerWB.h Obit/src/ObitUVImagerWB.c:
+  GetNumPar: add doBeam parameter
+Obit/src/ObitDConCleanVis.c:
+  PickNext2D, PickNext3D: add doBeam parameter to ObitUVImagerGetNumPar
+Obit/src/ObitDisplay.c:
+  Allow the display to be turned back on using file /tmp/<task>.doTV
+Obit/src/ObitSkyModelMF.c:
+  GridFTComps: allow reducing oversampling if needed to fit in memory
+Obit/FArray.c:
+  ThreadFAConvGaus: smarter calculation of Gaussian
+Obit/include/ObitTableCCUtil.h Obit/src/ObitTableCCUtil.c: 
+  CrossTable: new routine to select CC in one image appearing in another. 
+Obit/TDF/MFImage.TDF Obit/TDF/MFBeam.TDF Obit/TDF/Imager.TDF
+Obit/TDF/IonImage.TDF Obit/TDF/Squint.TDF Obit/TDF/SCMap.TDF:
+  Document restarting use of the display
+Obit/src/ObitDConCleanVisMF.c:
+  better 2D XRestore
+svn version 381 23 Sep 2011.  W. Cotton
+
+Obit/src/ObitDConCleanVis.c:
+  Decide: Don't set minFluxLoad less than autoWinFlux, bug in DefWindow
+Obit/src/ObitUVImagerMF.c:
+  Weight: Copy Beam to uvwork
+Obit/src/ObitDConClean.c:
+  DefWindow: Add outer box in field 1 if window given in CLEANBox, fix outlier box 
+Obit/src/ObitSkyModelMF.c:
+  Chose: raise Gaussian factor to 6, FFT fudge to 0.50
+Obit/src/ObitDConCleanWindow.c:
+  GetWindowSize: increase maximum size to 50 
+Obit/src/ObitUVUtil.c Obit/src/ObitUVEdit.c:
+  VisDiv, VisSub: use passAll option to read/write all data. Other bugs
+Obit/src/ObitTableCCUtil.c:
+  Grid, GridSpect: better test for Gaussians
+Obit/src/ObitUVGSolveWB.c:
+  verbose messages only at prtLv=4 or more
+Obit/src/ObitUVCalBandpass.c:
+  Create proper size cal tables
+Obit/src/ObitSDMData.c:
+  Add CalWVR table
+Obit/include/ObitSDMData.h Obit/src/ObitSDMData.c:
+  WVR2SN: New routine to convert WVR data to SN table
+Obit/tasks/BDFIn.c Obit/TDF/BDFIn.TDF:
+  For ALMA data convert CalWVR to SN table
+Obit/src/ObitSkyModel.c"
+  DivUV: make sure outData buffer set correctly on exit
+Obit/src/ObitDConCleanVisMF.c:
+  XRestore: initialize gparm.  
+  Fix problems in 2D XRestore.
+version 382  4 Oct 2011  W. Cotton
+
+
+svn add 
+  Obit/include/ObitExp.h Obit/src/ObitExp.c Obit/changes.log 
+
+Obit/changes.log 
+Obit/include/ObitExp.h Obit/src/ObitExp.c:
+  New, fast exp vector routine 
+Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelMF.c Obit/src/ObitSkyModelVMBeamMF.c: 
+  Implement fast exp routine for Gaussians 
+Obit/tasks/MFImage.c Obit/tasks/MFBeam.c Obit/tasks/Imager.c 
+Obit/tasks/Squint.c Obit/tasks/BeamCor.c  Obit/tasks/SCMap.c: 
+  Set/reset minFlux,noNeg for selfcal 
+Obit/src/ObitTableCCUtil.c:
+  GridSpect: Tell about number of components gridded 
+Obit/include/ObitImageMFDef.h Obit/src/ObitImageMF.c"
+  Allow selecting by IF, track low and high freq. 
+Obit/include/ObitSkyModelMFDef.h Obit/src/ObitSkyModelMF.c:
+  Implement high and low frequency per bin 
+Obit/TDF/MFImage.TDF Obit/TDF/MFBeam.TDF:
+  Document changed usage of maxFBW 
+15 Oct 2011, svn version 383  W. Cotton
+
+Obit/src/ObitSkyModelVMIon.c:
+  Replace begVMModelTime member of VMIonFTFuncArg
+Obit/src/ObitFArray.c:
+  ThreadFAConvGaus: fix indexing bug causing stripes,
+   Various, use ObitExpCalc for speed.
+Obit/src/ObitDConClean.c:
+  Debug stuff
+19 Oct 2011, svn version 385, W. Cotton
+
+Obit/tasks/MCube.c:
+  UpdateFreq: dimension combSpecFreq large enough
+Obit/src/ObitImageMosaic.c:
+  MaxField: drop double copy of shifted CC Table
+Obit/src/ObitImageMosaicMF.c:
+  MaxField: add copy of shifted CC Table
+Obit/src/ObitUVPeelUtil.c:
+  Convert2Dto3D: close image if not 2D.
+  Peel: Force DFT for peel model.
+  Peel: use 2D model rather than force to 3D (broken).
+Obit/src/ObitDConCleanVis.c:
+  Reimage: Make sure 2D shifted images has a first CLEAN box radius of at least 5.
+25 Oct 2011, svn version 387, W. Cotton
+
+
+svn add \
+  Obit/TDF/WVRCal.TDF  Obit/tasks/WVRCal.c \
+  Obit/include/ObitWVRCoef.h Obit/src/ObitWVRCoef.c
+
+Obit/src/ObitInfoList.c:
+  Rename: fix bug copying elements
+Obit/include/ObitBDFDataDef.h:
+  Fixes to trap ALMA bugs
+Obit/src/ObitSDMData.c:
+  CountTableRows: If the table doesn't exist, then no. rows=0
+  Trap ALMA bugs
+  Implement calAtmosphere table
+  New routine Atm2SN to convert calAtmosphere table to SN.
+Obit/include/ObitSDMDataTypeDef.h Obit/include/ObitSDMDataDef.h:
+  Implement calAtmosphere table
+Obit/include/ObitSDMData.h:
+  Add ObitSDMDataAtm2SN
+Obit/src/ObitBDFData.c:
+  InitScan: Trap ALMA pathology, no poln axis
+  Trap ALMA bugs
+Obit/tasks/BDFIn.c:
+  Do not give message about converting ALMA WVR table unless it exists
+  Trap ALMA bugs
+  Convert ALMA CalAtmosphere table to SN table.
+Obit/src/ObitSkyModel.c:
+  SetSelect: Handle single XX dataset
+Obit/tasks/ASDMList.c:
+  Properly handle "Quit" for interactive use.
+Obit/TDF/WVRCal.TDF  Obit/tasks/WVRCal.c:
+Obit/include/ObitWVRCoef.h Obit/src/ObitWVRCoef.c:
+  New task/utility for ALMA WVR phase calibration
+9 Nov 2011, svn version 391, W. Cotton
+
+ObitVersion:
+Obit/changes.log:
+Obit/tasks/WVRCal.c Obit/TDF/WVRCal.TDF:
+  Change includes for libair routine.
+  Add doFlip option to match whatever phase sign convention is
+  used in the data.
+ObitTalk/python/Proxy/ObitTask.py ObitTalk/python/Proxy/AIPSTask.py:
+  _allocate_popsno: fix bug in determining is a POPS number were in use
+Obit/python/ImageInterp.py:
+  PCreate: fix bugs in call to creator.
+Obit/src/ObitThread.c:
+  Iterator: fix constant overflow
+Obit/tasks/MapBeam.c:
+  lagrange: fix logic.
+Obit/tasks/ASDMList.c Obit/tasks/BDFIn.c Obit/tasks/ComBeam.c 
+Obit/tasks/GetJy.c Obit/tasks/PCCor.c Obit/tasks/SCMap.c Obit/tasks/UVSim.c:
+  initialize variables
+Obit/src/ObitIOImageFITS.c:
+  KeysOtherRead: Don't delete old descriptor infoList
+Obit/src/ObitSkyModelVMSquint.c Obit/src/ObitSkyModelVM.c Obit/src/ObitSkyModelMF.c:
+  ThreadFTDFT: Gaussian: correct calculation of Gaussian
+  Update DFT Gaussian calculation to fast exp
+Obit/src/ObitBDFData.c Obit/include/ObitBDFData.h:
+  Bigger buffer, trap trashy ALMA files.
+Obit/TDF/Split.TDF Obit/TDF/SplitCh.TDF Obit/TDF/Splat.TDF:
+Obit/TDF/Hann.TDF Obit/TDF/Lister.TDF Obit/TDF/BPass.TDF:
+Obit/TDF/Imager.TDF  Obit/TDF/Calib.TDF  Obit/TDF/RLPass.TDF :
+Obit/TDF/UVBlAvg.TDF  :
+  Larger range of selected channels.
+18 Nov 2001, version 397
+
+Obit/changes.log \
+Obit/tasks/PCCor.c \
+  Trap bad PC table and blank.
+Obit/src/ObitUVCalFlag.c \
+  Fix bug in indexing in flagging for compressed data.
+Obit/tasks/SCMap.c \
+  Add minSNR to history
+Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelVMBeamMF.c \
+Obit/src/ObitSkyModelMF.c Obit/src/ObitSkyModelVM.c \
+  LoadComps: Fix bug in handling noNeg=False
+Obit/tasks/Lister.c \
+  doGAIN: null fill line
+26 Nov 2011, version 398
+
+ObitVersion:
+Obit/changes.log:
+Obit/tasks/PCCor.c:
+  PC2SN: give message and die if no valid solutions written
+Obit/src/ObitSDMData.c:
+  FlagTable: be sure to parse multiple antennas for flag entry.
+Obit/tasks/BDFIn.c:
+  GetFlagInfo: Get ALMA antenna numbers right (1-rel) in FG table
+30 Nov 2011, version 399
+
+ObitVersion:
+Obit/tasks/PCCor.c:
+  Trap bad PC table entries.
+2 Dec 2011, version 400
+
+Changes to incorporate Bojan's libair - wrt top directory:
+svn add:
+  other/tarballs/boostheader_1_41_0.tar.gz other/tarballs/bnmin1-1.11.tar.bz2:
+  other/tarballs/libair-1.0.1.tar.bz2:
+    Bojan's libraries and (gag) boost headers
+  other/tarballs/gsl-1.13.tar.gz:
+    update GSL
+  ObitSystem/Obit/m4/wvr.m4 ObitSystem/Obit/configure:
+    autoconfig/configure stuff for libair
+  ObitSystem/Obit/tasks/Makefile.in:
+    Makefile.in with WVR stuff
+svn delete:
+    other/tarballs/gsl-1.6.tar.gz:
+InstallObit.sh other/Install3rdParty.sh other/CLEAN3rdParty.sh:
+  add necessary libraries to 3rd party build
+ObitSystem/Obit/configure.ac ObitSystem/Obit/configure:
+  add libair as (wvr)
+ObitSystem/Obit/src/Makefile.in ObitSystem/Obit/tasks/Makefile.in:
+  add wvr stuff for compile/link
+README:
+  update install documentation
+ObitSystem/Obit/TDF/SubImage.TDF:
+  Increase pixel selection range 4096->32768
+05 Dec 2011, version 401
+
+ObitVersion:
+Obit/changes.log:
+Obit/tasks/BPass.c:
+  Add BPSoln to history
+Obit/tasks/BDFIn.c Obit/TDF/BDFIn.TDF
+Obit/src/ObitSDMData.c Obit/include/ObitSDMDataDef.h:
+  Allow selecting the number of channels amoung several in a configuration
+06 Dec 2011, version 402
+
+ObitVersion:
+Obit/changes.log:
+Obit/tasks/BDFIn.c:
+  GetFlagInfo: minimum of 1 antenna per FlagTab entry.
+09 Dec 2011, version 403
+
+ObitVersion:
+Obit/changes.log:
+ObitView/src/blinkbox.c ObitView/src/aboutbox.c ObitView/changes:
+  Remove call to BlinkCheckQuit, was crashing
+Obit/src/ObitFInterpolate.c:
+  ObitFInterpolatePixel: fix indexing bug
+Obit/TDF/AutoFlag.TDF Obit/tasks/AutoFlag.c:
+  Add XClip
+Obit/tasks/SubImage.c:
+  Clip TRC to range if inc>1
+Obit/src/ObitIOImageFITS.c Obit/src/ObitIOUVFITS.c:
+  KeysOtherRead: Use AlwaysPut for long, double.
+Obit/include/ObitUVRLDelay.h Obit/src/ObitUVRLDelay.c:
+Obit/tasks/RLDly.c Obit/TDF/RLDly.TDF:
+  New task/utility to fit cross polarized delays
+02 Jan 2012, version 404
+
+Changes mostly to implement Eric's channel based Poln cal.
+svn add \
+  Obit/src/ObitPolCalList.c Obit/include/ObitPolCalList.h \
+  Obit/include/ObitPolCalListDef.h Obit/include/ObitPolCalListClassDef.h \
+  Obit/src/ObitTablePD.c Obit/include/ObitTablePD.h Obit/python/TablePD.inc \
+  Obit/include/ObitTablePDDef.h Obit/include/ObitTablePDClassDef.h \
+  Obit/include/ObitTablePDRowDef.h Obit/include/ObitTablePDRowClassDef.h \
+  Obit/src/ObitTableCP.c Obit/include/ObitTableCP.h Obit/python/TableCP.inc \
+  Obit/include/ObitTableCPDef.h Obit/include/ObitTableCPClassDef.h \
+  Obit/include/ObitTableCPRowDef.h Obit/include/ObitTableCPRowClassDef.h:
+svn commit -F changes:
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitEVLASysPower.c:
+  InitFile: Fix initialization of endian
+ObitSD/tasks/QuadDet.c:
+  CnvrtData: initialize refDay (but not properly).
+ObitSD/src/ObitOTFGetSoln.c:
+  PlotMBBL: set value of atm
+Obit/tasks/Splat.c:
+  Index output file.
+Obit/src/ObitUVRLDelay.c:
+  FitDelay: another order of magnitude precision in delay fit.
+Obit/bin/ObitTables.pl:
+  Update copyright date.
+Obit/doc/Obitdoc.tex:
+  Definition of AIPS PD & AIPS CP tables.
+Obit/src/ObitUV.c Obit/include/ObitUVSel.h:
+  Implement passing PDVer to poln calibration
+Obit/src/ObitUVUtil.c:
+  Add AIPS PD to lists of tables to exclude
+Obit/src/ObitUVCal.c Obit/include/ObitUVCalDef.h:
+  Update for PD polarization calibration info.
+Obit/src/ObitUVCalPolarization.c Obit/include/ObitUVCalPolarization.h:
+Obit/include/ObitUVCalPolarizationDef.h:
+  Implement poln calibration by channel from PD table.
+Obit/src/ObitPolCalList.c Obit/include/ObitPolCalList.h:
+Obit/include/ObitPolCalListDef.h Obit/include/ObitPolCalListClassDef.h:
+ New class to store contents of AIPS PD poln cal table.
+Obit/src/ObitTablePD.c Obit/include/ObitTablePD.h Obit/python/TablePD.inc:
+Obit/include/ObitTablePDDef.h Obit/include/ObitTablePDClassDef.h:
+Obit/include/ObitTablePDRowDef.h Obit/include/ObitTablePDRowClassDef.h:
+  Implement AIPS PD table
+Obit/src/ObitTableCP.c Obit/include/ObitTableCP.h Obit/python/TableCP.inc:
+Obit/include/ObitTableCPDef.h Obit/include/ObitTableCPClassDef.h:
+Obit/include/ObitTableCPRowDef.h Obit/include/ObitTableCPRowClassDef.h:
+  Implement AIPS CP table
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+Obit/python/Table.inc  Obit/python/Table.py Obit/python/OData.py :
+  Update python interface
+Obit/tasks/Lister.c Obit/TDF/Lister.TDF:
+Obit/tasks/Split.c Obit/TDF/Split.TDF:
+Obit/tasks/SplitCh.c Obit/TDF/SplitCh.TDF:
+Obit/tasks/UVCopy.c Obit/TDF/UVCopy.TDF:
+Obit/tasks/RLPass.c Obit/TDF/RLPass.TDF:
+Obit/tasks/RLDly.c Obit/TDF/RLDly.TDF:
+Obit/tasks/BPass.c Obit/TDF/BPass.TDF:
+Obit/tasks/Calib.c Obit/TDF/Calib.TDF:
+Obit/tasks/MednFlag.c Obit/TDF/MednFlag.TDF:
+Obit/tasks/MazrCal.c Obit/TDF/MazrCal.TDF:
+Obit/tasks/IDIOut.c Obit/TDF/IDIOut.TDF:
+Obit/tasks/Imager.c Obit/TDF/Imager.TDF:
+Obit/tasks/BeamCor.c Obit/TDF/BeamCor.TDF:
+Obit/tasks/MapBeam.c Obit/TDF/MapBeam.TDF:
+Obit/tasks/MFBeam.c Obit/TDF/MFBeam.TDF:
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF:
+Obit/tasks/Squint.c Obit/TDF/Squint.TDF:
+Obit/tasks/SCMap.c Obit/TDF/SCMap.TDF:
+Obit/tasks/IonImage.c Obit/TDF/IonImage.TDF:
+  Implement PDVer for per channel poln cal.
+06 Jan 2012, version 405
+
+Various fixes
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitUVCal.c:
+  Fix bug introduces in last fix
+Obit/src/ObitUVEdit.c:
+  More specific flags for editing by correlation (was all)
+Obit/src/ObitUVRLDelay.c:
+  Don't flag data as bad if R-L delay solution fails
+Obit/TDF/RLDly.TDF:
+  Explain what happens when solutions fail.
+Obit/tasks/BDFIn.c:
+  multiply staXof by VELIGHT for EVLA
+Obit/python/EVLACal.py Obit/python/EVLAPipeline.py:
+  Add flagging by gain amplitude deviation, other improvements.
+Obit/TDF/Lister.TDF:
+  fix spelling
+Obit/src/ObitUVSoln.c:
+  SNSmooth: Ignore reference antenna for flagged solutions, other fixes.
+13 Jan 2012, version 406
+
+Most Web related
+ObitVersion:
+Obit/changes.log:
+Obit/bin/f2c.pl:
+  updates and fixes.
+Obit/python/OTObit.py:
+  documentation
+Obit/src/ObitPrinter.c Obit/include/ObitPrinterDef.h:
+  Allow non interactive writing to an I/O stream, page limit.
+Obit/src/ObitSystem.c:
+  No initial timestamp if pgm name NameLess
+Obit/include/ObitSurveyUtil.h Obit/src/ObitSurveyUtil.c:
+  New utility module to print survey catalogs
+Obit/python/OSurvey.py Obit/python/OSurvey.inc:
+  Interface to ObitSurveyUtil
+Obit/python/OPrinter.py Obit/python/OPrinter.inc:
+  Interface to ObitPrinter
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  update python interface
+23 Jan 2012, version 407
+
+Web and EVLA editing related
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitSurveyUtil.c:
+  Bugs in listing of survey catalogs
+Obit/python/OSurvey.py:
+  PWebFetch: better handling of errors
+Obit/python/ NVSSWebUtil.py:
+  New module for Web stuff.
+Obit/tasks/BDFIn.c:
+ Fix frequency ordering in SY, CD tables.
+Obit/src/ObitUVEdit.c:
+  EditFDBaseline: Fix several logic bugs
+Obit/python/EVLACal.py Obit/python/EVLAPipeline.py:
+  Implement minFlux in imageTarget
+16 Feb 2012 version 408
+
+New EVLA flag format, page limits
+ObitVersion
+Obit/changes.log
+Obit/python/EVLAPipeline.py:
+  Get it right
+Obit/include/ObitSDMDataTypeDef.h Obit/src/ObitSDMData.c:
+Obit/tasks/BDFIn.c:
+  New flagging table features
+Obit/tasks/Lister.c  Obit/tasks/ASDMList.c:
+  Big page limit
+24 Feb 2012 version 409
+
+Various EVLA pipeline related
+Obit/changes.log:
+Obit/src/ObitTableUtil.c:
+  Sorting: convert counters to ollong.
+Obit/python/EVLAPipeline.py Obit/python/EVLACal.py:
+  Better flagging, bug fix
+Obit/src/ObitDConCleanVisMF.c:
+  XRestore: Better test for non aligned image.
+Obit/src/ObitImageMF.c:
+  SetSpec: Fix bugs in logic dividing channels.
+Obit/tasks/Imager.c:
+  Deal with channels with no data.
+Obit/python/Image.py:
+  Add PRelabelGal to relabel image into galactic coordinates
+Obit/TDF/CubeClip.TDF Obit/tasks/CubeClip.c:
+  Major rewrite.
+Obit/python/MosaicUtil.py:
+  MakeMaster: Work for cubes
+Obit/tasks/Imager.c Obit/tasks/MFImage.c Obit/tasks/IonImage.c:
+Obit/tasks/BeamCor.c Obit/tasks/Squint.c Obit/tasks/MFBeam.c:
+  doSources: reinit uvdata after each source
+Obit/TDF/MFImage.TDF:
+  Change defaults for PBCor, antSize
+2 Mar. 2012, ver 410
+
+BDFIN changed for Bryan B., Fixes for ARCADE.
+ svn add \
+  Obit/include/ObitSourceEphemerusClassDef.h Obit/include/ObitSourceEphemerusDef.h \
+  Obit/include/ObitSourceEphemerus.h Obit/src/ObitSourceEphemerus.c \
+ObitVersion:
+Obit/changes.log:
+Obit/include/ObitSDMDataTypeDef.h Obit/src/ObitSDMData.c:
+Obit/tasks/BDFIn.c:
+  Trap, fix zero reference frequency. Moving sources.
+Obit/tasks/MFImage.c Obit/tasks/Imager.c Obit/tasks/MFBeam.c:
+  Allow no CLEANing and potential self cal.,
+Obit/tasks/CubeClip.c:
+  Fix bug in BLC/TRC
+Obit/include/ObitSourceEphemerusClassDef.h Obit/include/ObitSourceEphemerusDef.h:
+Obit/include/ObitSourceEphemerus.h Obit/src/ObitSourceEphemerus.c:
+  New class for moving source ephemerus
+Obit/python/EVLACal.py Obit/python/EVLAPipeline.py:
+  Shadow flagging, poln cal
+Obit/src/ObitDConCleanVisMF.c:
+  Restore: Check in->Pixels before accessing. XRestore: better isAuto test, etc.
+Obit/src/ObitDConCleanVis.c:
+  OrderClean: Ignore autoCen shifted facets if the autoCen facet > threshold
+Obit/tasks/UVAppend.c Obit/TDF/UVAppend.TDF:
+  New task to append single source UV datasets.
+19 Mar 2012 ver. 411
+
+Upgrades to MFImage/MFBeam for forcing psf for ARCADE/EVLA data
+New CVel for Doppler corrections
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitImageMF.c:
+  SetSpec: Fix bugs in logic  
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF:
+Obit/tasks/MFBeam.c Obit/TDF/MFBeam.TDF:
+   BeamOne: min BIF = 1, Add per IF Robust and Taper, MFTaper, Force psf for residuals
+Obit/src/ObitUVGridMF.c:
+  Implement MFTaper
+Obit/include/ObitImageUtil.h Obit/src/ObitImageUtil.c:
+  Make FitBeam public, better fit, allow specyfing plane
+Obit/include/ObitUVWeightDef.h Obit/src/ObitUVWeight.c:
+  Implement per IF Robust, Taper
+Obit/src/ObitDConCleanVisMF.c:
+  Restore: Convolve residuals up to restoring beam size
+Obit/src/ObitImageFitData.c:
+  Create: Properly init dim.
+Obit/src/ObitUVImagerMF.c:
+  Copy new parameters to work array.
+Obit/python/OTObit.py:
+  Add addParam function
+Obit/python/Image.py:
+  GaussFit: allow selection by plane
+Obit/src/ObitUV.c:
+  GetSouInfo: set altCrpix iff = 0.0
+Obit/tasks/CVel.c Obit/TDF/CVel.TDF:
+  New task to Doppler correct data
+Obit/include/ObitDopplerClassDef.h Obit/include/ObitDopplerDef.h:
+Obit/include/ObitDoppler.h Obit/src/ObitDoppler.c:
+  New class for Doppler calculations/corrections
+Obit/python/Doppler.py  Obit/python/Doppler.inc:
+  python interface to Doppler
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Update python interface
+30 Mar 2012, version 412
+
+Mostly ASDM interface and BDFIn fixes
+ObitVersion:
+Obit/changes.log:
+Obit/include/ObitImageUtil.h Obit/src/ObitImageUtil.c:
+  New routine BlankFill
+Obit/tasks/Imager.c:
+  Deal with channels with no data.
+Obit/src/ObitImageDesc.c:
+  Index: recognize FELO? axis
+Obit/src/ObitAIPSDir.c:
+  More robust way to manage size of a directory
+Obit/python/Catalog.py:
+  PVLSelect: fix len[Steps]=>len(Steps)
+Obit/src/ObitAIPSCat.c:
+  GetTable: Trap crazy values for no. tables.
+Obit/src/ObitSDMData.c  Obit/include/ObitSDMData.h:
+  Add IntentCreate for only descriptive tables,
+  Fix bug is selection with multiple channel widths
+Obit/python/OASDM.inc Obit/python/OASDM.py:
+  python interface to ASDM tables
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  python interface
+Obit/src/ObitDoppler.c:
+  Fix shift logic
+16 Apr 2012, version 413
+
+
+Mostly EVLA scripting changes
+svn add:
+  Obit/python/mjd.py Obit/python/EVLAContPipe.py Obit/share/scripts/EVLATemplateParm.py
+svn commit -F changes:
+ObitVersion:
+Obit/changes.log:
+Obit/python/OASDM.py:
+  refJD bug in Get1stBandpassScan
+  avg Freq bug in GetConfigs
+  Spanned BW from GetConfigs
+Obit/src/ObitUVSelfCal.c:
+  FluxHist: Check if enough data
+Obit/tasks/FndSou.c:
+  Proper initialization of output InfoList
+Obit/src/ObitFArray.c:
+  RMSQuant: Trap too little data for histogram.
+Obit/src/ObitImageDesc.c:
+  Overlap: Better algorithm.
+Obit/src/ObitDConCleanVisMF.c:
+  Restore: Check doComRes
+Obit/TDF/MFImage.TDF Obit/tasks/MFImage.c:
+  Add doComRes parameter for forcing common residual resolution.
+Obit/TDF/MFBeam.TDF Obit/tasks/MFBeam.c:
+  Add doComRes parameter for forcing common residual resolution.
+Obit/src/ObitImageUtil.c:
+  FitBeam: Only look at center quarter of image for peak; better error recovery.
+Obit/python/PipeUtil.py Obit/python/EVLAContPipe.py:
+Obit/python/mjd.py Obit/share/scripts/EVLATemplateParm.py:
+  Major development of EVLA scripting
+27 Apr 2012, version 414
+
+Obit/python/EVLACal.py:
+  Major development of EVLA scripting
+27 Apr 2012, version 415
+
+Mostly EVLA scripting changes
+svn add:
+  Obit/share/data/3C286ChiModel.fits:
+  Obit/share/scripts/EVLAContTemplateParm.py:
+svn commit -F changes:
+  ObitVersion:
+  Obit/changes.log:
+  Obit/python/EVLAContPipe.py Obit/python/EVLACal.py:
+    doFD1 flag all sources
+    cleanup problems found during documentation
+  Obit/share/data/3C286ChiModel.fits:
+    3C286 C band hi wideband calibrator model.
+  Obit/share/scripts/EVLAContTemplateParm.py:
+    EVLA continuum parameter script template
+  Obit/python/UV.inc:
+    include header for ObitTableCLGetDummy
+  Obit/python/OASDM.inc:
+    remove unused variables
+  Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+    Update python interface
+1 May 2012, version 416
+
+Mostly BDFIn and EVLA scripting changes
+ObitVersion:
+Obit/changes.log:
+Obit/python/OASDM.inc Obit/python/EVLACal.py:
+  trap incomplete ASDM
+  Add entityId to Main table python interface
+  Receiver table
+Obit/python/EVLAContPipe.py:
+  fix misspelling of outIClass
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Rebuild python interface
+Obit/TDF/ImPlot.TDF:
+  Increase limits on BLC, TRC
+Obit/src/ObitPlot.c:
+  Trap galactic coordinates for axis labels
+Obit/python/OASDM.py:
+  Get1stBandpassScan: Fix bug in handling ref day.
+      Check that bdf data exists
+  GetAmpCal: Check names against list
+  Receiver table
+Obit/python/ImageDesc.py:
+  Add OErr. to calls to printErrMsg
+Obit/src/ObitPBUtil.c:
+  Fix 74 MHz beam to new VLSS fit.
+Obit/src/ObitImageDesc.c:
+  better test for overlap
+Obit/doc/OBITdoc.tex:
+Obit/src/ObitTableFQ.c Obit/include/ObitTableFQ.h:
+Obit/include/ObitTableFQDef.h  Obit/include/ObitTableFQClassDef.h:
+Obit/include/ObitTableFQRowDef.h  Obit/include/ObitTableFQRowClassDef.h:
+  Add RXCODE column.
+Obit/src/ObitSDMData.c Obit/include/ObitSDMDataTypeDef.h:
+  Implement Receiver table and band codes
+Obit/tasks/ASDMList.c Obit/tasks/Lister.c:
+  Display SW bandcodes
+Obit/src/ObitVLAGain.c Obit/include/ObitVLAGain.h:
+  Update gain table, allow for multiple frequency gain curves
+Obit/tasks/BDFIn.c:
+  Implement new EVLA gain tables
+  Write band coded into FQ table.
+18 May 2012 version 417
+
+Mostly BDFIn and EVLA scripting fixes
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitTableCLUtil.c:
+  GetDummy: Delete row when done.
+Obit/python/OASDM.inc Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  OASDMCreate: Fix format
+Obit/python/OPrinter.inc:
+  OPrinterOpen fix signature
+Obit/python/BeamShape.py:
+  fix call to Gain
+Obit/tasks/BDFIn.c:
+  Fix bugs in ALMA bandcode
+  Fix indexing of ALMA scan/subscans
+Obit/TDF/WVRCal.TDF:
+  Improve documentation.
+1 Jun 2012, ver 418
+
+
+Mostly BDFIn (VLA gain table) and EVLA scripting fixes
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitVLAGain.c:
+  Update broken gain table.
+Obit/share/scripts/EVLATemplateParm.py:
+  Fixes in parameters
+Obit/TDF/FndSou.TDF:
+ documentation
+20 Jun 2012, ver 419
+
+Mostly BDFIn (ALMA)
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitUVDesc.c:
+  Fix sideband bugs in logic calculating channel frequencies
+Obit/src/ObitPrinter.c:
+  Allow larger lines in output
+Obit/src/ObitFile.c:
+  Bigger XMLBUFFERSIZE (262144), Fixes BDFIn problem.
+Obit/tasks/Lister.c:
+  doGAIN: do not calculate geometry for antennas not in the array.
+4 Jul 2012, ver 420
+
+Mostly Polarization and scripting related
+Obit/changes.log:
+Obit/share/scripts/EVLAContTemplateParm.py:
+  doLoadArchive set in parms at end
+Obit/python/OASDM.py:
+  GetAmpCal: add funky EVLA calibrator names, e.g. "0542+498=3C147"
+Obit/python/EVLACal.py:
+  EVLAParseASDM: add BP cal to DlyCal
+  EVLAStdModel: add funky name for 3C286
+Obit/src/ObitUVCalSelect.c:
+  ObitUVCalSelectRLInit: Fix check for LL (failed if only RR & LL)
+Obit/tasks/MFImage.c Obit/tasks/MFBeam.c:
+  BLAvg: Don't average all channels
+Obit/src/ObitTableANUtil.c:
+  ObitTableANGetList: Trap AIPS poln problems.
+Obit/src/ObitUVCalPolarization.c:
+  Fixes to Elp/Ori polarization, major upgrade for EVLA
+Obit/src/ObitUVCal.c:
+  Check if PD table exists if to be used in poln cal.
+Obit/include/ObitPolnCalFitClassDef.h Obit/include/ObitPolnCalFitDef.h:
+Obit/include/ObitPolnCalFit.h Obit/src/ObitPolnCalFit.c:
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF:
+  New class and task for polarization calibration, does circ. feeds.
+Obit/include/ObitCArray.h Obit/include/ObitCArrayClassDef.h Obit/src/ObitCArray.c:
+   Add function for matrix multiplies
+Obit/include/ObitComplex.h:
+   New package of definitions and macroes for complex arithmetic in c
+Obit/src//ObitTableCLUtil.c:
+  GetDummy: Delete old CL table if extant, cleanup.
+26 Jul 2012 ver 421
+
+Mostly Polarization and scripting related
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitUVCalPolarization.c:
+  Improved matrix inversion for ORI- mode.
+Obit/tasks/CLCor.c Obit/TDF/CLCor.TDF:
+  New task for modifying CL tables.
+Obit/share/scripts/SpectrumUtils.py:
+  OImageSpectrum: fix bug with number of channels
+Obit/share/scripts/EVLAContTemplateParm.py:
+Obit/python/EVLAContPipe.py Obit/python/EVLACal.py:
+  upgrade
+Obit/src/ObitPolnCalFit.c:
+  Reset defaults at start of each IF.
+Obit/tasks/MFImage.c Obit/tasks/Imager.c:
+  Fix missing History items
+Obit/TDF/UVAppend.TDF:
+  Improve documentation
+4 Aug 2012 version 422
+
+Mostly Polarization and scripting related
+ObitVersion:
+Obit/changes.log:
+Obit/python/Image.py:
+  Add Rename/PRename functions
+ObitView/src/Makefile.in:
+ Add special case for XMLRPCTaskMessServer.o
+Obit/src/ObitTableSU.c Obit/include/ObitTableSU.h:
+Obit/include/ObitTableSUDef.h Obit/include/ObitTableSUClassDef.h:
+Obit/include/ObitTableSURowDef.h Obit/include/ObitTableSURowClassDef.h:
+  Add RAOBS and DECOBS colummns
+Obit/src/ObitUVCalPolarization.c:
+  Undefined variables
+Obit/src/ObitUVReweight.c Obit/include/ObitUVReweight.h:
+  New utility to reweight data by 1/variance of amp.
+Obit/tasks/UVAppend.c  Obit/TDF/UVAppend.TDF:
+  Add reweighting data as an option.
+Obit/python/EVLACal.py:
+  get type correct for doPol.
+Obit/src/ObitPolnCalFit.c Obit/include/ObitPolnCalFit.h:
+Obit/include/ObitPolnCalFitDef.h:
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF:
+  Implement fitting phase difference, fix fract. pol.
+14 Aug 2012 version 423
+
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitUVCalPolarization.c Obit/src/ObitPolnCalFit.c:
+  Fix parallactic angle sign bug
+Obit/tasks/RLPass.c:
+  Add missing history items.
+Obit/src/ObitUVUtil.c:
+  Hann: Add doDescm option
+Obit/tasks/Hann.c Obit/TDF/Hann.TDF:
+  Add doDescm parameter
+Obit/python/OErr.py:
+  printErrMsg:fix bug in raise statement
+Obit/python/EVLACal.py:
+  New parameter doDescm for Hanning
+  Tolerate failure of plotting of spectra
+Obit/python/EVLAContPipe.py:
+  New parameter doDescm for Hanning
+Obit/python/EVLACal.py:
+  Implement copying failed A&P calibration solutiong to FG table
+  EVLASpecPlot: Update header to get best calibration and editing
+Obit/tasks/PCal.c:
+  Average IF and poln in self cal.
+Obit/src/ObitPolnCalFit.c Obit/include/ObitPolnCalFit.h:
+Obit/include/ObitPolnCalFitDef.h:
+  Restore last valid source soln for crazy reset
+  Require all Stokes in each vis/channel
+  Better normalization of RMSes
+  Improve diagnostics
+27 Aug 2012, svn version 424
+
+Fixes for AIPS compatibility
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitFile.c Obit/include/ObitFile.h:
+  Pad: change padTo to ObitFilePos (64 bit) from olong (32 bit).
+Obit/src/ObitIOUVAIPS.c:
+  Pad UV files to multiples of 1024.
+Obit/src/ObitIOTableAIPS.c:
+  WriteRow: proper type (olong) for size.
+27 Aug 2012, svn version 425
+
+Numerous fixes for scripts, bug fixes
+ObitVersion:
+Obit/changes.log:
+Obit/src/ObitIOUVAIPS.c:
+  Close: use ObitFilePadFile rather than ObitFilePad
+  Flush: Wonky pad after flush.
+Obit/src/ObitUVEdit.c:
+  various: Error check after read
+  various: not so many zero digits in diagnostics
+Obit/doc/OBITdoc.tex:
+  Add RAOBS and DECOBS to description of AIPS SU table
+  Fix numAnt in PD table so that it's recognized as a nonstructural keyword
+Obit/python/TablePD.inc Obit/python/TableSU.inc:
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+Obit/src/ObitTablePD.c Obit/src/ObitTableSU.c:
+Obit/include/ObitTablePD*.h Obit/include/ObitTableSU*.h:
+  new table definition
+Obit/TDF/AutoFlag.TDF:
+  Add warning about minAmp
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF:
+  Remove initial self cal
+Obit/TDF/MFImage.TDF:
+  Typo
+Obit/python/EVLAContPipe.py:
+  Give plot files in recalibration distinct names
+  Add threading to PCal
+  Allow turning off VClip and XClip flagging
+Obit/share/scripts/EVLATemplateParm.py:
+  Various improvements
+Obit/python/EVLACal.py:
+  Increase default solution intervals for calibration.
+  Change default FDmaxRMS for A config from 4 to 5.
+  Use phase calibrators for inst. poln cal.
+  Fix bug in looping in A&P calibration and better diagnostics
+  Add threading to PCal
+  DelayCal: clip bad solutions, don't plot phases (all 0)
+Obit/src/ObitPolnCalFit.c:
+  Do not create BP table if not fitting RL phase
+  Add phase difference to PD table.
+  Fix bug with RLPhase
+  Fix bug labeling IF being processed
+  Tighten convergence criteria in doFitFast
+  Allow 2 iterations (not min 4) in doFitGSL
+Obit/src/ObitUVCalPolarization.c:
+  SetInvJonesCh: Fix number of channels used
+  Update choff if < 4 stokes in channel loop
+Obit/python/OTObit.py:
+  imtab: Open/Close inImage to fully instantiate.
+Obit/src/ObitUVUtil.c:
+  BlAvgTF: make buffer size OS dependent to keep from blowing memory
+Obit/tasks/UVSub.c Obit/TDF/UVSub.TDF:
+  add PDVer, Alpha, DataType2 parameters
+  set doCalSelect=T
+  change nmaps to nfield
+Obit/python/ EVLAPolnScripts.py:
+  New package for EVLA poln calibration.
+Obit/src/ObitIOUVFITS.c:
+  Fix problem(?) with buffer size
+Obit/src/ObitSkyModelMF.c:
+  For tabulated spectra modeled vis a DFT, fix and include the spectral index.
+21 Sep 2012, svn version 426
+
+Bug fixes
+Obit/changes.log:
+Obit/python/EVLACal.py:
+  EVLACalModel: changed default CalModelSI from -0.7 to 0.0
+  EVLAAutoFlag: Check is anything requested, else just return
+Obit/tasks/UVSub.c:
+  Get in2Disk for input FITS model
+Obit/tasks/TabCopy.c Obit/TDF/TabCopy.TDF:
+  Add outDType parameter to allow different input and output types.
+Obit/src/ObitUVGSolveWB.c Obit/include/ObitUVGSolveWB.h:
+  Fixed bug with frequency increment per IF in coarse search
+  Fixed bug for 1 IF and bad reference antenna
+Obit/src/ObitUVEdit.c:
+  Fix bug in FD editing, could toss all data.
+28 Sep 2012, svn version 427
+
+Bug fixes
+Obit/changes.log:
+Obit/src/ObitSkyModelMF.c:
+  Don't fit spectrum if insufficient frequencies.
+Obit/src/ObitIOUVFITS.c:
+  Fix recent buffer bug
+Obit/python/EVLAPolnScripts.py :
+  Upgrade
+03 Oct 2012, svn version 428
+
+Bug fixes
+Obit/include/ObitUVDesc.h Obit/src/ObitUVDesc.c:
+  New function ObitUVDescSetNVis to calculate the number of vis per I/O 
+  with memory constraints.
+Obit/tasks/UVSub.c Obit/tasks/Calib.c Obit/tasks/MFImage.c:
+Obit/tasks/Imager.c Obit/tasks/MFBeam.c Obit/tasks/BeamCor.c:
+Obit/tasks/IonImage.c Obit/tasks/IonCal.c Obit/tasks/BPass.c:
+Obit/tasks/MapBeam.c Obit/tasks/MazrCal.c Obit/tasks/PCCor.c:
+Obit/tasks/RLDly.c Obit/tasks/RLPass.c Obit/tasks/SCMap.c:
+Obit/tasks/Squint.c Obit/tasks/SWImag.c Obit/tasks/UVPolCor.c:
+Obit/tasks/UVSim.c Obit/tasks/WVRCal.c:
+  Implement number of vis per I/O with memory constraints
+  Imaging tasks trap no self cal actually done.
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py:
+  parameter delaySolInt for delay solution interval, lomger solInt default
+  change default delayZeroPhs to False
+  FG 1 in imaging
+  'P' rather than 'DELA' default solPMode
+  EVLAAutoFlag: allow RMSAvg flagging
+Obit/tasks/Lister.c:
+  getDataScale: Only read 50 data for scaling
+Obit/src/ObitUVCalBandpass.c:
+  ObitUVCalBandpassNewTime: fix bug in indexing Prior BP table
+  Fix bugs in doBand==2 logic
+Obit/python/EVLAPolnScripts.py:
+  SelfCal: Add source specific minSNR and avgPol
+Obit/src/ObitIOTableFITS.c:
+  WriteDescriptor: Correctly determine number of dimensions in each column.
+Obit/python/UVDesc.py:
+  PPoslabel: labels for XX and YY pol.
+Obit/doc/OBITdoc.tex:
+  improve documentation of AIPS CC table.
+Obit/src/ObitUVRLDelay.c Obit/tasks/RLDly.c Obit/TDF/RLDly.TDF:
+  add fitType parameter to control which data used.
+Obit/src/ObitUVCalBandpass.c:
+  Fix potential problem in indexing in NewTime.
+Obit/include/ObitAntennaDef.h:
+  Correct stated units of FeedAPA & FeedBPA (really deg)
+Obit/python/Table.py:
+  PGetIOList: fix bug in creating output
+25 Oct 2012, svn version 429
+
+Bug fixes, KAT7 stuff
+Obit/tasks/BPass.c Obit/tasks/PCal.c Obit/tasks/RLDly.c:
+Obit/tasks/RLPass.c Obit/tasks/UVPolCor.c/\
+  Fix call to ObitInfoListAlwaysPut, undefined type
+Obit/python/UVDesc.py Obit/python/UVDesc.inc:
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Add interface to GST@UTC=0 and earth rotation rate routines
+Obit/python/KATH5toAIPS.py:
+  Convert KAT7 HDF5 data to Obit
+Obit/share/data/ KAT7Template.uvtab.gz:
+  Template KAT data (full stokes, 1024 channels)
+Obit/python/EVLAPolnScripts.py:
+  Fix bug in Image setting name in output structure
+Obit/src/ObitDConCleanVisMF.c Obit/src/ObitDConCleanPxListMF.c:
+  GetSpecBeamPatch: better trap for bad beam.
+Obit/tasks/Lister.c:
+  doSCAN: make more robust against problems in SU table.
+Obit/src/ObitUVCalPolarization.c:
+  flag xpol data if either of the PD  solutions failed.
+Obit/src/ObitPolnCalFit.c Obit/include/ObitPolnCalFitDef.h:
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF: 
+  Add parameter to control if failed solutions are blanked.
+Obit/python/EVLACal.py:
+  EVLACalAP: Fix bugs in amplitude smoothing
+Obit/src/ObitVLAGain.c:
+  New VLA gain table from Bryan Butler.
+Obit/tasks/BDFIn.c:
+  GetSysPowerInfo: Fix bug in lookup table when only some SWs in a config are selected.
+1 Nov 2012, svn version 430
+
+Bug fix
+Obit/tasks/RLPass.c:
+  Remove random bad character
+2 Nov 2012, svn version 431
+
+
+Linear feed polarization, bug fixes
+ Obit/src/ObitPlot.c:
+  Fixed declaration error in pgplot segments
+Obit/python/EVLACal.py:
+  Set userno on each task object
+Obit/include/ObitRPC.h :
+ObitView/src/XMLRPCserver.c ObitView/src/XMLRPCTaskMessServer.c:
+  Comment out unneeded include (fails in RH 6)
+Obit/tasks/SetJy.c:
+  Trap 1 IF bug.
+Obit/src/ObitUVEdit.c:
+  EditFD: fix bug in indexing linear poln.
+Obit/src/ObitSkyModelMF.c:
+  InitMod: deal with lower sidebands
+../README:
+  Document modifications needed for RHEL6
+Obit/tasks/UVAppend.c :
+  Make sure a source is specified for a multisource input.
+Obit/share/data/KAT7Template.uvtab.gz:
+  Add projection codes (-SIN), dummy FG table.
+Obit/python/UVDesc.py:
+  Correct label for Stokes==-5
+Obit/include/ObitComplex.h:
+  Fix bug if one output was an input
+Obit/src/ObitUVCalPolarization.c  Obit/include/ObitUVCalPolarizationDef.h:
+  Implement linear feed ELORI calibration
+Obit/src/ObitPolnCalFit.c Obit/include/ObitPolnCalFit.h  Obit/include/ObitPolnCalFitDef.h:
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF:
+  Implement linear feed ELORI calibration
+Obit/src/ObitUVRLDelay.c Obit/tasks/RLDly.c Obit/TDF/RLDly.TDF:
+  Add solution interval, specifying output SN table.
+19 Nov 12, snv ver 432
+
+Mostly bug fixes, 1D Gaussian fitting
+Obit/python/EVLACal.py:
+   Change scratch file header for POSSM plots to RR,LL...
+   More fiddling with damn task user number.
+Obit/include/ObitFArrayUtil.h Obit/src/ObitFArrayUtil.c:
+  New routine ObitFArrayUtilFit1DGauss to fit 1D gaussian+baseline
+Obit/python/FArrayUtil.py Obit/python/FArrayUtil.inc:
+  python interface to new Gaussian fitting routine
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  update python interface
+Obit/src/ObitPolnCalFit.c:  
+  Set in->doFitGain = FALSE for circular feeds.
+  Fix bug with RL parallactic angle sign, convergence
+23 Nov 12, snv ver 433
+
+Mostly Bug fixes for KAT
+Obit/changes.log:
+Obit/python/EVLAPolnScripts.py:
+  Add .strip() to CalName references.
+Obit/include/ObitImageMosaic.h Obit/src/ObitImageMosaic.c:
+Obit/src/ObitImageMosaicMF.c Obit/src/ObitImageMosaicWB.c:
+  Add diam argument to AddOutlier
+  Trap KAT-7 and set diameter to 12 m.
+Obit/share/data/SUMMSVZ.FIT.gz:
+  SUMMS outlier catalog
+Obit/src/ObitPBUtil.c:
+  Jinc: upper bounds on x
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py:
+  Better control over primary beam correction in imaging.
+Obit/src/ObitUVCalSelect.c:
+  Select: Min no IF=1
+Obit/src/ObitUVPeelUtil.c:
+  Loop: Register number of peeled components in CLEAN so they get restored
+Obit/src/ObitUVGSolveWB.c \
+  FindFFTPeak: dimension pos 1 NOT 0
+15 Dec 12, snv ver 434
+
+Mostly new UV editing, KAT scripting, bug fixes
+ObitVersion:
+Obit/changes.log:
+Obit/include/ObitUVEdit.h Obit/src/ObitUVEdit.c:
+  Add functions EditElev, EditShadCross
+Obit/include/ObitUVWCalcClassDef.h  Obit/include/ObitUVWCalcDef.h Obit/include/ObitUVWCalc.h:
+Obit/src/ObitUVWCalc.c:
+  New class to calculate u,v,w for UV data
+Obit/tasks/UVFlag.c Obit/TDF/UVFlag.TDF:
+  New task for flagging UV data
+Obit/python/MakeIFs.py:
+  convert a dataset to multiple IFs
+Obit/python/KATH5toAIPS.py:
+  Faster version
+Obit/python/UVDesc.inc:
+  Allow setting numVisBuff in descriptor
+Obit/python/Table.inc Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  WriteRow: Better error trap/message for bad input dict
+Obit/python/UV.py:
+  Add PTableCLfromNX for faster generation of an initial CL table
+Obit/src/ObitPBUtil.c:
+  Jinc: Fix bug introduced in last change, fix scaling with antenna size
+Obit/python/EVLACal.py:
+  Shadow flagging now uses Obit UVFlag
+  Fixes for linear feeds
+  Add 'Beam' parameter to specify CLEAN beam
+Obit/python/LinPContPipe.py:
+  Script for arrays with linearly polarized feeds
+1 Jan 2013, svn ver 437
+
+Mostly Cleanup, bug fixes, installation fixes, some from Ludwig Schwardt
+ObitVersion:
+Obit/changes.log:
+Obit/python/TableDesc.inc Obitpython/ObitTypeMaps.swig:
+  TableDescDef, typemap (python,in) ObitImage: fix returns
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  returns fixed
+Obit/src/ObitImageUtil.c Obit/src/ObitIOImageFITS.c Obit/src/ObitPrecess.c
+Obit/src/ObitSkyModelVMSquint.c Obit/src/ObitUVCalCalibrate.c
+Obit/src/ObitUVCalPolarization.c Obit/src/ObitUVGSolve.c Obit/src/ObitUVRLDelay.c
+Obit/src/ObitUVSelfCal.c Obit/tasks/WVRCal.c:
+ObitSD/src/ObitOTFArrayGeom.c:
+  Cleanup compiler complaints 
+Obit/src/ObitTableCLUtil.c:
+  GetDummy: always test ilocsu.
+Obit/python/UV.py:
+  PTableCLGetDummy: Fix documentation for solInt
+ObitTalk/python/ObitTalk.py:
+  Comment out suppression of LD_PRELOAD
+../InstallObit.sh ../other/Install3rdParty.sh:
+  set PKG_CONFIG_PATH before building 3rd party software
+  add "with-wvr"
+Obit/src/Makefile.in:
+  filter out ObitAIPSFortran.c ObitAIPSObject.c from build (from LS)
+ObitTalk/doc/Makefile.in:
+  Make DOCdir with -p option (from LS)
+ObitView/Makefile.in:
+  Add plplot libraries (from LS)
+ObitView/m4/obit.m4 ObitView/configure:
+ObitSD/m4/obit.m4 ObitSD/configure:
+  Better test for xmlrpc routines. (from LS)
+Obit/include/ObitThread.h Obit/src/ObitSDMData.c Obit/src/ObitTableUtil.c:
+Obit/src/ObitTableCCUtil.c ObitUVSortBuffer.c:
+  Comment out including lower level glib includes  (from LS)
+Obit/m4/python.m4 Obit/configure:
+  better search for python executable  (from LS)
+Obit/m4/wvr.m4 Obit/tasks/WVRCal.c:
+  Fixes for wvr library (from LS)
+Obit/m4/plplot.m4 ObitView/m4/plplot.m4:
+  Fixes for plplot library (from LS)
+Obit/python/KATH5toAIPS.py:
+  Update to new katfile
+Obit/testScripts/Makefile:
+  Restore Makefile for running tests
+Obit/testScripts/testObit.py Obit/testScripts/testHGeom.py
+Obit/testScripts/testFeather.py Obit/testScripts/testUVImage.py
+Obit/testScripts/testUVSub.py Obit/testScripts/testtestCleanVis.py
+Obit/testScripts/testPlot.py:
+  Add optional data directory argument
+7 Jan 2013, svn 348
+
+Major changes to u,v,w calculation and some bug fixes
+Obit/changes.log:
+Obit/tasks/UVFix.c Obit/TDF/UVFix.TDF:
+  New task to recompute u,v,w
+Obit/include/ObitUVWCalcDef.h Obit/src/ObitUVWCalc.c:
+  Change to AIPS/UVFIX method for calculating u,v,w
+Obit/include/ObitUVUtil.h Obit/src/ObitUVUtil.c:
+ Add new routine CalcUVW to copy data with recomputing u,v,w 
+Obit/tasks/BDFIn.c:
+  Implement better u,v,w calculation for stationary sources
+Obit/include/ObitPrecess.h Obit/src/ObitPrecess.c:
+  Expose low level precession routine Precess
+Obit/tasks/UVAppend.c:
+  Copy History from input, not just from header
+Obit/src/ObitPolnCalFit.c:
+  Fit: Fix logic in reallocating work arrays.
+  Update*: blank any missing antennas
+Obit/TDF/Splat.TDF:
+  Change default corrType to 1 (XC+AC)
+Obit/src/ObitImageMosaic.c Obit/src/ObitImageMosaicMF.c
+Obit/src/ObitImageMosaicWB.c:
+  Increase image guardband for mosaics
+Obit/src/ObitUVSoln.c:
+  ObitUVSolnSmooMWF: test for all blanked data.
+Obit/tasks/SNFilt.c:
+  Better diagnostics when all solutions fail
+Obit/python/EVLAContPipe.py:
+  on doRecal for parallactic angle correction if either doPACor or doPolCal
+  This only works for circ poln.
+Obit/src/ObitPolnCalFit.c:
+  WriteOutput: Init BP table if fitting Gains
+Obit/src/ObitPBUtil.c: 
+  Poly: Correct coefficients for VLA 74 MHz also bug which caused 74 MHz data 
+  to use P band curve
+svn version 439, 30 Jan 2013
+
+Mostly bug fixes, esp. for poln.
+ObitVersion:
+Obit/src/ObitUVSel.c:
+   SetDesc: If calibrating linear feed poln, convert descriptor to 
+   circular basis
+Obit/tasks/Split.c:
+   Better setup for polarization calibration.
+Obit/python/Table.inc Obit/python/UVDesc.inc Obit/python/ImageDesc.inc:
+  WriteRow: Fix type in Obit_log_error call
+Obit/python/ImageMF.inc:
+  Correct call to  ObitImageFullInstantiate
+Obit/python/Source.py Obit/python/Source.inc:
+  New interface to Obit Source objects.
+Obit/python/AntennaList.py Obit/python/AntennaList.inc:
+  New interface to Obit AntennaList objects.
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+Obit  Rebuild python interface
+Obit/python/LinPContPipe.py:
+  Add script names to history, bug fixes
+Obit/python/EVLACal.py:
+  Routine to write script names to history, default param["Beam"]
+Obit/src/ObitPolnCalFit.c:
+  Check that input UV is multisource.
+  dump of data/model now err->prtLv>=4
+  Bug fixes.
+Obit/src/ObitUVCal.c:
+  Start: info member "KeepSou" to override removing "Source" RP.
+Obit/src/ObitUVCal.c:
+  Open: document descriptor info member "KeepSou" to override removing "Source" RP.
+Obit/src/ObitUVDesc.c:
+  Copy: Keep any extant output info members.
+Obit/tasks/PCal.c:
+   Override removing "Source" random parameter if one source selected.
+svn version 440 9 Feb 2013
+
+Fix screwup
+Obit/python/Table.inc Obit/python/UVDesc.inc Obit/python/ImageDesc.inc:
+  Fix (?) incompatability with old python
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Update python interface
+svn version 441 11 Feb 2013
+
+Mostly polarization calibration/analysis,  speed up CLEAN
+ObitVersion:
+Obit/changes.log:
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py:
+Obit/python/EVLAPolnScripts.py:
+  Fix problems in BP table handling for RL spectrum, other bugs
+Obit/python/MosaicUtil.py:
+  PWeightImage: Better handling of edge of selected image
+Obit/src/ObitFInterpolate.c:
+  Less aggressive extrapolation over blanking, efficiency improvements,
+Obit/tasks/FndSou.c:
+  Ignore islands with more than 0.1% blanked pixels.
+Obit/src/ObitSkyModelMF.c:
+  InitMod: if input frequency out of tabulated model range, force DFT
+Obit/tasks/PCCor.c:
+  GetSBAmbig: Trap no PC table.
+Obit/include/ObitRMFitClassDef.h Obit/include/ObitRMFitDef.h Obit/include/ObitRMFit.h:
+Obit/src/ObitRMFit.c:
+Obit/python/RMFit.py  Obit/python/RMFit.inc:
+  New class and python binding to fit rotation measures.
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Rebuild python interface
+Obit/python/ImageUtil.py:
+  PImageT2Spec: Update output header
+Obit/src/ObitTableCCUtil.c:
+  FixTSpec: Don't override passes nterm
+  T2Spec: Get reference frequency from output
+Obit/include/ObitDConCleanVisDef.h:
+Obit/src/ObitDConCleanVis.c  Obit/src/ObitDConCleanVisMF.c:
+Obit/src/ObitDConCleanVisWB.c:
+  Change logic to reduce unnecessary re imaging.
+Obit/tasks/MFImage.c:
+  Add BLVer parameter (not in TDF).
+Obit/python/Table.inc Obit/python/UVDesc.inc Obit/python/ImageDesc.inc:
+  Variable with data type Py_ssize_t if python < 2.5
+Obit/python/ObitTypeMaps.swig:
+  Add typedef for  Py_ssize_t if python < 2.5
+svn version 442 25 Feb 2013
+
+
+Various, esp. calibration and polarization related,
+also performance enhancements.
+Obit/tasks/SNSmo.c:
+   SNSmoIn: Initialize output before parsing input.
+Obit/src/ObitUVSoln.c:
+  SNSmooth: Trap unknown smoothing type.
+Obit/src/ObitThread.c:
+  Triple timeout to 1.5 hr.
+Obit/python/EVLAPolnScripts.py:
+  Image: Add Beam to arguments,
+  SelfCal: allow baseline dependent time averaging.
+Obit/share/data/3C286*Band.CalModel.fits.gz:
+  Improved calibrator models for 3C 286 at L, C and X band
+Obit/src/ObitRMFit.c Obit/include/ObitRMFitDef.h Obit/python/RMFit.py:
+  Switch to nonlinear soln
+  Add minFrac option
+  Better handling of missing frequencies
+Obit/src/ObitUVWCalc.c:
+  Add KAT-7 to list of antennas to reverse baseline sign
+Obit/tasks/UVFix.c:
+  Index output multisource datasets. Copy tables not applied
+Obit/src/ObitFitRegion:
+  Create: create new list of models
+Obit/src/ObitImageUtil.c:
+  FitBeam: Get correct fitted parameters.
+Obit/src/ObitSkyModelMF.c:
+  Implement threaded FFTs
+Obit/src/ObitFFT.c Obit/include/ObitFFT.h:
+  Allow threaded FFTW3 usage
+Obit/src/ObitUVGridMF.c:
+  Allow threaded FFTs
+Obit/include/ObitDConCleanPxListDef.h Obit/src/ObitDConCleanPxList.c:
+Obit/src/ObitDConCleanPxListMF.c:
+  Add CC table row structure for each table, rather than frequent recreate,
+  MFCLEAN: Add speed enhancements.
+Obit/include/ObitFArrayClassDef.h Obit/include/ObitFArray.h:
+Obit/src/ObitFArray.c:
+  Add function Abs
+  Add function AddAbs
+  ExtArr: Fix logic for blanked pixels
+Obit/src/ObitImageMF.c:
+  Revise handling of plane extrema, esp. for poln.
+Obit/src/ObitDConCleanVis.c:
+  MakeResiduals: Fix bug with definition of Stale images.
+  Deconvolve: Fix bug with termination.
+Obit/src/ObitDConCleanVisMF.c:
+  MFSub: Mark in->fresh as FALSE
+12 Apr 2013, svn version 445
+
+ObitView improvements, various bug fixes.
+ObitView/ObitView.c ObitView/ObitView.hlp
+ObitView/include/obitview.h
+ObitView/include/saveimwindow.h ObitView/src/saveimwindow.c
+ObitView/src/aboutbox.c ObitView/src/drawbox.c 
+ObitView/src/helpbox.c ObitView/src/menu.c   ObitView/src/toolbox.c :
+  Add option to write image window to a text file
+  Remember where file browser was
+Obit/python/OASDM.py:
+  Get1stBandpassScan: Find scan in scan by "scanNumber" rather than index
+Obit/tasks/BDFIn.c:
+  several: Better protection against poorly defined datasets
+Obit/python/EVLACal.py:
+  EVLAPolCal: implement fixPoln
+Obit/python/EVLAContPipe.py:
+  no prior BPCal in call to EVLARLCal
+Obit/python/MosaicUtil.py:
+  PWeightImage: remove debug statement
+Obit/src/ObitDConCleanPxList.c Obit/src/ObitDConCleanPxListMF.c:
+  several: fix indexing bug
+26 Apr 2013, svn version 446
+
+Trap online scans in BDFIn
+Obit/tasks/BDFIn.c:
+  Ignore scans with intents "UNSPECIFIED", "INTERNAL_CALIBRATION"
+29 Apr 2013, svn version 447
+
+Mostly almawvr library fixes
+Obit/src/ObitDConClean.c:
+  ImageStats: restore original BLC, TRC
+Obit/tasks/WVRCal.c:
+  various: update name of WVR library, subdirectory for headers
+Obit/m4/wvr.m4 Obit/configure:
+  change subdirectory for headers
+2 May 2013, svn version 448
+
+Various bug fixes
+Obit/tasks/Lister.c:
+  doGAIN: min souID=1, Table may have 0
+Obit/tasks/WVRCal.c:
+  various: cleanup.
+Obit/include/ObitDConCleanPxList.h Obit/src/ObitDConCleanPxList.c:
+Obit/src/ObitDConCleanPxListMF.c:
+  New completion code,  OBIT_CompReasonNoPixel if no pixels to CLEAN
+Obit/src/ObitDConCleanVis.c:
+  Deconvolve: do not loop forever with no pixels CLEAned.
+Obit/src/ObitPolnCalFit.c:
+  Test if a single antenna is bad, toss and refit
+Obit/src/ObitUVImager.c:
+  Various: add "RobustIF", "TaperIF", "MFTaper" to info items copied
+Obit/src/ObitDConCleanWindow.c:
+  Copy: Fix bug in allocating out->naxis
+Obit/src/ObitDCon.c:
+  Copy: Copy rather than Ref mosaic member.
+Obit/src/ObitGainCal.c:
+  Calc: Make sure only one CL/SN table entry written for zero length scan.
+Obit/src/ObitBDFData.c:
+  InitScan: Always set isLSB=False, i.e. don't flip lsb data, it should be 
+  correctly labeled.  ALMA LSB data was having the spectra reversed.
+10 May 2013, svn version 449
+
+Fast spectral line imaging and fixes to BDFIn for ALMA CalAtmosphere table
+Obit/changes.log:
+Obit/src/ObitBDFData.c:
+  various: use new routine findString rather than the dysfunctional g_strstr_len
+Obit/include/ObitALMACalAtm.h Obit/include/ObitALMACalAtmDef.h:
+Obit/src/ObitALMACalAtm.c Obit/include/ObitALMACalAtmClassDef.h :
+  New class for fast parallel multithreaded spectral line CLEANs.
+Obit/src/ObitSDMData.c:
+  Implement reading either xml or binary ALMA CalAtmosphere tables.
+Obit/include/ObitDConCleanVisLine.h Obit/include/ObitDConCleanVisLineDef.h :
+Obit/src/ObitDConCleanVisLine.c Obit/include/ObitDConCleanVisLineClassDef.h :
+  New class to parse ALMA SysAtmosphere binary tables
+Obit/src/ObitDConCleanVis.c Obit/include/ObitDConCleanVis.h Obit/include/ObitDConCleanVisDef.h:
+ Upgraded to support VisLine child class.
+Obit/src/ObitTableCCUtil.c Obit/include/ObitTableCCUtil.h:
+  New function CombTSpec to combine simple tables into a TSpec table.
+Obit/src/ObitImageUtil.c Obit/src/ObitImageMosaic.c :
+Obit/src/ObitUVGridMF.c  Obit/src/ObitUVWeight.c :
+  Support fast variant of spectral line multithread CLEAN.
+Obit/TDF/Imager.TDF Obit/tasks/Imager.c:
+  Implement fast variant of spectral line multithread CLEAN.
+Obit/src/ObitUVReweight.c:
+  Do: initialize firstVis
+20 May 2013, svn version 450
+
+Bug fixes
+Obit/include//ObitDConCleanVisClassDef.h:
+  Missed from previous update
+Obit/tasks/FndSou.c:
+  Fix problems making very strong sources disappear
+21 May 2013, svn version 451
+
+Improvements in Faraday rotation handling, FndSou for v. bright soutces,
+add frequency control for beam shapes, various bug fixes.
+ObitVersion:
+Obit/changes.log:
+Obit/tasks/BDFIn.c:
+  Fix indexing bug for EVLA data with subbands
+Obit/src/ObitDConCleanPxListMF.c:
+  CLEAN: only set return value True if CLEAN finished,
+  fix logic inside double loop.
+Obit/tasks/FndSou.c:
+  Improve algorithm when very bright source in field.
+Obit/src/ObitTableSUUtil.c:
+  Trap zero GMRT SU table entries 
+Obit/python/UVVis.py:
+  Document SourceID
+Obit/python/Source.py:
+  PCreateByName: Fix bug in call sequence
+Obit/python/Source.inc:
+  SourceCreateByName" Fix bug.
+Obit/python/UVVis.inc:
+   Add error check after I/O
+Obit/python/Obit_wrap.c  Obit/python/Obit_wrap.c:
+  New interface
+Obit/tasks/MapBeam.c:
+  Better diagnostics, more robust
+Obit/TDF/Splat.TDF Obit/tasks/Splat.c:
+  Add PDVer parameter.
+Obit/TDF/WVRCal.TDF:
+  Improve documentation, defaults
+Obit/src/ObitTableVLUtil.c:
+  Redun: Fix bug in logic deciding which component to keep.
+  Was losing components in the same field from complex regions.
+Obit/python/SpectrumFit.py:
+  Cube: document usage for ImageMF images.
+Obit/include/ObitBeamShape.h:
+  Add GetFreq, SetFreq as inline
+Obit/python/BeamShape.inc Obit/python/BeamShape.py:
+  implement GetFreq, SetFreq 
+Obit/TDF/PCal.TDF:
+  Improve documentation
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py:
+  Allow specifying calibrator polarization for PCal
+Obit/include/ObitPolnUnwind.h  Obit/src/ObitPolnUnwind.c:
+  New module to remove Faraday rotation from a cube
+Obit/python/ImageUtil.py Obit/python/ImageUtil.inc:
+  Implement PolnUnwind
+Obit/python/TableDesc.inc:
+  better type handling
+Obit/src/ObitRMFit.c:
+  bug in derivatives
+Obit/src/ObitUV.c:
+  document KeepSou
+Obit/src/ObitSpectrumFit.c:
+  Support for ObitImageMF images.
+Obit/src/ObitImageMosaicWB.c Obit/src/ObitImageMosaic.c Obit/src/ObitImageMosaicMF.c:
+  More overlap for facets
+Obit/tasks/SetJy.c:
+  Fix index for 1934-638
+3 June 2013, svn version 452
+
+missing routine:
+Obit/src/ObitTableCCUtil.c  Obit/include/ObitTableCCUtil.h:
+  Implement ObitTableCCUtilCombTSpec
+3 June 2013, svn version 453
+
+Fix bug in BDFIn computing u,v,w
+Obit/src/ObitUVWCalc.c:
+  UVW: Fix units if call to Precess for Lorentz correction
+Obit/src/ObitPolCalList.c:
+  Create: default refAnt = 1
+14 June 2013 svn version 454
+
+Improved source catalog handling, Various bug fixes
+Obit/src/ObitUVCalCalibrate.c:
+  Init: Check that cal tables have at least the same number of antennas as data.
+  Ignore Antennas with numbers higher than in data.
+Obit/python/UV.py:
+  PTableCLfromNX: Set number of antennas in CL table header.
+Obit/tasks/Calib.c:
+  Actually implement UVRange, WtUV
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF:
+  Add UVRange parameter
+Obit/python/Catalog.py:
+  Add function PVLScale to scale table fluxes with exclusions
+     Copy beam, index
+Obit/bin/ObitTables.pl:
+  Update copyright date to 2013
+Obit/doc/OBITdoc.tex:
+Obit/python/TableAN.inc Obit/python/TableCL.inc:
+Obit/python/TableSN.inc  Obit/python/TableVL.inc :
+  Add default values to table keywords to allow access via python.
+  for AN, CL, SN, VL tables
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  update python interface.
+Obit/src/ObitDConCleanVis.c:
+  Make sure beam patches are released.
+Obit/src/ObitDConClean.c:
+  ImageStats: Allow default old BLC, TRC
+Obit/tasks/BDFIn.c:
+  GetSourceInfo: Write mean position as pointing position.
+23 June 2013, svn version 455
+
+Various bug fixes
+Obit/src/ObitPlot.c:
+  various: Test for Declination/GLat axis 1 not 0
+Obit/tasks/Feather.c:
+  Fix bug in do loop
+Obit/tasks/UVSim.c:
+  Add model to history
+  Avoid infinite loop with min el.
+Obit/src/ObitSkyModel.c:
+  SetSelect: Don't look for CLEAN comps if modelType==OBIT_SkyModel_Image
+Obit/src/ObitFArray.c:
+  SelInc: Check array bounds on looping with increment
+5 July 2013, svn version 456
+
+MultiThread FD data editing, implement fast line imaging, numerous bug fixes
+Obit/changes.log:
+Obit/tasks/MapBeam.c:
+  gridData, accumData: Comment out debug 
+Obit/TDF/Splat.TDF:
+  Remove extra * in definition of flagVer
+Obit/src/ObitDConCleanVisLine.c:
+  Fix bugs in tricky logic with CLEAN obj.
+  Fix AutoWindow bugs
+  Fix numerous other bugs
+Obit/src/ObitSkyModelMF.c:
+  LoadComps: Default spectral index (fitparms)
+Obit/src/ObitUVEdit.c:
+  FD editing - implement threading
+  flag samples with fewer than 1/4 of time samples.
+Obit/TDF/AutoFlag.TDF
+  Improve documentation of FD editing
+Obit/tasks/MFImage.c:
+  BLAvg: Fix bug in number of channels to average.
+Obit/src/ObitDConClean.c:
+  ImageStats: allow default BLC, TRC
+Obit/python/EVLACal.py:
+  Various, test to trap lack of RL/LR data
+Obit/src/ObitSkyModelMF.c:
+  ThreadSkyModelMFFTDFT: better testing for valid data.
+  LoadComps: better handling of nSpec
+Obit/TDF/BDFIn.TDF:
+  Correct documentation on doOnline
+Obit/src/ObitImageMosaic.c:
+  Flatten: Write correct output plane.
+Obit/src/ObitImageUtil.c:
+  UV2ImageDesc: fix bugs in calculating freq info for line imaging
+Obit/src/ObitTableCCUtil.c:
+   ObitTableCCUtilCombTSpec: fix bug in number of output rows
+Obit/tasks/Imager.c Obit/TDF/Imager.TDF:
+   Implement doLine.
+Obit/src/ObitALMACalAtm.c Obit/src/ObitDoppler.c:
+   Cleanup
+19 July 2013, svn ver. 457,458
+
+BDFIn bug with multiple numbers of channels/configuration
+Obit/tasks/BDFIn.c:
+  Fix indexing problem with two numbers of channels in a configuration.
+19 July 2013, svn ver. 459
+
+Numerous bug fixes, enhance BDFIn selection, fitting source RM from CP table
+Obit/python/Image.py:
+  Better document how to create new image.
+Obit/tasks/CLCor.c:
+  CLCorDoCor: Set number of antennas in output CL table.
+Obit/python/UV.py:
+  PGetFreq: correct function call
+Obit/python/UVPolnUtil.py:
+  New utility package for fitting RM from CP table and plotting 
+  source and instrumental poln.
+Obit/python/EVLACal.py:
+  EVLACalAvg: set chAvg to 1 if avgFreq==0
+  EVLAStdModel: set CalDataType and CalNField
+  EVLAAutoFlag: Do not set XClip on af if XClip is None
+Obit/include/ObitDConCleanVisLine.h  Obit/src/ObitDConCleanVisLine.c:
+  Add function ObitDConCleanVisLineValid
+Obit/tasks/Imager.c:
+  doImage: Be more forgiving of channels in an image completely blanked.
+Obit/include/ObitBDFData.h  Obit/src/ObitBDFData.c:
+Obit/src/ObitSDMData.c Obit/include/ObitSDMDataDef.h:
+Obit/tasks/BDFIn.c Obit/TDF/BDFIn.TDF:
+ fix bugs in data selection with multiple sets of channels
+ enable selection by channel bandwidth.
+Obit/TDF/AutoFlag.TDF Obit/tasks/AutoFlag.c:
+  Add noScrat parameter
+Obit/tasks/UVAppend.c:
+  Make frequency test 1/4 of a channel 
+12 Aug. 2013, svn version 460
+
+Implement reading GBT/VEGAS data, update cfitsio for 64 bit integers.
+Add partial support for GBT/VEGAS.
+Bug fixes.
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py:
+  Enable selection by channel bandwidth in BDFIn.
+Obit/src/ObitDConCleanVisLine.c:
+  Fix error in type (label) of frequency axis.
+Obit/src/ObitUVSel.c:
+  Next: Trap bug in AIPS NX table (EndVis=0)
+ObitIOImageFITS.c:
+  WriteDescriptor: Update Equinox
+Obit/tasks/Calib.c Obit/tasks/UVSub.c:
+  Proper handling of images with do3D=False.
+ObitSD/src/ObitOTFSel.c:
+  WantFeed: If only one feed, all are selected
+ObitSD/include/ObitTableOTFBPClassDef.h  ObitSD/include/ObitTableOTFBPDef.h
+ObitSD/include/ObitTableOTFBP.h ObitSD/include/ObitTableOTFBPRowClassDef.h
+ObitSD/include/ObitTableOTFBPRowDef.h ObitSD/python/TableOTFBP.inc
+ObitSD/src/ObitTableOTFBP.c :
+  New Table for OTF bandpass calibration
+ObitSD/include/ObitVEGASUtil.h ObitSD/src/ObitVEGASUtil.c:
+  New GBT/VEGAS utility module.
+ObitSD/python/VEGASUtil.inc ObitSD/python/VEGASUtil.py:
+  New python interface to GBT/VEGAS utility module
+ObitSD/src/ObitOTFCalBandpass.c ObitSD/include/ObitOTFCalBandpass.h
+ObitSD/include/ObitOTFCalBandpassDef.h:
+  New bandpass calibration structure and utility
+ObitSD/src/ObitOTF.c ObitSD/src/ObitOTFCal.c ObitSD/src/ObitOTFSel.c
+ObitSD/include/ObitOTFCal.h ObitSD/include/ObitOTFCalDef.h
+ObitSD/include/ObitOTFSelDef.h ObitSD/include/ObitOTFSel.h:
+  Implement bandpass calibration.
+  Implement VEGAS calibration application.
+ObitSD/include/ObitOTFCalUtil.h ObitSD/src/ObitOTFCalUtil.c:
+  new function FitBPOnOFF for determining BP calibration.
+ObitSD/python/OTFUtil.inc ObitSD/python/OTFUtil.py:
+  python interface to BP calibration.
+ObitSD/src/OTFDesc.c ObitSD/include/OTFDesc.h:
+  Add VEGAS to OTF data types
+ObitSD/python/Obit_wrap.c:
+  rebuild python interface
+ObitSD/include/ObitGBTVEGASAct_StateInfoClassDef.h
+ObitSD/include/ObitGBTVEGASAct_StateInfoDef.h
+ObitSD/include/ObitGBTVEGASAct_StateInfo.h
+ObitSD/src/ObitGBTVEGASAct_StateInfo.c:
+  New class for VEGAS Act_state
+ObitSD/include/ObitGBTVEGASPortInfoClassDef.h
+ObitSD/include/ObitGBTVEGASPortInfoDef.h
+ObitSD/include/ObitGBTVEGASPortInfo.h
+ObitSD/src/ObitGBTVEGASPortInfo.c :
+  New class for VEGAS Port
+ObitSD/include/ObitGBTVEGASSamplerInfoClassDef.h
+ObitSD/include/ObitGBTVEGASSamplerInfoDef.h
+ObitSD/include/ObitGBTVEGASSamplerInfo.h
+ObitSD/src/ObitGBTVEGASSamplerInfo.c:
+  New class for VEGAS Sampler
+ObitSD/include/ObitGBTVEGASStateInfoClassDef.h
+ObitSD/include/ObitGBTVEGASStateInfoDef.h
+ObitSD/include/ObitGBTVEGASStateInfo.h
+ObitSD/src/ObitGBTVEGASStateInfo.c:
+  New class for VEGAS State
+ObitSD/include/ObitTableGBTVEGASACT_STATEClassDef.h
+ObitSD/include/ObitTableGBTVEGASACT_STATEDef.h
+ObitSD/include/ObitTableGBTVEGASACT_STATE.h
+ObitSD/include/ObitTableGBTVEGASACT_STATERowClassDef.h
+ObitSD/include/ObitTableGBTVEGASACT_STATERowDef.h
+ObitSD/python/TableGBTVEGASACT_STATE.inc
+ObitSD/src/ObitTableGBTVEGASACT_STATE.c:
+  New class for VEGAS ACT_STATE table
+ObitSD/include/ObitTableGBTVEGASDATAClassDef.h
+ObitSD/include/ObitTableGBTVEGASDATADef.h
+ObitSD/include/ObitTableGBTVEGASDATA.h
+ObitSD/include/ObitTableGBTVEGASDATARowClassDef.h
+ObitSD/include/ObitTableGBTVEGASDATARowDef.h
+ObitSD/python/TableGBTVEGASDATA.inc
+ObitSD/src/ObitTableGBTVEGASDATA.c:
+  New class for VEGAS DATA table
+ObitSD/include/ObitTableGBTVEGASPORTClassDef.h
+ObitSD/include/ObitTableGBTVEGASPORTDef.h
+ObitSD/include/ObitTableGBTVEGASPORT.h
+ObitSD/include/ObitTableGBTVEGASPORTRowClassDef.h
+ObitSD/include/ObitTableGBTVEGASPORTRowDef.h
+ObitSD/python/TableGBTVEGASPORT.inc
+ObitSD/src/ObitTableGBTVEGASPORT.c:
+  New class for VEGAS PORT table
+ObitSD/include/ObitTableGBTVEGASSAMPLERClassDef.h
+ObitSD/include/ObitTableGBTVEGASSAMPLERDef.h
+ObitSD/include/ObitTableGBTVEGASSAMPLER.h
+ObitSD/include/ObitTableGBTVEGASSAMPLERRowClassDef.h
+ObitSD/include/ObitTableGBTVEGASSAMPLERRowDef.h
+ObitSD/python/TableGBTVEGASSAMPLER.inc
+ObitSD/src/ObitTableGBTVEGASSAMPLER.c:
+  New class for VEGAS SAMPLER table
+ObitSD/include/ObitTableGBTVEGASSTATEClassDef.h
+ObitSD/include/ObitTableGBTVEGASSTATEDef.h
+ObitSD/include/ObitTableGBTVEGASSTATE.h
+ObitSD/include/ObitTableGBTVEGASSTATERowClassDef.h
+ObitSD/include/ObitTableGBTVEGASSTATERowDef.h
+ObitSD/python/TableGBTVEGASSTATE.inc
+ObitSD/src/ObitTableGBTVEGASSTATE.c:
+  New class for VEGAS STATE table
+ObitSD/tasks/VEGASOTF.c ObitSD/TDF/VEGASOTF.TDF:
+ New task to translate VEGAS archive format to OTF
+ObitSD/include/ObitOTFDesc.h ObitSD/src/ObitOTFDesc.c:
+  Add VEGAS
+ObitSD/include/ObitGBTBeamOffInfo.h ObitSD/src/ObitGBTBeamOffInfo.c
+ObitSD/include/ObitGBTIFInfo.h  ObitSD/src/ObitGBTIFInfo.c:
+  Add constructor using DataRoot
+ObitSD/doc/ObitSD.tex:
+  Add VEGAS tables.
+ObitSD/bin/ObitSDTables.pl:
+  implement longlong data types
+Obit/include/ObitTypes.h :
+Obit/src/ObitIOTableFITS.c Obit/src/ObitTableDesc.c Obit/src/ObitInfoElem.c  :
+  implement longlong data
+ObitSD/ObitOTFGetSoln.c:
+  ObitOTFGetSolnGain: get solutions for VEGAS like data
+ObitSD/python/GBTUtil.py:
+  Document VEGAS
+22 Aug. 2013, svn version 461
+
+bug fixes
+ObitSD/include/ObitOTFFlagUtil.h  ObitSD/src/ObitOTFFlagUtil.c:
+  New flagging utility with frequency domain editing
+ObitSD/python/OTFUtil.py  ObitSD/python/OTFUtil.inc:
+  Add interface to FD editing
+ObitSD/python/Obit_wrap.c:
+  New python interface
+ObitSD/python/VEGASUtil.py:
+  PlotSpectrum: Fix bug in initializing accumulators
+ObitSD/tasks/VEGASOTF.c:
+ Normalize data by integration time.
+23 Aug 2013, svn version 462
+
+Default CalCodes for EVLA/ALMA data
+Single dish upgrades for GBT/VEGAS
+bug fixes:
+ObitSD/python/OTFSoln2Cal.py:
+  POTFSoln2Cal: Fix checks
+ObitSD/tasks/OTFImage.c ObitSD/TDF/OTFImage.TDF:
+ Enable bandpass calibration
+ Fix channel looping
+ObitSD/python/OTF.py:
+  Document bandpass cal
+ObitSD/src/ObitOTFCal.c  ObitSD/src/ObitOTFCalUtil.c ObitSD/src/ObitOTFGetSoln.c:
+  Uninitialized variables
+Obit/tasks/BDFIn.c Obit/TDF/BDFIn.TDF
+Obit/include/ObitSDMData.h Obit/src/ObitSDMData.c:
+  Implement optional default calCodes
+Obit/tasks/Calib.c Obit/tasks/UVSub.c :
+  Fix logic error in setting do3D
+Obit/src/ObitUVCalCalibrate.c:
+  Init:  Hack to allow CL table claiming 0 antennas.
+Obit/tasks/Imager.c:
+  Fix bugs when channel increment not = chAvg
+30 Aug. 2013 snv version 463
+
+Fixes related to low frequency data
+Obit/TDF/SNFilt.TDF Obit/tasks/SNFilt.c:
+  Add doBlank parameter
+Obit/src/ObitIoN2SolNTable.c :
+  Model: Flip signs of phase and delay for GMRT, LOFAR
+Obit/src/ObitIonCal.c:
+  initIonModel: Relax intergrated flux density constraint
+Obit/python/MakeIFs.py:
+  CopyData: Update I/O descriptor with numVisBuff
+Obit/TDF/SetJy.TDF Obit/tasks/SetJy.c:
+  Update with Perley & Butler 2012 spectra
+Obit/python/AddSource.py:
+  New module to create a "multisource" single source file
+Obit/src/ObitDConCleanVis.c:
+  Deconvolve: Make sure last set of CCs gets subtracted.
+  Deconvolve: Better check for reaching min flux
+Obit/src/ObitUVUtil.c:
+  Several: check that number of antennas actually in descriptor
+  Index: EOF on read is OK
+Obit/src/ObitTableANUtil.c:
+  Several: if antenna numbers missing substitute row number,
+  This patches a bug in the CASA UVFITS writer
+Obit/src/ObitImageMF.c:
+  SetSpec: Increase number of bins to 1000
+  Better check for blown array
+Obit/src/ObitTableCLUtil.c:
+  GetDummy: EOF on read is OK
+Obit/src/ObitFile.c:
+  PadFile: ( from M.Kettenis) return error on error
+Obit/src/ObitImageMosaic.c:
+  GetFull: Return first image if FullField not defined.
+4 Oct. 2013 svn version 463
+
+
+Allow browsing AIPS images in ObitView, CLEAN efficiency improvements
+ObitTalk/doc/ObitTalk.tex:
+  More documentation on setting up AIPS directories
+ObitView:
+  Allow browsing AIPS images
+Obit/src/ObitDConCleanPxList.c Obit/src/ObitDConCleanPxListMF.c:
+  Efficiency improvements
+Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelMF.c:
+  Efficiency  improvements in threaded FTDFT routine
+23 Oct 2013, svn version 465
+
+Mostly fixes to read VLBA FITS IDI files
+Obit/changes.log:
+ObitTalk/doc/ObitTalk.tex:
+  Update user documentation
+Obit/doc/OBITdoc.tex
+Obit/include/ObitTableIDI_SOURCEClassDef.h Obit/include/ObitTableIDI_SOURCEDef.h 
+Obit/include/ObitTableIDI_SOURCE.h
+Obit/include/ObitTableIDI_SOURCERowClassDef.h Obit/include/ObitTableIDI_SOURCERowDef.h
+Obit/src/ObitTableIDI_SOURCE.c Obit/python/TableIDI_SOURCE.inc
+Obit/include/ObitTableIDI_UV_DATAClassDef.h Obit/include/ObitTableIDI_UV_DATADef.h 
+Obit/include/ObitTableIDI_UV_DATA.h
+Obit/include/ObitTableIDI_UV_DATARowClassDef.h Obit/include/ObitTableIDI_UV_DATARowDef.h
+Obit/src/ObitTableIDI_UV_DATA.c Obit/python/TableIDI_UV_DATA.inc
+Obit/include/ObitTableIDI_ANTENNAClassDef.h Obit/include/ObitTableIDI_ANTENNADef.h 
+Obit/include/ObitTableIDI_ANTENNA.h
+Obit/include/ObitTableIDI_ANTENNARowClassDef.h Obit/include/ObitTableIDI_ANTENNARowDef.h
+Obit/src/ObitTableIDI_ANTENNA.c Obit/python/TableIDI_ANTENNA.inc
+Obit/include/ObitTableIDI_ARRAY_GEOMETRYClassDef.h Obit/include/ObitTableIDI_ARRAY_GEOMETRYDef.h 
+Obit/include/ObitTableIDI_ARRAY_GEOMETRY.h
+Obit/include/ObitTableIDI_ARRAY_GEOMETRYRowClassDef.h Obit/include/ObitTableIDI_ARRAY_GEOMETRYRowDef.h
+Obit/src/ObitTableIDI_ARRAY_GEOMETRY.c Obit/python/TableIDI_ARRAY_GEOMETRY.inc
+Obit/include/ObitTableIDI_BANDPASSClassDef.h Obit/include/ObitTableIDI_BANDPASSDef.h 
+Obit/include/ObitTableIDI_BANDPASS.h
+Obit/include/ObitTableIDI_BANDPASSRowClassDef.h Obit/include/ObitTableIDI_BANDPASSRowDef.h
+Obit/src/ObitTableIDI_BANDPASS.c Obit/python/TableIDI_BANDPASS.inc
+Obit/include/ObitTableIDI_CALIBRATIONClassDef.h Obit/include/ObitTableIDI_CALIBRATIONDef.h 
+Obit/include/ObitTableIDI_CALIBRATION.h
+Obit/include/ObitTableIDI_CALIBRATIONRowClassDef.h Obit/include/ObitTableIDI_CALIBRATIONRowDef.h
+Obit/src/ObitTableIDI_CALIBRATION.c Obit/python/TableIDI_CALIBRATION.inc 
+Obit/include/ObitTableIDI_FLAGClassDef.h Obit/include/ObitTableIDI_FLAGDef.h 
+Obit/include/ObitTableIDI_FLAG.h
+Obit/include/ObitTableIDI_FLAGRowClassDef.h Obit/include/ObitTableIDI_FLAGRowDef.h
+Obit/src/ObitTableIDI_FLAG.c Obit/python/TableIDI_FLAG.inc 
+Obit/include/ObitTableIDI_FREQUENCYClassDef.h Obit/include/ObitTableIDI_FREQUENCYDef.h 
+Obit/include/ObitTableIDI_FREQUENCY.h
+Obit/include/ObitTableIDI_FREQUENCYRowClassDef.h Obit/include/ObitTableIDI_FREQUENCYRowDef.h
+Obit/src/ObitTableIDI_FREQUENCY.c Obit/python/TableIDI_FREQUENCY.inc
+Obit/include/ObitTableIDI_GAIN_CURVEClassDef.h Obit/include/ObitTableIDI_GAIN_CURVEDef.h 
+Obit/include/ObitTableIDI_GAIN_CURVE.h
+Obit/include/ObitTableIDI_GAIN_CURVERowClassDef.h Obit/include/ObitTableIDI_GAIN_CURVERowDef.h
+Obit/src/ObitTableIDI_GAIN_CURVE.c Obit/python/TableIDI_GAIN_CURVE.inc
+Obit/include/ObitTableIDI_INTERFEROMETER_MODELClassDef.h Obit/include/ObitTableIDI_INTERFEROMETER_MODELDef.h 
+Obit/include/ObitTableIDI_INTERFEROMETER_MODEL.h
+Obit/include/ObitTableIDI_INTERFEROMETER_MODELRowClassDef.h
+Obit/include/ObitTableIDI_INTERFEROMETER_MODELRowDef.h
+Obit/src/ObitTableIDI_INTERFEROMETER_MODEL.c Obit/python/TableIDI_INTERFEROMETER_MODEL.inc
+Obit/include/ObitTableIDI_PHASE_CALClassDef.h Obit/include/ObitTableIDI_PHASE_CALDef.h 
+Obit/include/ObitTableIDI_PHASE_CAL.h
+Obit/include/ObitTableIDI_PHASE_CALRowClassDef.h Obit/include/ObitTableIDI_PHASE_CALRowDef.h
+Obit/src/ObitTableIDI_PHASE_CAL.c Obit/python/TableIDI_PHASE_CAL.inc 
+Obit/include/ObitTableIDI_SYSTEM_TEMPERATUREClassDef.h Obit/include/ObitTableIDI_SYSTEM_TEMPERATUREDef.h 
+Obit/include/ObitTableIDI_SYSTEM_TEMPERATURE.h
+Obit/include/ObitTableIDI_SYSTEM_TEMPERATURERowClassDef.h
+Obit/include/ObitTableIDI_SYSTEM_TEMPERATURERowDef.h
+Obit/src/ObitTableIDI_SYSTEM_TEMPERATURE.c Obit/python/TableIDI_SYSTEM_TEMPERATURE.inc
+Obit/include/ObitTableIDI_WEATHERClassDef.h Obit/include/ObitTableIDI_WEATHERDef.h 
+Obit/include/ObitTableIDI_WEATHER.h
+Obit/include/ObitTableIDI_WEATHERRowClassDef.h Obit/include/ObitTableIDI_WEATHERRowDef.h
+Obit/src/ObitTableIDI_WEATHER.c Obit/python/TableIDI_WEATHER.inc
+Obit/python/Obit_wrap.c  ObitSD/python/Obit_wrap.c
+  Allow for VLBA deviations from the IDI standard, VLBA extensions.
+Obit/tasks/IDIIn.c  Obit/tasks/IDIOut.c  Obit/TDF/IDIIn.TDF:
+  Make more robust, allow for VLBA usages.
+15 Nov. 2013, svn version 466
+
+Various bug fixes, minor improvements
+Obit/include/ObitEVLASysPower.h Obit/src/ObitEVLASysPower.c \
+  Make more robust against incomplete tables
+Obit/include/ObitSDMDataTypeDef.h Obit/src/ObitSDMData.c \
+  Add band code enum to ASDMSpectralWindowArray.
+  Make Band2Band more general.
+Obit/tasks/BDFIn.c \
+  Don't tell user about selChBW unless it specifies a bandwidth.
+  Cleanup band selection
+Obit/include/ObitUVSelDef.h \
+Obit/src/ObitUV.c Obit/src/ObitUVCal.c Obit/src/ObitUVCalSelect.c \
+Obit/src/ObitUVSel.c Obit/src/ObitTableFQUtil.c \
+  implement IFDrop parameter to deselect IFs in data to read.
+Obit/tasks/UVAppend.c Obit/TDF/UVAppend.TDF \
+  Add IFDrop parameter.
+Obit/python/UV.py \
+  Add IFDrop to documentation
+Obit/src/ObitPolnCalFit.c \
+  Disallow invalid solutions for elipticity.
+20 December 2013, svn version 467
+
+Various bug fixes, minor improvements
+Obit/tasks/Imager.c Obit/tasks/MFImage.c \
+  copy MResKnob to CLEAN object
+Obit/src/ObitDConCleanVis.c \
+  GetParms: fix call to fetch MResKnob
+Obit/src/ObitSDMData.c \
+   ObitSDMDataBand2Band: return ASDMBand_Any if code is NULL
+   this caused ASDMList and BDFIn to abort
+13 Jan 2014 svn version 468
+
+Various bug fixes, minor improvements
+Obit/src/ObitUV.c:
+  ObitUVGetSelect: make sure nVisPIO doesn't blow 32 bit integer buffer size
+Obit/src/ObitSinCos.c Obit/include/ObitSinCos.h:
+  Implement AVX version, needs -DHAVE_AVX -march=native
+Obit/tasks/BDFIn.c:
+  Only call ObitSDMDataGetDefaultCalCode for EVLA data.
+  GetData: Tolerate fewer intents given than stated.
+Obit/src/ObitSDMData.c:
+  DefaultCalCode: return if not EVLA data.
+  GetSWArray: nAPoln of 3 is really 4
+Obit/src/ObitBDFData.c:
+  InitScan: Tolerate fewer intents given than stated.
+  InitScan: set aoffs for nAPoln =4
+3 Feb 2014 svn version 469
+
+Major performanence boost for gridding, support for EVLA lowband, calibrator models,
+Obit/src/ObitGainCal.c:
+  several: fix bugs with writing output SN table.
+Obit/src/ObitSwPower.c:
+  Allow turning off smoothing.
+Obit/tasks/SYGain.c Obit/TDF/SYGain.TDF
+  New task to compute EVLA gains from SY/CD tables
+Obit/src/ObitUVSoln.c:
+  SmooGauss: fix bug in Gaussian
+Obit/src/ObitImageUtil.c:
+  SelCopy: bug in size, initialization of lblc, ltrc, linc
+Obit/TDF/MFImage.TDF Obit/TDF/MFBeam.TDF Obit/tasks/MFImage.c Obit/tasks/MFBeam.c:
+  Add parameter targBeam as the target beam.
+Obit/src/ObitUVGridMF.c:
+  Setup: Use "targBeam" if given for target beam
+Obit/src/ObitUVWeight.c:
+  Input: Use PA from TaperIF rather than UVTaper
+  GridBuffer: protect against data out of grid.
+Obit/TDF/MFImage.TDF:
+  Better documentation for TaperIF
+Obit/TDF/UVXpnd.TDF Obit/tasks/UVXpnd.c:
+  New task for expand data in frequency.
+Obit/python/EVLACal.py:
+  Add support for LowBand/VLITE
+  add cal models, fix bug
+Obit/src/ObitUVSel.c:
+  Default: resize IFSel if needed.
+Obit/include/ObitExp.h  Obit/src/ObitExp.c:
+  AVX implementation
+Obit/include/ObitThreadGrid.h  Obit/include/ObitThreadGridDef.h Obit/include/ObitThreadGridClassDef.h:
+Obit/src/ObitThreadGrid.c:
+  New, faster UV data gridding class
+Obit/include/ObitUVGrid.h Obit/include/ObitUVGridDef.h
+Obit/include/ObitUVGridMFDef.h Obit/include/ObitUVGridWBDef.h
+Obit/src/ObitUVGrid.c Obit/src/ObitUVGridMF.c Obit/src/ObitUVGridWB.c:
+Obit/src/ObitImageUtil.c:
+  Implement ObitThreadGrid
+Obit/python/EVLALowBandPipe.py Obit/share/scripts/EVLALowBandTemplateParm.py:
+  Scripts for Lowband/VLITE
+Obit/share/data/3C286PModel.fits.gz Obit/share/data/3C147PModel.fits.gz
+Obit/share/data/3C123PModel.fits.gz Obit/share/data/3C138PModel.fits.gz
+Obit/share/data/3C196PModel.fits.gz Obit/share/data/3C295PModel.fits.gz
+Obit/share/data/3C380PModel.fits.gz Obit/share/data/3C48PModel.fits.gz
+Obit/share/data/3C286SModel.fits.gz Obit/share/data/3C147SModel.fits.gz
+Obit/share/data/3C123SModel.fits.gz Obit/share/data/3C138SModel.fits.gz
+Obit/share/data/3C196SModel.fits.gz Obit/share/data/3C295SModel.fits.gz
+Obit/share/data/3C380SModel.fits.gz Obit/share/data/3C48SModel.fits.gz
+  Wideband calibrator models
+21 Feb. 2014 svn version 470
+
+3D Clean components, more EVLA calibrator models, bug fixes
+Obit/src/ObitUVSelfCal.c:
+  SelfCal: Free Solver at end, copy FractOK
+Obit/tasks/BeamCor.c Obit/tasks/Imager.c Obit/tasks/MFBeam
+Obit/tasks/MFImage.c Obit/tasks/Squint.c Obit/tasks/SWImag.c:
+  get FractOk from selfcal not it's solver
+Obit/share/data/3C286LModel.fits.gz Obit/share/data/3C147LModel.fits.gz
+Obit/share/data/3C123LModel.fits.gz Obit/share/data/3C138LModel.fits.gz
+Obit/share/data/3C196LModel.fits.gz Obit/share/data/3C295LModel.fits.gz
+Obit/share/data/3C380LModel.fits.gz Obit/share/data/3C48LModel.fits.gz
+Obit/share/data/3C286CModel.fits.gz Obit/share/data/3C147CModel.fits.gz
+Obit/share/data/3C123CModel.fits.gz Obit/share/data/3C138CModel.fits.gz
+Obit/share/data/3C196CModel.fits.gz Obit/share/data/3C295CModel.fits.gz
+Obit/share/data/3C380CModel.fits.gz Obit/share/data/3C48CModel.fits.gz:
+  new standard calibrator models
+Obit/python/EVLACal.py:
+  more calibrator models.
+Obit/src/Obit/DConCleanPxListMF.c:
+  GetSpecBeamPatch: Allow beam beak epsilon > 1.0
+Obit/src/ObitUVGrid.c Obit/src/ObitUVGridMF.c:
+  Efficiency improvements
+Obit/tasks/Calib.c:
+  Pass all of modelParms to calibration routines.
+Obit/include/ObitTableCCUtil.h Obit/src/ObitTableCCUtil.c:
+  new routine AppendShift to copy table with shifted coordinates
+Obit/include/ObitImageMosaic.h  Obit/src/ObitImageMosaic.c:
+  Add  UV data to CopyCC parameters
+  CopyCC: use ObitTableCCUtilAppendShift to copy CCs to FullField
+Obit/tasks/MFImage.c Obit/tasks/BeamCor.c Obit/tasks/Imager.c
+Obit/tasks/IonImage.c Obit/tasks/MFBeam.c Obit/tasks/SCMap.c
+Obit/tasks/Squint.c Obit/tasks/SWImag.c Obit/src/ObitDConCleanVis.c :
+  Add UVdata to ObitImageMosaicCopyCC call
+Obit/doc/OBITdoc.tex Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c
+Obit/include/ObitTableCCClassDef.h Obit/include/ObitTableCCDef.h Obit/include/ObitTableCC.h
+Obit/includeObitTableCCRowClassDef.h/ Obit/include/ObitTableCCRowDef.h Obit/src/ObitTableCC.c:
+Obit/python/TableCC.inc:
+  Add optional column DELTAZ
+Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelMF.c
+Obit/src/ObitSkyModelVM.c Obit/src/ObitSkyModelVMBeamMF.c:
+  Implement DeltaZ member of CC table row
+27 Feb 2014, svn version 472
+
+bug fixes
+Obit/src/ObitSkyModelMF.c Obit/src/ObitTableCCUtil.c:
+  Fix 3D CC bug from last update.
+28 Feb 2014 svn version 473
+
+mostly bug fixes
+Obit/python/EVLACal.py:
+  EVLAEditSNAmp, EVLAFlagFailSN, EVLAFlagSNClip, allow different input and output uv for FG
+Obit/python/ImageUtil.py:
+  PImageT2Spec: Allow specifying maximum distance from pointing for CCs in the normalization.
+Obit/src/ObitTableCCUtil.c:
+  FixTSpec: Allow specifying maximum distance from pointing for CCs in the normalization.
+  AppendShift: apply 2D rotation.
+Obit/src/ObitImage.c:
+  Clone: Check that in exists.
+  GetSelect: More informative message if FileType not found.
+Obit/src/ObitThreadGrid.c:
+  Grid: test that there is data to process.
+Obit/tasks/BDFIn.c:
+  GetSysPowerInfo: fix logic in matching SW to IF.
+Obit/src/ObitSkyModelMF.c:
+  ThreadSkyModelMFFTDFT: Fix bug in spectral index correction for PointModTSpec.
+  ThreadSkyModelMFFTDFT: Fix bugs in looping logic
+Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelVM.c Obit/src/ObitSkyModelVMSquint.c
+Obit/src/ObitSkyModelVMBeam.c Obit/src/ObitSkyModelVMBeamMF.c:
+  ThreadSkyModelFTDFT: Fix bugs in looping logic
+26 March 2014, svn version 474.
+
+mostly bug fixes, better vector exp
+Obit/src/ObitSkyModel.c:
+  ThreadSkyModelFTDFT: Speedup spectrum evaluation
+  ThreadSkyModelFTDFT: Fix bug in calculating Gaussian
+  New interface to ObitExp
+  LoadComps: DeltaZ in deg
+Obit/src/ObitImageUtil.c:
+  T2Spec: Only one "FREQ" plane output, cleanup Descriptor list
+  T2Spec: Implement dropNeg
+Obit/src/ObitSkyModelMF.c:
+  ThreadSkyModelMFFTDFT: Fix bug in calculating Gaussian
+  New interface to ObitExp
+  LoadComps: DeltaZ in deg
+Obit/src/ObitTableCCUtil.c:
+  CCMergeSpec: Don't try to merge doSpec data.
+  AppendShift: DeltaZ in deg
+  FixTSpec: ignore negative flux densities.
+  T2Spec: implement dropNeg
+Obit/include/ObitExp.h Obit/src/ObitExp.c:
+  Major rework, now exp(x) with either sign.
+Obit/src/ObitFArray.c  Obit/src/ObitThreadGrid.c
+Obit/src/ObitSkyModelVMBeamMF.c Obit/src/ObitSkyModelVM.c Obit/src/ObitSkyModelVMSquint.c:
+  New interface to ObitExp
+  LoadComps: DeltaZ in deg
+Obit/src/ObitUVGridMF.c:
+  Make frequency dependent tapers negative
+Obit/src/ObitDConCleanVisMF.c:
+  CommonRes: Don't convolve residuals if output beam is smaller than fitted, warn.
+Obit/python/EVLACal.py:
+  EVLAImageTargets: change default doComRes to False
+Obit/python/ImageUtil.py:
+  PImageT2Spec: add argument dropNeg to drop negative flux components.
+Obit/python/EVLALowBandPipe.py:
+  Update parameters  
+  Remove parallactic angle correction.
+1 April 2014 svn version 475
+
+mostly bug fixes
+Obit/python/EVLACal.py:
+  EVLAFlagFailSN: Fix bad indentation.
+  EVLABPCal: Give calibrator name in log for each run of BPass
+Obit/src/ObitThreadGrid.c:
+  back out of AVX version of fast_prep_grid, getting aliases.
+  init beamOrd
+Obit/tasks/BDFIn.c:
+  Implement band center reference frequencies.
+  Holography fixes.
+  GetSysPowerInfo: Yet more fixes
+Obit/src/ObitBDFData.c:
+  InitScan: fix indexing bug in calculating SWoff for autocorr
+4 April 2014 svn version 476
+
+mostly bug fixes
+Obit/src/ObitUVCalSelect.c:
+  Select: trap no IF axis.
+Obit/src/ObitBDFData.c:
+  InitScan: initialize jSW
+Obit/include/ObitImageDesc.h Obit/src/ObitImageDesc.c:
+Obit/include/ObitUVDesc.h Obit/src/ObitUVDesc.c:
+  New function GetProj to get projection type
+Obit/src/ObitImageMosaic.c Obit/src/ObitImageMosaicMF.c Obit/src/ObitImageMosaicWB.c:
+  Allow very large facets for NCP data.
+Obit/python/InfoList.py:
+  PSetDist: get type codes correct
+7 April 2014 svn version 477
+
+mostly bug fixes
+Obit/src/ObitUVUtil.c:
+Obit/src/ObitSkyModelMF.c Obit/src/ObitSkyModelVM.c Obit/src/ObitSkyModel.c:
+Obit/src/ObitSkyModelVMBeam.c Obit/src/ObitSkyModelVMBeamMF.c:
+  various: correctly set number of IFs.
+  call ObitExpInit
+Obit/tasks/MFImage.c:
+  BLAvg: leave at least 1/32 channels in average
+Obit/src/ObitThreadGrid.c:
+  bugs in tapering.
+  call ObitExpInit
+Obit/src/ObitUVGSolve.c Obit/src/ObitUVGSolveWB.c:
+  1 Stokes if data has IPol
+Obit/tasks/Lister.c:
+  doGAIN: Only one poln in table for Stokes I...
+Obit/include/ObitExp.h  Obit/src/ObitExp.c:
+  revert to table lookup version
+  enforce range on inputs, correct bugs.
+Obit/src/ObitImageDesc.c  Obit/src/ObitUVDesc.c:
+  CopyDesc: Copy items on info member
+Obit/src/ObitUVDesc.c:
+  ShiftPhase: fix NCP bugs
+Obit/src/ObitDConCleanVis.c:
+  FindPeak: Scale maximum to full resolution.
+Obit/share/data/MGPSVZTab.fits.gz:
+  Mongolo MGPS galactic plane survey VZ catalog
+14 April 2014 svn version 478
+
+Enhancements for EVLA LowBand and VLITE, many bug fixes, esp. multi resolution CLEAN
+Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelMF.c
+Obit/src/ObitSkyModelVM.c Obit/src/ObitSkyModelVMBeamMF.c :
+  LoadComps: correct value of konst2 for Gaussian factors
+Obit/src/ObitUVGrid.c  Obit/src/ObitUVGridMF.c :
+  Setup: correct FWHM to Gaussian sigma factor
+Obit/src/ObitDConCleanPxList.c Obit/src/ObitDConCleanPxListMF.c:
+  ThreadClean: fix bug with peak on first pass
+  Update: better maxChFlux test
+Obit/src/ObitUVImagerMF.c:
+  Weight: copy "targBeam" to scratch file.
+Obit/python/EVLAContPipe.py:
+  Enhanced bandpass diagnostics/editing
+Obit/python/EVLALowBandPipe.py:
+  Pass parms["delaySmoo"] to  EVLADelayCal for smoothing time
+  Implement 2nd pass Median and Auto flagging, doMedn2, doFD2
+  Enhanced bandpass diagnostics/editing
+Obit/python/EVLACal.py:
+  EVLAInitContParms: add default (None) values for second pass parameters
+  EVLACalAP: Fix indentation bugs in smoothing section, 
+             Move smoothing to after editing by deviant amplitudes, smooth all cals.
+             More options for BPass, plotting, editing
+  EVLASrvrEdt: New function for survivir editing
+Obit/TDF/SrvrEdt.TDF  Obit/tasks/SrvrEdt.c: 
+  New task to flag data below a given previous flagging threshold.
+Obit/tasks/Faces.c Obit/TDF/Faces.TDF:
+  New task to create model imge fron VL catalog.
+Obit/src/ObitTableCCUtil.c Obit/include/ObitTableCCUtil.h:
+  Add routine MergeSel2 to return merged CCs with mixed Gaussian sizes.
+Obit/src/ObitImage.c:
+  FromFileInfo: Fix bugs if output doesn't exist
+Obit/bin/ObitTables.pl:
+  Change copyright date to 2014.
+Obit/src/ObitDConCleanPxList.c Obit/src/ObitDConCleanVisLine.c  Obit/src/ObitEVLASysPower.c
+Obit/src/ObitInfoElem.c Obit/src/ObitPolnCalFit.c Obit/python/Table.inc:
+  cleanup, mostly uninitialized variables
+Obit/src/ObitThreadGrid.c:
+  SetupMF: fix bug in bChan, eChan
+Obit/src/ObitSkyGeom.c:
+  XYShift: trap pole
+Obit/share/data/3C286PModel.fits.gz Obit/share/data/3C147PModel.fits.gz
+Obit/share/data/3C123PModel.fits.gz Obit/share/data/3C138PModel.fits.gz
+Obit/share/data/3C196PModel.fits.gz Obit/share/data/3C295PModel.fits.gz
+Obit/share/data/3C380PModel.fits.gz Obit/share/data/3C48PModel.fits.gz
+  Update P band EVLA models.
+Obit/share/scripts/EVLALowBandTemplateParm.py:
+  Update editing controls
+Obit/src/ObitUVDesc.c:
+  RegularIndices: replace g_error with g_warning
+Obit/tasks/BPass.c:
+  Implement UVRange
+2 May 2014 svn version 479
+
+Bug fixes, initial implementation of partial GPU based SkyModel
+Obit/share/data/3C286LModel.fits.gz:
+  Correct, wrong source
+Obit/tasks/PCal.c:
+  Remove descriptor keyword KeepSou when done
+Obit/src/ObitTableFQUtil.c:
+  ObitTableFQSelect: Fix bug in sign of correction to IF freq offsets.
+Obit/TDF/PCal.TDF:
+  Set min BIF, BChan to 1
+Obit/src/ObitPolnCalFit.c:
+ Fit: Min BChan, BIF = 1.
+Obit/src/ObitUVDesc.c:
+  CopyFreq: correctly allocate fscale
+Obit/TDF/MapBeam.TDF:
+  Improve documentation
+Obit/tasks/MapBeam.c:
+  Remove debug diagnostics
+  Correct units of timeAvg
+Obit/include/ObitImageDescDef.h Obit/src/ObitImageDesc.c:
+Obit/src/ObitIOImageFITS.c Obit/src/ObitIOImageAIPS.c:
+  Implement image planes 4-7, failing in FITS
+Obit/src/ObitTableFQUtil.c:
+  Select: Don't overflow table buffer with too many IFs more than selected
+Obit/include/ObitSkyModel.h Obit/include/ObitSkyModelDef.h:
+Obit/include/ObitCUDASkyModel.h Obit/include/ObitCUDASkyModelInfoDef.h Obit/include/ObitCUDAUtil.h
+Obit/include/ObitGPUSkyModelClassDef.h Obit/include/ObitGPUSkyModelDef.h Obit/include/ObitGPUSkyModel.h
+Obit/src/ObitGPUSkyModel.c Obit/src/ObitSkyModel.c Obit/src/ObitUVImager.c
+Obit/src/ObitCUDASkyModel.cu Obit/src/ObitCUDAUtil.cu
+Obit/tasks/Imager.c Obit/tasks/UVSub.c
+Obit/TDF/Imager.TDF Obit/TDF/UVSub.TDF
+  Implement partial GPU version of SkyModel
+  CUDA routines not implemented in build scripts
+16 May 2014, svn version 480
+
+
+Bug fixes 
+Obit/changes.log:
+Obit/src/ObitExp.c:
+  Back out of fast routine and use library version.
+Obit/tasks/Splat.c:
+  doSplat: if avgFreq==0; chAvgv=1
+Obit/src/ObitSkyModelVMBeamMF.c:
+  ThreadSkyModelVMBeamMFFTDFT: Fix indexing for models with a spectrum
+Obit/tasks/MapBeam.c Obit/TDF/MapBeam.TDF:
+  Add pointing offsets
+  getAntList: Don't include reference antennas
+Obit/src/ObitBDFData.c:
+  InitScan: may need to refill buffer.
+  This was causing aborts in BDFIn
+  Trap fewer antennas than claimed in the ASDM.
+28 May 2014 svn version 481
+
+Fix CUDA related build problems
+Obit/include/ObitCUDAUtil.h Obit/include/ObitCUDASkyModel.h:
+  Stubbed versions of CUDA routines if not GPU enabled.
+29 May 2014 svn version 482
+
+Mostly bug fixes
+Obit/include/ObitPolnCalFitDef.h Obit/src/ObitPolnCalFit.c:
+  Allow no reference antenna.
+  Better tests for screwy fits.
+Obit/src/ObitUVCalPolarization.c:
+  Allow no reference antenna
+Obit/tasks/PCal.c:
+  Better handling of output parameter file.
+  Better handling of KeepSou
+Obit/src/ObitUV.c:
+  FromFileInfo: Add KeepSou" to list
+Obit/TDF/UVBlAvg.TDF Obit/tasks/UVBlAvg.c:
+  Add PDVer
+Obit/include/ObitUVDef.h Obit/include/ObitIO.h Obit/src/ObitIO.c
+Obit/include/ObitIOUVAIPS.h  Obit/src/ObitIOUVAIPS.c
+Obit/include/ObitIOUVFITS.h  Obit/src/ObitIOUVFITS.c
+Obit/include/ObitUVSel.h   Obit/src/ObitUVSel.c:
+   Change bufferSize type to ollong
+Obit/include/ObitData.h:
+   Fix bug in SetFITS macro
+Obit/tasks/IDIIn.c Obit/tasks/IDIOut.c:
+   Fix call to newObitTableIDI_CALIBRATIONValue
+   IDIIn: read pri HDU keywork PRIBAND, save in descriptor list
+Obit/python/UV.py:
+  PTableCLfromNX: Fix problem updating table header
+6 June 2014, svn version 483
+
+Mostly bug fixes
+Obit/src/ObitUVGridMF.c:
+  FFT2ImPar: Deal with all blanked planes
+Obit/src/ObitThreadGrid.c:
+  Various: Fix upper channel loop index
+Obit/src/ObitUV.c:
+  Various: fix message format for longlong buffer size
+Obit/tasks/MFImage.c Obit/tasks/MFBeam.c:
+  doImage: tolerate better no cleaning if possibly self caling
+Obit/tasks/Imager.c:
+ getInputData: set nvis per IO after inistantiating uv data.
+Obit/src/ObitDConClean.c:
+  ReadBP: read correct plane in beam
+Obit/src/ObitDConCleanVis.c:
+  FindPeak: Look in correct CC table 
+Obit/src/ObitDConCleanVisLine.c:
+  Select: Reset Pixels->resMax
+Obit/src/ObitImageUtil.c:
+  FitBeam: Try planes until a non blank beam found
+Obit/tasks/BDFIn.c:
+  GetCalDeviceInfo: Fix logic in calculating IF number 
+Obit/src/ObitIOImageAIPS.c:
+  ObitIOImageAIPSRead: Fix plane indexing for IO_byRow
+13 June 2014, svn version 484
+
+Mostly bug fixes
+Obit/src/ObitDConCleanVis.c:
+  Find Peak: Fix spelling
+Obit/src/ObitUVGridMF.c:
+  Several: initialize allBlank to FALSE, was being used w/o initialization
+Obit/python/EVLALowBandPipe.py:
+  Indent Bandpass recalibration properly
+Obit/TDF/MapBeam.TDF Obit/tasks/MapBeam.c:
+  Add Stokes parameter.
+Obit/python/EVLACal.py  Obit/python/EVLAContPipe.py:
+  Added support for specifying UVrange in various operations.
+  Added knowledge of several more standard calibrator files.
+  Runs Lister after BDFIn, writing to log
+17 June 2014, svn version 485
+
+Mostly bug fixes
+Obit/tasks/RLPass.c:
+  Initial self cal set to average poln.
+Obit/python/EVLAContPipe.py:
+  Actual update of UVRange
+  Beef up R-L phase calibration
+Obit/python/EVLALowBandPipe.py:
+  Fix typo in collecting total list of calibrators.
+  Allow setting Outlier info in ImageTargets
+  Add imaging UVRange
+Obit/python/EVLACal.py:
+  Allow setting Outlier info in ImageTargets
+Obit/src/ObitSDMData.c:
+  Various: trap empty ASDM tables, give sensible message
+Obit/src/ObitDConCleanVisLine.c:
+  DefWindow: Copy CLEAN params from main CLEAN object
+Obit/tasks/BDFIn.c:
+  Indexing of IF numbers in SY and CD tables made more robust.
+Obit/tasks/MapBeam.c:
+  gridData, doImage: Fix bug when only one poln.
+Obit/tasks/UVSim.c:
+  Multiple bug fixes for input FITS model.
+Obit/src/ObitSkyModelMF.c:
+  FTDFT: reduce number of vis needed to use multithreads.
+25 June 2014, svn ver. 486
+
+New UV data, poln calibration and sky modeling, bug fixes
+Post smeagle crash recovery
+Obit/TDF/AvgBL.TDF Obit/tasks/AvgBL.c:
+  New task to average all baselines
+Obit/TDF/DPCal.TDF Obit/tasks/DPCal.c 
+  New task for differential instrumental polarization calibration
+Obit/include/ObitSkyModelVMPolnClassDef.h Obit/include/ObitSkyModelVMPolnDef.h:
+Obit/include/ObitSkyModelVMPoln.h Obit/src/ObitSkyModelVMPoln.c:
+  New Sky model for calculating full polarization
+Obit/TDF/UVSub.TDF Obit/tasks/UVSub.c :
+  Implement full polarization skymodel option.
+Obit/python/EVLAContPipe.py:
+  Add second RLPass
+  Subscripts on parms["VClip"], parms["XClip"]
+Obit/src/ObitDConCleanVisLine.c:
+  Set minFlux on channel CLEAN objects
+Obit/tasks/TabCopy.c:
+  Better defaults for output files
+Obit/tasks/Imager.c:
+  Better handilng of CLEAN windows for doLine=True
+  disallow do3D=True for doLine=True
+Obit/tasks/BDFIn.c :
+   default output file in /tmp
+11 July 2014, svn ver. 487
+
+minor updates
+Obit/python/EVLAContPipe.py:
+   stupid svn !!!!!!!!
+Obit/share/scripts/SumImage.py:
+  Utility to average planes of a cube
+18 July 2014, svn ver. 488
+
+mostly bug fixes
+Obit/tasks/IDIIn.c:
+  GetInterferometerModelInfo: Add obscode and RefData to output.
+Obit/python/EVLAContPipe.py:
+  Allow no PCal reference antenna
+Obit/src/ObitUVImager.c:
+  Add doGPU to various parameter lists.
+Obit/src/ObitImageMosaic.c:
+  AddField: Use 90% of minImpact to determine is a position is in a previous facet.
+Obit/tasks/BDFIn.c Obit/tasks/ASDMList.c:
+  Create proper output file.
+5 Aug. 2014, svn ver. 489
+
+Further development of GPU DFT Sky Model
+Add full polarization sky model
+New task SysPowerView to display EVLA SysPower tables
+New task AvgBL to average all baselines into a single pseudo baseline
+New task DPCal for differential instrumental polarization calibration
+Cleanup, bug fixes
+Obit/tasks/SysPowerView.c Obit/TDF/SysPowerView.TDF:
+  New task to display selected EVLA SysPower table entries
+Obit/TDF/MFImage.TDF:
+  Fix documentation for Tapers.
+Obit/tasks/IDIIn.c Obit/TDF/IDIIn.TDF:
+  Allow full datafile name to be specified.
+Obit/src/ObitUVUtil.c:
+  VisCompare:  Make count a longlong, better error messages
+Obit/src/ObitImageUtil.c:
+  MFShift: correct trc in plane range
+Obit/src/ObitDConClean.c:
+  ImageStats: Correct type for maxAbsResid in info list.
+Obit/python/EVLAContPipe.py:
+  Beef up polarization calibration, BP plotting
+Obit/include/ObitCUDASkyModel.h Obit/include/ObitCUDASkyModelInfoDef.h 
+Obit/include/ObitCUDAUtil.h
+Obit/include/ObitGPUSkyModelDef.h Obit/include/ObitGPUSkyModel.h
+Obit/src/ObitGPUSkyModel.c Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelMF.c:
+Obit/src/ObitCUDASkyModel.cu:
+  Further development of DFT GPU, spectrum, wideband, Gaussians
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF:
+  Implement GPU
+Obit/include/ObitSkyModelVMPoln.h Obit/include/ObitSkyModelVMPolnClassDef.h 
+Obit/include/ObitSkyModelVMPolnDef.h
+Obit/src/ObitSkyModelVMPoln.c:
+  Full Stokes sky model.
+Obit/tasks/SNCor.c Obit/tasks/SNSmo.c Obit/tasks/CLCor.c:
+  ?In: create myOutput before parsing command line, write after.
+Obit/tasks/AvgBL.c Obit/tasks/BDFIn.c  Obit/tasks/DPCal.c: 
+Obit/tasks/Imager.c Obit/tasks/TabCopy.c Obit/tasks/UVSub.c:
+  Eliminate bogus .out file in /tmp
+Obit/src/ObitIOImageFITS.c:
+  ObitIOImageAIPSCLEANRead: increase dimension of array card
+Obit/include/ObitTableDef.h Obit/include/ObitIO.h:
+  Change BufferSize to ollong
+Obit/src/ObitUVGridWB.c:
+  Remove unused definition of PrepBufferWB
+Obit/src/ObitTable.c:
+  Change BufferSize to ollong in format
+15 Aug. 2014, svn ver. 490
+
+Implement better AVX function routines, bug fixes
+Obit/src/ObitCUDASkyModel.cu:
+   Fix bugs, better optimize
+Obit/src/ObitImageUtil.c:
+  T2Spec: Copy first *two* planes
+Obit/include/avx_mathfun.h Obit/include/sse_mathfun.h:
+  New: Third party AVX/SSE vector implementations of functions
+Obit/include/ObitVecFunc.h Obit/src/ObitVecFunc.c:
+  New: Obit interface to Third party AVX/SSE vector implementations of functions
+Obit/src/ObitExp.c Obit/src/ObitSinCos.c:
+  Implement SSE/AVX vector functions.
+22 Aug. 2014, svn ver. 491
+
+Obit/src/ObitVecFunc.c Obit/src/ObitSinCos.c:
+  SSE bug fixes
+22 Aug. 2014, svn ver. 493
+
+
+Multi thread FArray routines, bug fixes
+Obit/tasks/IDIIn.c:
+  Fix frequencies if bandfreq[0] != 0.
+Obit/python/UV.py:
+  PTableCLfromNX: Correctly write number of antennas in header
+Obit/src/ObitDoppler.c:
+  coordTran: fix bug in calculation of a2, BAD things to CVel
+Obit/python/EVLALowBandPipe.py:
+  Fix typo
+Obit/src/ObitDConCleanWindow.c:
+  AutoWindow: Trap all blanked planes.
+Obit/src/ObitFArray.c:
+  Multithreaded implementations for several routines
+Obit/TDF/FndSou.TDF:
+  Increase range allowed for BLC, TRC
+9 Sept 2014, svn version 494
+
+Bug fixes
+Obit/src/ObitSDMData.c:
+  GetAntArray: Find correct polarization entry
+Obit/src/ObitDConCleanWindow.c:
+  AutoWindow: initialize variable
+9 Sept 2014, svn version 495
+
+Bug fixes
+Obit/src/ObitFArray.c:
+  ShiftAdd: Fix indexing problem in threading
+  Various: fix bugs, indexing
+Obit/TDF/Imager.TDF Obit/TDF/MFImage.TDF:
+  MaxPixel limit to 5,000,000
+13 Sept 2014, svn version 496
+
+Mosaicing improvements, bug fixes
+Obit/python/MosaicUtil.py \
+  New functions GetOverlay, PMaskCube, PMaskCube2
+  History various places
+Obit/TDF/Squish.TDF Obit/tasks/Squish.c \
+  Allow threading
+Obit/src/ObitImageUtil.c \
+  InterpolateImage: blank zeroes before interpolating
+Obit/python/EVLACal.py \
+  EVLAPlotBPTab: Trap newly added parameters in BPLOT
+Obit/src/ObitDoppler.c \
+  CVel: correct index for weight
+Obit/src/ObitUVSel.c \
+  SetDesc: replace "SOURCE" random parameter with "REMOVED" if 1 source selected.
+Obit/tasks/Imager.c \
+ doChanPoln: Keep track of proper output plane number
+Obit/src/ObitDConCleanPxList.c \
+  ThreadClean: Reset search for new peak
+Obit/tasks/Squish.c \
+  Magic value blank output if requested
+Obit/TDF/Squish.TDF \
+  Correct documentation for Parms
+Obit/TDF/MFImage.TDF \
+  Fix documentation of Tapers
+Obit/src/ObitFInterpolate.c \
+  Pixel: Higher threshold for weight
+29 Sept. 2014, svn ver. 497
+
+Implement AIPS FS table for catalog with spectrum
+Implement GPU image interpolator
+Numerous bug fixes, VLITE enhancements
+ObitView/src/menu.c:
+  MenuMarkLogger: update correct menu item.
+Obit/src/ObitImageMF.c:
+  SetSpec: Fix error in logic calculating lower frequency bound
+Obit/src/ObitUVCalBandpass.c:
+  Horrible hack for VLite, it isn't VLBA but says it is.
+  Fix size of FFT in VLBA bandpass shift
+Obit/src/ObitImageUtil.c Obit/include/ObitImageUtil.h:
+Obit/python/ImageUtil.inc Obit/python/ImageUtil.py Obit/python/MosaicUtil.py:
+  New routines to support precomputed pixels in image interpolation
+Obit/include/ObitTableFSClassDef.h Obit/include/ObitTableFSDef.h Obit/include/ObitTableFS.h
+Obit/include/ObitTableFSRowClassDef.h   Obit/include/ObitTableFSRowDef.h 
+Obit/include/ObitTableFSUtil.h
+Obit/src/ObitTableFS.c Obit/src/ObitTableFSUtil.c
+Obit/python/TableFS.inc Obit/python/Table.inc Obit/python/Table.py Obit/python/OData.py
+Obit/TDF/VL2FS.TDF Obit/tasks/VL2FS.c
+Obit/python/Catalog.inc Obit/python/Catalog.py:
+Obit/doc/OBITdoc.tex:
+  Implement FS tables
+Obit/python/Obit_wrap.c  ObitSD/python/Obit_wrap.c:
+  New python interface
+Obit/share/scripts/SpectrumUtils.py:
+  Plotting for FS spectrum table
+Obit/src/ObitGPUSkyModel.c:
+  Fix login in destructor
+Obit/include/CUDAFArrayDef.h  Obit/include/CUDAFArray.h
+Obit/include/CUDAFInterpolateDef.h  Obit/include/CUDAFInterpolate.h
+Obit/src/CUDAFArray.cu Obit/src/CUDAFInterpolate.cu
+Obit/include/ObitGPUFArrayDef.h  Obit/include/ObitGPUFArray.h
+Obit/include/ObitGPUFArrayClassDef.h Obit/src/ObitGPUFArray.c
+Obit/include/ObitGPUFInterpolateDef.h  Obit/include/ObitGPUFInterpolate.h
+Obit/include/ObitGPUFInterpolateClassDef.h Obit/src/ObitGPUFInterpolate.c
+Obit/include/ObitGPUImage.h  Obit/src/ObitGPUImage.c
+Obit/python/GPUFArray.py Obit/python/GPUFInterpolate.py
+Obit/python/GPUFArray.inc Obit/python/GPUFInterpolate.inc:
+  Implementation of GPU based image interpolator
+Obit/include/ObitCUDAUtil.h Obit/src/ObitCUDAUtil.cu
+Obit/python/ImageUtil.inc Obit/python/ImageUtil.py Obit/python/MosaicUtil.py
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Implementation of GPU based image interpolator
+Obit/src/ObitTableIDI_UV_DATA.c:
+  Hack for VLITE DifX bug
+Obit/tasks/IDIIn.c Obit/TDF/IDIIn.TDF:
+  Better parsing of input, ordering of data, u,v,w
+  Add minWT parameter
+  Multiple bug fixes.
+Obit/src/ObitTableIDI_UV_DATA.c Obit/include/ObitTableIDI_UV_DATADef.h:
+  Fix bug in definition of table (ref_pixl)
+Obit/src/ObitTableIM.c Obit/include/ObitTableIMDef.h:
+  Add keyword STK_1
+Obit/src/ObitUVEdit.c:
+  Various: implement killAll option to flag all Stokes if any Stokes is.
+Obit/python/UV.py:
+  Document killAll option in editing.
+Obit/tasks/AutoFlag.c Obit/tasks/MednFlag.c
+Obit/TDF/AutoFlag.TDF Obit/TDF/MednFlag.TDF:
+  Implement killAll to flag all Stokes if any flagged.
+Obit/src/ObitImageUtil.c:
+  UV2ImageDesc: replace blank projection with -SIN (CASA defect)
+Obit/src/ObitUVDesc.c:
+  Index: checks for u,v,w only have the first 2 char.
+17 Oct. 2014 svn ver 498
+
+Various bug fixes
+Obit/tasks/RLPass.c:
+  UpdateBPTable: reset pointer to IO descriptor after it becomes invalid
+Obit/src/ObitIOImageFITS.c:
+  Write: Fix bug with Plane number
+Obit/python/EVLACal.py:
+  EVLACalAP: Use Perley and Butler 2012 in SetJy
+Obit/src/ObitUVSelfCal.c:
+  SelfCal: default noNeg now TRUE
+Obit/tasks/MFImage.c:
+  doImage: Require P Selfcal before A&P (otherwise it fails)
+Obit/src/ObitUVSel.c:
+  ObitUVSelGetDesc,ObitUVSelSetDesc, honor KeepSou parameter.
+Obit/tasks/BDFIn.c:
+  Add SYSTEM_CONFIGURATION to lists of online cal scans to ignore.
+Obit/include/ObitSkyModelDef.h:
+  Dummy GPUSkyModel if no GPU
+Obit/src/ObitDConCleanVis.c:
+  SubNewCCs: No threading (nTh=1), as threading is used in the FArray routine called.
+Obit/tasks/FndSou.c:
+  Islands: Check/merge overlapping islands
+13 Nov. 2014 svn ver 499
+
+various bug fixes
+Obit/src/ObitUVWCalc.c Obit/include/ObitUVWCalcDef.h:
+  Include differential precession in computation of u,v
+Obit/python/EVLACal.py:
+  EVLACalAP: Fix capitalization of setjy.Parms
+Obit/src/ObitPolnCalFit.c:
+  doFitFast: initialize variables
+26 Nov. 2014 svn ver 500
+
+Improvements to KAT-7 data handling, linear feed polarization, bug fixes
+Obit/include/ObitSDMDataTypeDef.h Obit/src/ObitSDMData.c
+Obit/tasks/BDFIn.c:
+  Write feed orientation to AN table.
+Obit/src/ObitImageUtil.c:
+  PBImage: Trap KAT-7, use approprate beam
+  FitBeam: Use descriptor on IO beam member
+Obit/src/ObitPBUtil.c Obit/include/ObitPBUtil.h:
+  Add KAT7 beam
+Obit/python/SkyGeom.py Obit/python/SkyGeom.inc
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Add KAT-7 beam
+Obit/python/KATH5toAIPS.py:
+  Update weights in HDF format
+Obit/src/ObitTableANUtil.c:
+  GetList: Recognize KAT-7 data 
+Obit/tasks/IDIIn.c:
+  GetData: Correct day numbers for data spanning several days.
+Obit/src/ObitPolnCalFit.c Obit/src/ObitUVCalPolarization.c:
+  Fixes for Poln data with linear feeds. 
+9 Jan. 2015, svn ver 501
+
+Enhance PCal, Bug fixes 
+Obit/src/ObitPolnCalFit.c:
+  XPhase parameter
+  Uninitialized variables
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF:
+  Add XPhase parameter
+Obit/src/ObitSDMData.c:
+  Trap ALMA pecularity.
+17 Jan 2015, svn ver 502
+
+Various performanance enhancements and bug fixes
+Obit/changes.log:
+Obit/python/Image.py:
+  newPAImage: Error message if image not found
+Obit/tasks/SetJy.c:
+  Add aliases for calibrators (e.g. "3c286")
+Obit/python/MosaicUtil.py:
+  GetOverlap: Better determination of overlapping regions.
+Obit/python/KATH5toAIPS.py:
+  Update from Tom Mauch
+Obit/src/ObitTableVLUtil.c:
+  Redun: better allocation of work array.
+Obit/src/ObitGPUFInterpolate.c:
+  Fix bug in compatability test
+Obit/src/CUDAFInterpolate.cu:
+  Fix bug in range check
+Obit/src/ObitDoppler.c:
+  defaultRefChan: Give channel requiring the minimum shift of the spectrum.
+Obit/TDF/CVel.TDF:
+  Update documentation.
+Obit/src/ObitFInterpolate.c:
+  Pixel: no need to interpolate if within 0.01 pixel.
+Obit/src/ObitFArray.c:
+  RMS: put upper bound of 1000 on histogram size, other "fixes"
+Obit/include/ObitImageDesc.h Obit/src/ObitImageDesc.c:
+  Add Aligned routine to determine if image grids are aligned.
+Obit/src/ObitImageUtil.c:
+  ThreadImageInterp: faster pixel conversion if grids aligned.
+Obit/src/ObitDConCleanVis.c:
+  Sub: Only reset fresh if something actually subtracted.
+  MakeResiduals: Fix logic handling all fresh images
+30 Jan. 2015 svn version 503
+
+Major upgrade to BDFIn to allow appending data to an existing dataset, other enhancements,  bug fixes
+Obit/TDF/PCal.TDF Obit/tasks/PCal.c:
+  Correct dimention of XPhase
+  Parameter doFitOri to control fitting orientations
+Obit/src/ObitPolnCalFit.c Obit/include/ObitPolnCalFitDef.h:
+  Constrain instrumental fits in doFitFast better
+  Allow fixing orientations
+Obit/src/ObitUVWCalc.c:
+  Better trapping of bad values
+Obit/TDF/BDFIn.TDF Obit/tasks/BDFIn.c:
+  Add option doAppend to append new data to an existing dataset
+  Add parameter binFlag to enable applying binary flags.
+  Faster creation of CL table for ALMA.
+Obit/include/ObitSDMData.h Obit/include/ObitSDMDataTypeDef.h Obit/src/ObitSDMData.c:
+Obit/src/ObitBDFData.c  Obit/include/ObitBDFDataDef.h:
+  Functionality to assist in appending data in BDFIn
+  Enable binary flagging.
+  Fix bug in atmospheric phase corr selection.
+Obit/include/ObitTableCLUtil.h Obit/src/ObitTableCLUtil.c:
+  New routine GetDummyNX to make Dummy CL table from an NX table
+Obit/tasks/SetJy.c:
+  Fix alias for 3C123
+  Fix P&B 2012 calculation
+Obit/tasks/Lister.c:
+  Trap unspecified source when computing observing geometry.
+Obit/tasks/MapBeam.c:
+  Trap only Stokes I
+  Better error trap, copy Stokes parameter to input uv data.
+Obit/python/EVLACal.py: 
+  Fix problems in EVLAStdModel
+20 Feb 2015, svn ver 504
+
+Upgrade to BDFIn to ingest VLA Planetary Ephemeris tables and write PO table
+other bug fixes
+Obit/tasks/BDFIn.c Obit/src/ObitSourceEphemerus.c:
+  Implement Ephemeris xml table in calculaing u,v,w and PO table
+Obit/src/ObitSDMData.c:
+  Add antenna offset (ALMA) to the station position 
+Obit/src/ObitTablePO.c Obit/include/ObitTablePO.h Obit/include/ObitTablePODef.h
+Obit/include/ObitTablePOClassDef.h
+Obit/include/ObitTablePORowDef.h Obit/include/ObitTablePORowClassDef.h
+Obit/python/Table.inc  Obit/python/Table.py
+Obit/doc/OBITdoc.tex Obit/python/TablePO.inc
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c
+  Implement PO table for planetary ephemeris.
+Obit/src/ObitPolnCalFit.c:
+  Trap logic error in UpdateBPTable with in->antGain.
+Obit/src/ObitUVWCalc.c:
+  Remove "differential precession correction" - not correct?
+27 Feb 2015 svn version 505
+
+Missing changes for last update
+Obit/include/ObitSDMDataTypeDef.h Obit/include/ObitSDMDataDef.h:
+ Changes for ephemeris table
+27 Feb 2015 svn version 506
+
+Enhancement to Lin Feed poln cal, ALMA enhancements to BDFIn, bug fixes
+Obit/src/ObitSDMData.c Obit/include/ObitSDMDataTypeDef.h:
+  Add missing equinoxEquator variable to Equinox table.
+  Correct calculation of ALMA antenna locations.
+  uninitialized variable
+Obit/src/ObitSourceEphemerus.c Obit/include/ObitSourceEphemerusDef.h:
+  Reorganize to adapt to ALMA scheme
+Obit/tasks/IDIIn.c:
+  Fix logic bugs in reference day for concatenating data spanning a day boundry.
+Obit/TDF/CubeClip.TDF Obit/tasks/CubeClip.c:
+  Add parameter for absolute minimum value.
+Obit/src/ObitPolnCalFit.c:
+  divide X/Y gain between X,Y
+  constraints on fitting Stokes V
+6 Mar 2015, svn ver. 507
+
+Bug fixes
+Obit/src/ObitSDMData.c:
+ Fix bugs in renumbering source table
+ Fix bugs in converting ALMA CalAtmosphere table to SN table
+Obit/src/ObitBDFData.c:
+ Fix bugs in applying binary flags
+Obit/src/ObitSourceEphemerus.c:
+ Fix bugs in looking up source
+Obit/src/ObitUVDesc.c:
+ Calculate correct frequency increment for lower sideband.
+13 March 2015 svn version 508
+
+Bug fixes, scripting enhancements
+Obit/src/ObitTableFSUtil.c:
+  FiltVel: Better test for blanked spectrum
+ObitView/src/menu.c ObitView/src/Image2Pix.c:
+  Suppress multiple FITS image loads.
+Obit/python/EVLACal.py:
+  Add options to polarization calibration
+  Add numIFs parameter for RLdly
+Obit/python/EVLAContPipe.py:
+  Remove RLPass before PolCal, add options to PolCal.
+  Add numIFs parameter for RLdly
+Obit/src/ObitTableCCUtil.c:
+  GetType: More robust method of getting CC type
+Obit/src/ObitImageFit.c:
+  Fit: increse prtLv needed for RMS residual display
+Obit/src/ObitUVRLDelay.c
+Obit/tasks/RLDly.c Obit/TDF/RLDly.TDF:
+  Make cross pol. delay fitting more robust.
+25 March 2015 svn version 509
+
+Bug fixes
+Obit/src/ObitTableFSUtil.c Obit/tasks/RLPass.c:
+  Update: Do not unflag previously flagged BP entries.
+Obit/src/ObitImageUtil.c:
+  MakeImage, MakeImagePar: use first fitted beam size if none specified
+31 Mar 2015, svn ver 510
+
+Implement >255 antenna AIPS data format, bug fixes
+ Obit/python/Catalog.py:
+  PFSGetSpectrum,  PFSPurge: Correct call sequence
+Obit/src/ObitTableFSUtil.c:
+  GetSpectrum: Get actual number of channels from size of Spectrum.
+Obit/src/ObitBDFData.c Obit/include/ObitBDFDataDef.h:
+  Allow both UV data with a "BASELINE" or "ANTENNAn" random parameters
+  InitScan, GetVis: Fix bugs in binary flagging  logic.
+Obit/include/ObitUVDescDef.h Obit/include/ObitUVDesc.h
+Obit/src/ObitUVDesc.c Obit/src/ObitUVEdit.c Obit/src/ObitUVReweight.c
+Obit/src/ObitUVRFIXize.c Obit/src/ObitUVSortBuffer.c Obit/src/ObitUVUtil.c
+Obit/src/ObitBDFData.c Obit/src/ObitUVGSolveWB.c Obit/src/ObitUVGSolve.c
+Obit/src/ObitUVCalPolarization.c Obit/src/ObitUVCalFlag.c
+Obit/src/ObitUVCalCalibrate.c  Obit/src/ObitUVCal.c
+Obit/src/ObitUVCalBaseline.c Obit/src/ObitTableSNUtil.c
+Obit/src/ObitTableCLUtil.c Obit/src/ObitSkyModelVMSquint.c
+Obit/src/ObitSkyModelVMPoln.c Obit/src/ObitSkyModelVM.c
+Obit/src/ObitSkyModelVMBeamMF.c Obit/src/ObitSkyModelVMBeam.c
+Obit/src/ObitPolnCalFit.c Obit/src/ObitGPUSkyModel.c
+Obit/src/ObitDoppler.c
+Obit/tasks/AvgBL.c Obit/tasks/BPass.c
+Obit/tasks/IDIIn.c Obit/tasks/IDIOut.c Obit/tasks/Lister.c
+Obit/tasks/MapBeam.c Obit/tasks/SrvrEdt.c Obit/tasks/UVAppend.c
+Obit/tasks/UVSim.c Obit/tasks/WVRCal.c:
+  Allow both UV data with a "BASELINE" or "ANTENNAn" random parameters
+08 May 2015, svn ver 511
+
+History improvement
+Obit/src/ObitHistory.c:
+  CopyInfoList: Allow up to 3x64 characters in first string
+15 May 2015, svn ver 512
+
+Improvements in linear feed polarization fitting, bug fixes
+Obit/src/ObitIOImageFITS.c:
+  WriteDescriptor: Allow '_' in keywords.
+Obit/share/scripts/SpectrumUtils.py:
+  OImageSpectrum: restore descriptor state
+  doFourPlots: multiple spectrum plots
+Obit/python/EVLACal.py:
+  Model fixes for 3C48, 
+  EVLACalAP: Correct model flux to CalModelFlux
+  Allow specyfing poln cal in ploting spectra.
+Obit/python/EVLAContPipe.py:
+  Apply poln corrections when plotting RL/LR spectra
+Obit/tasks/BDFIn.c:
+   GetFrequencyInfo: Correct correction for EVLA variable channel width.
+Obit/src/ObitPolnCalFit.c :
+  UpdateBandpassTab: Invert gains.
+  FitFit: If refAnt given for lin feeds, fix first ellipticity,
+     second fit with ellipticity unconstrained.
+  several: enable constraining Linear feed ellipticities to average to zero. 
+Obit/TDF/PCal.TDF:
+  Document changed use of refAnt for linear feeds
+Obit/src/ObitUVCalPolarization.c:
+  SetInvJonesIF: Don't double apply RLPhaseDif
+Obit/python/OData.py:
+  Add numBand in call to Obit.TableMC
+  TableIM: correct order of arguments.
+Obit/doc/OBITdoc.tex Obit/src/ObitTableMC.c:
+  MC table, add underscores to DISP_* and DDISP_* column names.
+1 July 2015, svn. version 513
+
+ALMA continuum pipeline scripts added, feathering of cubes, bug fixes
+Obit/python/ALMACal.py   Obit/python/ALMAPipe.py
+Obit/python/OASDM.py Obit/share/scripts/ALMATemplateParm.py:
+  Implement ALMA continuum processing pipeline
+Obit/python/EVLAContPipe.py Obit/python/EVLACal.py:
+  various: Specify flag table
+  Add noScrat to AvgCal
+Obit/src/ObitBDFData.c:
+  ReadInteg: reset scale before each use.
+Obit/tasks/Feather.c  Obit/TDF/Feather.TDF:
+  Enable loop over planes
+Obit/src/ObitFeatherUtil.c:
+  Interpol: Get plane number from info->BLC
+Obit/python/OASDM.inc Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  ALMA has no correlationBit
+Obit/src/ObitUVUtil.c Obit/src/ObitUVEdit.c:
+  various: check for antenna number >numAnt
+  MedianUVInt: min interval = 500 msec
+Obit/src/ObitUV.c:
+  Copy: set err->error=10 if no data
+Obit/src/ObitDConCleanVis.c:
+  Deconvolve: Trap no data and return, clearing error.
+  add ClearAllResiduals to zero residual images.
+Obit/src/ObitErr.c:
+  Push: keep err->error > 1
+Obit/tasks/Imager.c:
+  BLAvg: Trap no data from UVCopy
+Obit/python/MosaicUtil.py:
+  More robust mosaicing.
+Obit/src/ObitTableFSUtil.c:
+  FiltVel: Only do moment analysis within 15 cells of peak
+  Print: Check for invalid (CenterZ==fblank) entry
+Obit/tasks/VL2FS.c:
+  FiltVel: input=output if only doFit
+Obit/tasks/BDFIn.c:
+  Set correct sideband in FQ table for VLA screwup hack
+Obit/tasks/FndSou.c:
+  enforce minimum beam size
+Obit/tasks/PCal.c:
+  History: add refAnt
+Obit/TDF/Splat.TDF Obit/tasks/Splat.c:
+  Add noScrat parameter
+20 Jul. 2015, svn version 514
+
+Enhancements to EVLA and ALMA processing scripts, FS table handling, bug fixes
+Obit/src/ObitUVEdit.c:
+  Stokes: min timeAvg=0.1 sec
+Obit/python/EVLAContPipe.py:
+  Pass source list to EVLACalAP
+Obit/python/EVLACal.py:
+  CalAvg: give mesage when generating new CL table.
+  CalAP: Use model spectral index if model flux given.
+  CalAP: "Self" calibrate calibrators, targets with "Phase" calibrators
+Obit/src/ObitTableFSUtil.c:
+  Redun: Matching source must be within 1 channel.
+Obit/TDF/SetJy.TDF Obit/tasks/SetJy.c:
+  Add Alpha = spectral index for ZeroFlux
+Obit/python/MosaicUtil.py:
+  Fix bug in mosaicing cubes, output plane one low
+Obit/share/scripts/ALMATemplateParm.py:
+  Fix bug in setting PCals
+  Correct documentation
+Obit/python/ALMAPipe.py Obit/python/ALMACal.py :
+  Make amplitude calibration more robust.
+  Bug fixes, documentation
+Obit/tasks/BDFIn.c:
+  Add positions of Ephemeris objects to SU table
+  Ignore ALMA "QA0:" gibberish in flag table
+  Enable ALMA online cal scan flagging
+  Bug fixes with sources when concatenating datasets
+31 Jul. 2015, svn version 515
+
+Patch for EVLA frequency reversal, improve EVLA, ALMA processing scripts
+task to align images in frequency, bug fixes.
+Obit/python/ALMAPipe.py Obit/python/ALMACal.py:
+  Trap problems in VO table writer.
+  Use proper models in phase calibration
+  enable Alpha in model given to SetJy
+  Cleanup html writer
+Obit/python/EVLACal.py:
+  Add useSetJy in CalAP
+Obit/tasks/BDFIn.c:
+  UpdateEphemSource: Fix indexing bug in SU table
+  Hack for EVLA frequency flip.
+Obit/share/scripts/ALMATemplateParm.py:
+  abs(@SPANBW@)
+Obit/src/ObitImage.c:
+  FromFileInfo: get rid of trailing blanks in FITS file name
+Obit/include/ObitImageUtil.h Obit/src/ObitImageUtil.c:
+  Add function Interp3 to interpolate an image in frequency plane
+Obit/TDF/FAlign.TDF Obit/tasks/FAlign.c:
+  Task to align image cubes on the third axis.
+Obit/TDF/Feather.TDF:
+  Allow 128 character FITS file names, documentation
+Obit/src/ObitFArray.c:
+  ThreadFAShAdd: Don't blank if the output is the accumulation of an input
+Obit/src/ObitEVLASysPower.c:
+  Init: trap no actual table (may be error messages)
+8 Aug, 2015, svn ver. 516
+
+New task to duplicate channels in UV data, bug fixes
+Obit/TDF/Bloat.TDF Obit/tasks/Bloat.c:
+  New task to duplicate channels, "undo" Hanning descm.
+Obit/src/ObitUVCalCalibrate.c Obit/src/ObitGPUSkyModel.c Obit/src/ObitPolnCalFit.c
+Obit/src/ObitThreadGrid.c Obit/src/ObitUV.c Obit/src/ObitUVCalBandpass.c
+Obit/src/ObitUVCal.c Obit/src/ObitUVCalFlag.c Obit/src/ObitUVCalPolarization.c
+Obit/src/ObitUVEdit.c Obit/src/ObitUVGSolveWB.c Obit/src/ObitUVSel.c
+Obit/src/ObitUVSoln.c:
+  various: trap no IF axis
+Obit/tasks/BPass.c:
+  Write BPass table each channel rather than saving SN tables.
+Obit/src/ObitUV.c:
+  FromFileInfo: Limit nVisPIO
+Obit/src/ObitDoppler.c:
+  CVel: trap out of buffer indexing
+Obit/python/EVLACal.py:
+  EVLACalModel: fix syntax bug
+Obit/src/ObitUVUtil.c Obit/include/ObitUVUtil.h:
+  BlAvgTF: double size of sort buffer (2 GByte)
+  Bloat: Add frequency channel duplication fn
+20 Aug, 2015, svn ver 517.
+
+Parallelize MapBeam, bug fixes
+Obit/TDF/UVFix.TDF :
+  Document allow multiple subarrays
+Obit/include/ObitUVWCalcDef.h Obit/src/ObitUVWCalc.c:
+  Allow multiple subarrays
+Obit/tasks/MapBeam.c:
+  accumData: Print diagnostic messages more often, to keep count from wrapping
+  change sign of u (again)
+  parallelize
+Obit/src/ObitFile.c:
+  ReadXML: Fix bug detecting premature EOF
+Obit/tasks/BDFIn.c:
+  GetCalDeviceInfo: trap missing noiseCal
+  GetFlagInfo: Trap corrupted ASDM missing AntennaId
+  Made more tolerant to bad data files
+Obit/src/ObitSkyModelVMBeam.c Obit/src/ObitSkyModelVMBeamMF.c:
+  ThreadSkyModelVMBeamFTDFT: convert suba to 0 rel for UpdateModel
+     also logic bugs in looping over channels.
+Obit/src/ObitImageInterp.c:
+  ReadImage: Add channel frequency offset to freqs
+Obit/src/ObitUVUtil.c:
+  VisDivide: fix bug from Eric Format change.
+Obit/python/FInterpolate.py:
+  fix numerous bugs
+22 Sep. 2015, svn ver 518.
+
+Work on primary beam corrections, bug fixes
+Obit/include/ObitSkyModelVMBeamDef.h Obit/include/ObitSkyModelVMBeam.h
+Obit/include/ObitSkyModelVMBeamMFDef.h Obit/include/ObitSkyModelVMBeamMF.h
+Obit/src/ObitSkyModelVMBeam.c Obit/src/ObitSkyModelVMBeamMF.c
+Obit/tasks/BeamCor.c Obit/TDF/BeamCor.TDF
+Obit/tasks/MFBeam.c Obit/TDF/MFBeam.TDF:
+  Switch from I & V beam to R/X & L/Y
+Obit/include/ObitBeamShape.h Obit/include/ObitBeamShapeDef.h Obit/src/ObitBeamShape.c:
+  Added tabulated beam interpolation option.
+Obit/TDF/SYGain.TDF Obit/tasks/SYGain.c:
+  Parallelized more of the MWF smoothing.
+  Clipping levels now specified as sigmas
+  Several serious bug fixes, previously not working
+Obit/src/ObitUVReweight.c Obit/tasks/UVAppend.c:
+  Allow larger frequency difference, scale u,v,w
+Obit/src/ObitUVRLDelay.c:
+  Fix indexing bugs when averaging IFs.
+Obit/src/ObitImageUtil.c:
+  Fix bugs in non unit stride
+Obit/tasks/MapBeam.c Obit/TDF/MapBeam.TDF:
+  Fix bugs in interpolation, allow closest cell
+Obit/src/ObitSkyModelVMSquint.c:
+  ThreadSkyModelVMSquintFTDFT: bug fix, subarray to 0 rel.
+Obit/tasks/Lister.c Obit/TDF/Lister.TDF:
+  Add UVRange
+16 Oct 2015, svn ver 519
+
+EOP in BDFIn, bug fixes
+Obit/include/ObitSDMDataDef.h Obit/include/ObitSDMDataTypeDef.h
+Obit/src/ObitSDMData.c Obit/tasks/BDFIn.c:
+  Read EOP from new delay model tables
+Obit/src/ObitUVPeelUtil.c:
+  Peel: Ignore lower resolution fields
+Obit/src/ObitDConCleanVis.c:
+  Reimage : wider sum for peak in image for autoCenter
+Obit/src/ObitImageUtil.c:
+  SelCopy: Fix multidimentional selection
+Obit/doc/OBITdoc.tex
+Obit/include/ObitTableSNRowDef.h Obit/include/ObitTableSNDef.h Obit/src/ObitTableSN.c:
+  Add dispersive delays
+29 Oct 2015, svn ver 520
+
+Really EOP in BDFIn, GPU in Calib bug fixes
+Obit/src/ObitSDMData.c Obit/tasks/BDFIn.c:
+  Implement EOP in BDFIn
+Obit/src/ObitBeamShape.c \
+   GetTabBeam: use 1 for value within 0.1 pixel of center.
+Obit/TDF/Calib.TDF Obit/tasks/Calib.c \
+   Enable GPU model calculation
+Obit/src/ObitBeamShape.c \
+  FindTabBeam: Fix S band beam
+  GetTabBeam: Fix indexing bug
+31 Oct 2015, svn ver 521
+
+Mostly partially successful EVLA beam imaging and correction, bug fixes
+Beam imaging and correction using correlation (RR,LL,RL,LR) beams
+Obit/src/ObitBeamShape.c:
+  Update P band beam
+  Update S band beam
+Obit/src/ObitUVUtil.c:
+  AvgF: Add noscale option to suppress scaling u,v,w (e.g. holography)
+Obit/TDF/MapBeam2.TDF Obit/tasks/MapBeam2.c:
+  New task to make correlation beam images
+Obit/include/ObitSkyModelVMBeamDef.h Obit/include/ObitSkyModelVMBeam.h
+Obit/src/ObitSkyModelVMBeam.c Obit/src/ObitSkyModelVMBeamMF.c:
+  Implement beam correction using correlation beams for all data.
+Obit/TDF/BeamCor.TDF Obit/TDF/MFBeam.TDF
+Obit/tasks/BeamCor.c Obit/tasks/MFBeam.c:
+  Change to use correlation beams rather than Stokes
+Obit/src/ObitHistory.c:
+  CopyInfoList: Add task name to all lines, cleanup floats
+Obit/src/ObitImageUtil.c:
+   various: Index output descriptor after copying
+Obit/tasks/MFImage.c:
+  doSources: Reset initial targBeam before each source    
+Obit/TDF/UVCopy.TDF Obit/TDF/Split.TDF:
+Obit/tasks/UVCopy.c Obit/tasks/Split.c:
+  Add UVRange parameter.
+Obit/src/ObitImageDesc.c:
+  CvtPixel: Better diagnostics in coordinate conversion.
+  Index: be sure coordType set for galactic
+Obit/src/ObitImageInterp.c:
+  FindPlane: Make more robust
+18 Dec 2015, svn ver 522
+
+Mostly bug fixes
+Obit/src/ObitIOImageFITS.c:
+  fixIRAF: Trap actual skew before determining rotation.
+Obit/src/ObitPlot.c Obit/include/ObitPlot.h:
+Obit/python/OPlot.inc Obit/python/OPlot.py:
+  Add DrawCircle
+  various: bugs in Gal. Lat. labeling
+  Grayscale: Allow extra for ticks
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Update python interface to OPlot.
+Obit/src/ObitDisplay.c: 
+  Create: Only issue warning if more than one display is attempted.
+  Various: NOP if no display defined
+8 Jan 2016, svn ver 523
+
+Get image plane frequency from image class, bug fixes
+Obit/src/ObitUVRLDelay.c: 
+  Cal: Fix double use of loop index.
+Obit/tasks/PCal.c Obit/TDF/PCal.TDF
+Obit/include/ObitPolnCalFitDef.h Obit/include/ObitPolnCalFit.h:
+Obit/src/ObitPolnCalFit.c:
+  Add dPPol (freq. derivative of PPol) parameter
+Obit/tasks/MFImage.c Obit/tasks/Imager.c:
+  BLAvg: Make sure KeepSou set to FALSE
+Obit/src/ObitImageUtil.c:
+  PBImage: Get image frequency from image class function GetPlaneFreq
+Obit/include/ObitImage.h Obit/include/ObitImageClassDef.h Obit/include/ObitImageMF.h :
+Obit/src/ObitImage.c Obit/src/ObitImageMF.c:
+  Implement GetPlaneFreq.
+Obit/python/MosaicUtil.py:
+  PWeightImage: Option to weight each plane independently
+Obit/python/ImageUtil.py:
+  documentation
+18 Jan 2016, svn ver 524
+
+Bug fixes
+Obit/src/ObitTablePSUtil.c:
+  WantSour: Fix logic bug for status "Failed"
+Obit/src/ObitSDMData.c:
+  PointingLookup;: do not consider missing entry an error
+Obit/tasks/BDFIn.c:
+  HoloUVW: use last offset if missing pointing data
+19 Jan 2016, svn ver 525
+
+Mostly bug fixes
+Obit/src/ObitBeamShape.c:
+  FindTabBeam: correct inverse cell spacing for P band
+Obit/tasks/BDFIn.c:
+  GetHeader: for VLA in Append mode fix frequency test.
+Obit/src/ObitGainCal.c:
+  Calc: Always write new gain calibration table
+Obit/src/ObitSkyModelMF.c Obit/src/ObitSkyModelVMPoln.c:
+  ThreadSkyModel?FTDFT: correct sign of spectral index correction
+  LoadComps: Implement factor for tabulated spectra
+Obit/src/ObitDConCleanVis.c:
+  AutoWindow: set autoWindowFlux at least as low as 0.85*PeakOut
+Obit/src/ObitSpectrumFit.c:
+  Fix bugs in single spectrum fit.
+Obit/src/ObitIOImageFITS.c:
+  Read: Fix indexing bug for planes
+Obit/src/ObitSwPower.c:
+  UpdateTime: Only select desired Antenna.
+Obit/tasks/SYGain.c:
+  Numerous bug fixes
+Obit/tasks/Lister.c:
+  Add time and source selection for "GAIN" display.
+3 Feb 2016, svn ver 526
+
+SysPower calibration, Spectral fitting enhancement; mostly bug fixes
+Obit/tasks/SYGain.c Obit/TDF/SYGain.TDF:
+  No copy of SY table or smoothing if not needed
+Obit/src/ObitIOImageFITS.c Obit/src/ObitIOImageAIPS.c:
+  Use ObitInfoListAlwaysPut rather than ObitInfoListPut writing keywords.
+ObitView/src/imagedisp.c:
+  Use g format for pixel value displayed
+Obit/share/scripts/EVLAContTemplateParm.py:
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py:
+  Add SY calibration to EVLA calibration script
+Obit/tasks/MapBeam2.c:
+   MakeMBFuncArgs: Be sure all rows processed when threading
+Obit/TDF/MapBeam2.TDF:
+   Documentation
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py
+Obit/share/scripts/EVLAContTemplateParm.py:
+  Add SY calibration
+Obit/tasks/SNCor.c:
+  various: correct rounding of selected IF.
+Obit/src/ObitUV.c:
+  GetSelect: if end timerange< beginning, take all after beginning.
+Obit/include/ObitUVUtil.h  Obit/src/ObitUVUtil.c
+Obit/python/UV.py Obit/python/UV.inc:
+  New function XPolDivide to divide X pol visibilities by Stokes I
+  Fix counting types (to longlong) in Count
+Obit/python/Obit_wrap.c Obit/python/ObitSD_wrap.c:
+  Rebuild python Obit interface
+Obit/src/ObitPolnCalFit.c:
+  Fix bugs involving single source file.
+Obit/tasks/PCal.c:
+  Disable KeepSou stuff.
+Obit/src/ObitSpectrumFit.c Obit/include/ObitSpectrumFit.h
+Obit/include/ObitSpectrumFitClassDef.h: 
+  Make ObitSpectrumFitter and ObitSpectrumWriteOutput public
+Obit/include/ObitImageMF.h Obit/src/ObitImageMF.c:
+  Add routine FitSpec2 to write new image fittiing spectra.
+Obit/python/ImageMF.py Obit/python/ImageMF.inc:
+   Add FitSpec2.
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Rebuild python interface
+Obit/src/ObitInfoList.c:
+  various: ignore bad entries
+Obit/src/ObitInfoElem.c:
+  various: check for band entry (no name)
+26 Feb 2016, svn ver 527
+
+Obit/src/ObitInfoList.c:
+ Fix bugs introduced last version
+28 Feb 2016, svn ver 528
+
+Obit/src/ObitInfoList.c:
+ Fix bugs introduced last version
+29 Feb 2016, svn ver 529
+
+Obit/src/ObitInfoList.c:
+ Fix bugs introduced last version
+29 Feb 2016, svn ver 530
+
+Obit/src/ObitInfoList.c:
+ Fix bugs introduced last version
+29 Feb 2016, svn ver 531
+
+More general specification of CLEAN boxes;
+check system memory in deciding nuber of parallel facets
+bug fixes
+Obit/TDF/MFImage.TDF Obit/tasks/MFImage.c
+Obit/TDF/Imager.TDF Obit/tasks/Imager.c
+Obit/src/ObitDConClean.c:
+  Implement CLEANFile
+Obit/src/ObitUVImager.c Obit/src/ObitUVImagerMF.c \
+  GetNumPar: Change to ask for up to 20% of total memory
+Obit/src/ObitSkyModelMF.c:
+  Fix bugs with applying factor
+  Fix bugs with Spectrum lookup table.
+Obit/src/ObitDConCleanVis.c:
+  Reimage: Use phase center to get offsets rather than antenna pointing
+Obit/src/ObitUVUtil.c:
+  Better compatability checks to cover Eric's format changes.
+Obit/src/ObitFile.c:
+  Open, Exist: remove any trailing blanks in name
+ 5 Mar 2016, svn ver 532
+
+bug fixes
+Obit/TDF/MFImage.TDF Obit/TDF/Imager.TDF
+   change 'Str' =>'str'
+ 6 Mar 2016, svn ver 533
+
+Protection against changing ASDM, bug fix
+Obit/TDF/MFImage.
+   change 'Str' =>'str' for real this time
+Obit/tasks/BDFIn.c:
+  GetAntennaInfo, GetEOPInfo: Use traditional AIPS units for EOP.
+  Mostly just trap if polar offsets have been changed to radians
+Obit/doc/OBITdoc.tex:
+  Update units for AIPS AN and AIPS CT tables polar X,Y offsets
+11 Mar 2016, svn ver 533
+
+Enhancements to ObitView, bug fixes
+ObitView/src/markpos.c ObitView/src/helpbox.c ObitView/src/aboutbox.c:
+  Add 'Clear' button, other features to "Mark" position
+Obit/python/OSurvey.py:
+  Add import Table
+Obit/src/ObitTableVLUtil.c Obit/src/ObitSurveyUtil.c:
+  VLPrint: scale flux listing to microJy if needed
+Obit/src/ObitImageMosaic.c Obit/src/ObitImageMosaicMF.c:
+Obit/src/ObitImageMosaicWB.c:
+   Define Catalog variable large enough.
+17 Mar 2016, svn ver 535
+
+Enhancemnets to survey calibration/error analysis, bug fixes.
+Obit/tasks/BDFIn.c:
+  Correct units of Gauss constant, enter universal grav. const. in CT table
+Obit/src/ObitIOImageFITS.c:
+  Pick up CASA clean beam parameters.
+Obit/tasks/FndSou.c:
+  GetInitialModel: trap missing beam and use 3 pixel round.
+Obit/src/ObitSurveyUtil.c Obit/include/ObitSurveyUtil.h:
+  New routines for generic listing and calibrating/error analysis
+Obit/python/OSurvey.py  Obit/python/OSurvey.inc 
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Python interface to new ObitSurvey routines
+Obit/python/EVLACal.py:
+  EVLACalAP: expand clcal.Sources if needed
+28 Mar 2016, svn ver 536
+
+Remove unnecessary header keywords
+Obit/tasks/Imager.c Obit/tasks/MFImage.c \
+  BLAvg: Remove KeepSou keyword from header rather than set False
+31 Mar 2016, svn ver 537
+
+Various bug fixes for calibration scripts etc.
+Obit/python/OSurvey.py \
+  PGenCorErr: Correct name of SWIG function
+Obit/src/ObitTableVLUtil.c \
+  Print: allow passing minSNR
+Obit/python/Catalog.py \
+  VLPrint: better documentation
+  PFSFiltVel: Add minFlux, minSNR arguments
+Obit/python/OASDM.py \
+  GetAmpCal: Drop message about "Drop unknown amp cal"
+Obit/python/EVLACal.py \
+  Prepare: Add session code to parms file.
+  StdModel: correct frequencies for 3C48 S and C band
+  CalAvg: Zap SY tables on output.
+  Add mednTarg parameters for median window targets
+Obit/python/EVLAContPipe.py \
+  Add mednTarg parameters for median window targets
+Obit/python/MosaicUtil.py \
+  MakeMaster: Copy tmpl.Desc.List to the accumulation files.
+Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelMF.c \
+Obit/src/ObitSkyModelVMBeamMF.c Obit/src/ObitSkyModelVM.c \
+Obit/src/ObitSkyModelVMPoln.c \
+  LoadComps: noNeg FALSE for Stokes not I
+Obit/src/ObitUVSelfCal.c \
+   SelfCal: Reset noNeg on sky model if no self cal needed
+Obit/src/ObitUVUtil.c \
+  AvgT: change min imput time from 1.0 to 0.01 sec.
+Obit/src/ObitUVEdit.c \
+  Median: do not process segments shorter than 10 samples.
+15 Apr 2016 svn ver 538
+
+Various bug fixes/hacks for Macs
+Obit/src/ObitUVImager.c  Obit/src/ObitUVImagerMF.c:
+  Patch for Mac version of asking how big memory is
+ObitView/ObitView.c:
+  Comment out apparently extra XtVaSetValues for menu
+Obit/share/scripts/EVLAContTemplateParm.py:
+  Add doBPPlot flag
+22 Apr 2016 svn ver 539
+
+Add BDFIn support for VLA OTF mode data, FndSou FDR heuristics, bug fixes
+Obit/src/ObitSDMData.c Obit/src/ObitBDFData.c
+Obit/include/ObitBDFDataDef.h Obit/include/ObitSDMDataDef.h
+Obit/include/ObitSDMDataTypeDef.h
+Obit/tasks/BDFIn.c Obit/TDF/BDFIn.TDF: 
+  Add doQual parameter allowing support of EVLA OTF mode with
+  subscans labeled by AIPS qualifier.
+Obit/tasks/FndSou.c:
+  Improve heuristics for FDR, not as picky about blanking
+Obit/src/ObitTableVLUtil.c Obit/python/Catalog.py:
+  Print: Add control for min SNR
+Obit/src/ObitImageMF.c Obit/src/ObitSpectrumFit.c Obit/include/ObitSpectrumFitDef.h:
+Obit/python/ImageMF.py:
+  Allow correcting average spectral index before fitting spectrum 
+Obit/share/scripts/scriptPBUndo.py:
+  script to remove PB corection
+Obit/src/ObitImageMosaic.c Obit/src/ObitImageMosaicMF.c  Obit/src/ObitImageMosaicWB.c:
+  Create: Cleanup definition/use of overlap
+  FlyEye: More robust definition of overlapping facets.
+Obit/src/ObitPlot.c:
+  DrawCircle: Increase accuracy of approximation of a circle.
+ObitTalk/doc/ObitTalk.tex:
+  Change in graphics package to allow a build on Macs.
+Obit/src/ObitIOImageFITS.c:
+  fixIRAF: fix bug in intrepreting CD matrix.
+Obit/src/ObitDConClean.c:
+  Trap negative declinations 0 to -1
+Obit/src/ObitPixHisto.c:
+  Better formats for diagnostics.
+13 May 2016,svn 540
+
+Bug fixes
+Obit/src/ObitTableUtil.c:
+  Fix bug in Sort, attach row to output
+Obit/TDF/BDFIn.TDF:
+  Fix typo
+17 May 2016,svn 541
+
+Bug fixes
+Obit/src/ObitTableFSUtil.c:
+  Trap incompatible spectrum sizes
+Obit/include/ObitSDMDataDef.h Obit/src/ObitSDMData.c
+Obit/src/ObitBDFData.c:
+  Add selCode an doCode to ASDMData and use in source selection
+  This fixes doCode and selCode
+Obit/tasks/BDFIn.c:
+  Fix bugs in source numbering
+26 May 2016,svn 542
+  
+Major upgrade to BDFIn to support EVLA OTF data
+Obit/bin/ObitTables.pl:
+  Change copyright date
+Obit/src/ObitPointing.c Obit/include/ObitPointingClassDef.h
+Obit/include/ObitPointingDef.h Obit/include/ObitPointing.h
+  New class for parsing ASDM Pointing.bin tables
+Obit/doc/OBITdoc.tex:
+Obit/python/TablePT.inc Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c
+Obit/src/ObitTablePT.c Obit/include/ObitTablePT.h
+Obit/include/ObitTablePTDef.h Obit/include/ObitTablePTClassDef.h
+Obit/include/ObitTablePTRowDef.h Obit/include/ObitTablePTRowClassDef.h
+  New class for AIPS PT (pointing) table
+Obit/src/ObitSDMData.c Obit/include/ObitSDMData.h Obit/include/ObitSDMDataDef.h
+Obit/include/ObitSDMDataTypeDef.h Obit/python/OASDM.inc:
+  Major upgrade to source handling, add Pointing.bin parsing.
+Obit/tasks/BDFIn.c Obit/TDF/BDFIn.TDF Obit/tasks/ASDMList.c
+Obit/src/ObitBDFData.c:
+  Changes in source handling, pointing table
+7 June 2016,svn 543
+
+Bug fixes, new task for flagging OTF data
+Obit/src/ObitSDMData.c:
+  DefaultCalCode: fix indexing bug
+Obit/src/ObitBDFData.c:
+  InitScan: bug in getting default cal code.
+Obit/tasks/OTFFlag.c OBIT/TDF/OTFFlag.TDF:
+  New task for assuring consistant flagging of OTF data.
+Obit/python/EVLACal.py Obit/python/EVLAContPipe.py:
+  noScratch to several functions
+Obit/TDF/SYGain.TDF Obit/tasks/SYGain.c:
+  add noScratch
+Obit/src/ObitUVUtil.c Obit/src/ObitUV.c:
+  Various: Add "AIPS PT", to list of tables not to copy.
+15 June 2016,svn 544
+
+1Aussie mode OTF beam calculation, Bug fixes
+Obit/src/ObitPointing.c:
+  Pointingparse_flt_arr: ininitialized variable
+Obit/include/ObitImageUtil.h Obit/src/ObitImageUtil.c
+Obit/python/ImageUtil.inc Obit/python/ImageUtil.py Obit/python/MosaicUtil.py
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  implement OTF beam modification for "Aussie" mode
+Obit/tasks/BDFIn.c
+  nextScan: fixed to use SourceArray
+17 June 2016,svn 545
+
+Mostly bug fixes, recalculate image max/min
+ObitTalk/python/Proxy/ObitTask.py:
+  Fix bugs parsing task output files.
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF:
+  Add output parameter nImaged
+Obit/include/ObitImage.h Obit/include/ObitImageClassDef.h Obit/src/ObitImage.c:
+  New routine MaxMinto determine & reset image max & min
+Obit/python/Image.py Obit/python/Image.inc
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Python interface to ImageMaxMin
+Obit/include/ObitUVSoln.h  Obit/src/ObitUVSoln.c:
+  New function DeselBP to deselect entries in BP table
+Obit/tasks/BPass.c:
+  Implement updating existing BP table
+Obit/include/ObitTableBPUtil.h  Obit/src/ObitTableBPUtil.c:
+  New utility functions for BP tables
+Obit/src/ObitUVCalSelect.c:
+  IInit:Fix logic for linear polarization, always using XX for Stokes I.
+Obit/python/MosaicUtil.py:
+  PWeightImage: set BLC, TRC on weighting image
+23 June 2016,svn 546
+
+BDFIn bug hack, disable failing doCode option
+Obit/tasks/BDFIn.c Obit/TDF/BDFIn.TDF:
+  disable doCode - logic too complex
+Obit/python/MosaicUtil.py:
+  PWeightImage: Add option to reject planes above a given RMS
+5 Jul 2016, svn 547
+
+Bug fixes
+Obit/tasks/BDFIn.c:
+  uninitialized variables
+Obit/tasks/SetJy.c Obit/python/EVLACal.py:
+  Add "3C 286" to list of aliases
+Obit/src/ObitTableBPUtil.c:
+  Append: update maximum antenna number.
+Obit/src/ObitImage.c:
+  MaxMin: Tell new value
+Obit/src/ObitTableCCUtil.c:
+  ReWriteTable: Merged message if prtLv>=2
+Obit/src/ObitFArray.c:
+  FArrayRMS: Make more robust near very bright sources.
+Obit/tasks/BPass.c:
+ BandpassCal: No more than 2 poln in BP table.
+Obit/src/ObitUV.c:
+  GetSelect: Accept "subA" as spelling of subarray
+15 Jul 2016, svn ver 548
+
+Add position marking features to Obit/ObitView
+ObitView/include/markpos.h ObitView/src/markpos.c:
+ObitView/src/aboutbox.c ObitView/src/helpbox.c:
+ObitView/include/XMLRPCserver.h ObitView/src/XMLRPCserver.c:
+ObitView/ObitView.c:
+  ObitView  implementation of MarkPos
+Obit/python/ODisplay.inc Obit/python/ODisplay.py:
+Obit/python/Obit_wrap.c  ObitSD/python/Obit_wrap.c:
+  Client Python interface to MarkPos
+Obit/include/ObitDisplay.h  Obit/include/ObitDisplayClassDef.h:
+Obit/include/ObitXML.h:
+Obit/src/ObitDisplay.c Obit/src/ObitRPC.c Obit/src/ObitXML.c :
+  Client c interface to MarkPos
+Obit/src/ObitUVEdit.c:
+  ObitUVEditMedian: Uninitialized variable
+22 Jul 2016, svn ver 549
+
+Beam for MeerKAT, Exponential disk sky model
+Obit/src/ObitBeamShape.c:
+  Add MeerKAT tabulated beam, force its use for MeerKAT
+Obit/python/ImageDesc.py:
+   PRA2HMS, PDec2DMS add leading zeroes
+Obit/include/ObitSkyModel.h Obit/src/ObitSkyModel.c Obit/src/ObitSkyModelMF.c
+Obit/include/ObitTableCCUtil.h Obit/src/ObitTableCCUtil.c:
+  Add exponential disk model
+Obit/tasks/UVSub.c Obit/TDF/UVSub.TDF:
+ Add exponential disk model
+19 Aug. 2016 svn ver 550
+
+Bug fixes
+Obit/src/ObitUVCalBandpass.c:
+  ObitUVCalBandpass: Fix another residual bug from Eric's format change.
+Obit/src/ObitBDFData.c:
+  InitScan: Indexing bug for autocorrelation functions; affects BDFIn
+26 Aug 2016 svn ver 551
+
+Allow 35 simultaneous tasks, BDFIn less picky, optional parameters to MFImage, bug fixes
+Obit/src/ObitDConCleanVis.c:
+  Deconvolve: Move create PxList to before no data test.
+Obit/share/scripts/BlankImage.py:
+  Script to interactively blank an image.
+Obit/src/ObitSDMData.c:
+  Create: Only parse EVLA pointing table, ALMA undocumented
+Obit/tasks/BDFIn.c:
+  GetHeader: Relax frequency matching, for ALMA
+Obit/src/ObitUVSoln.c:
+  StartUp: Fix problems with smoothing tables
+ObitTalk/python/Proxy/ObitTask.py:
+  Allow 36 POPS numbers for Obit
+  Fix added parameter bugs
+ObitTalk/python/ObitTask.py ObitTalk/python/AIPSTask.py:
+Obit/python/OTObit.py:
+  Fix added parameter bugs
+Obit/tasks/OTFFlag.c Obit/TDF/OTFFlag.TDF:
+  Add noScrat
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF:
+  Add optional parameters NiterQU, minFluxQU
+Obit/include/ObitBeamShapeDef.h Obit/src/ObitBeamShape.c:
+  Add Wendy's VLITE beam
+30 Sep 2016 svn ver 552
+
+plotting enhancements, bug fixes
+Obit/src/ObitBeamShape.c \
+  Create: Check for "VLITE" instrument in image header
+Obit/src/ObitSDMData.c \
+  Trap ALMA ASDM screwup with changing Source/Field Ids
+Obit/src/ObitSurveyUtil.c \
+  Print routines, fix logic bugs.
+Obit/share/scripts/PangleOTF.py \
+  Example pixel RM fitting/plotting
+Obit/include/ObitPlot.h Obit/src/ObitPlot.c \
+Obit/python/OPlot.inc Obit/python/OPlot.py \
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c \
+  Add plotting of (filled) polygons
+28 Oct 2016 svn ver 553
+
+Polarization fixes
+Obit/python/Catalog.py:
+  Added routine, PGetPoln, to get Polarization values to VL table
+Obit/tasks/BPass.c:
+  DummyBPTable, AutoCorrBP: set proper output BP Table
+Obit/TDF/RLDly.TDF:
+  Add PDVer (already implemented in c)
+Obit/src/ObitUVCal.c:
+  Apply: Apply BP calibration after poln calibration.
+Obit/src/ObitUVCalPolarization.c:
+  Polarization: Hack for circular feeds w/ eli/ori soln,
+  calculate model and use to correct Observation
+Obit/python/EVLAContPipe.py Obit/python/EVLACal.py:
+  Only one pass at EVLARLCal
+  Better handling of parms["PCRefAnt"]
+  EVLARLDelay: Add PDVer parameter.
+Obit/src/ObitAIPSCat.c:
+  UVGetDesc: (from M. Kettenis), NULL terminate ptype rather than ctype
+18 Nov 2016 svn ver 554
+
+Calibration fixes
+Obit/src/Obit.c:
+  StrCmp: Check ALL characters
+Obit/python/EVLACal.py:
+  EVLACalAP: Fix bugs in handling large numbers of Sources in CLCal
+Obit/src/ObitUV.c Obit/src/ObitTableSUUtil.c:
+  GetSelect: proper handling of souCode='-CAL'
+22 Nov 2016 svn ver 555
+
+Obit/src/ObitDConCleanVisMF.c:
+  XRestore: Correct convolution kernal for multiresolution.
+Obit/python/MosaicUtil.py:
+  PWeightImage: interpolate inWtImage to WtImage
+Obit/TDF/Convol.TDF Obit/tasks/Convol.c :
+  Increased FITS file name to 128 char, allow mixed AIPS/FITS
+Obit/TDF/SubImage.TDF Obit/tasks/SubImage.c
+Obit/TDF/UVCopy.TDF Obit/tasks/UVCopy.c:
+  Increased FITS file name to 128 char
+Obit/include/ObitFArray.h  Obit/include/ObitFArrayClassDef.h:
+Obit/src/ObitFArray.c
+Obit/python/FArray.inc  Obit/python/FArray.py 
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Add Exp, Log, Pow functions
+Obit/tasks/RLPass.c:
+  Fix bugs in calculation correction for RM.
+21 Dec 2016 svn ver 556
+
+Speedup multi-resolution CLEAN, big fixes
+Obit/python/EVLACal.py:
+  Change default instrumental polarization calibration to absolute.
+Obit/src/ObitDConCleanVis.c \
+  PickNext2D: Don't make residuals for resolutions not being processed.
+Obit/src/ObitDConCleanPxListMF.c \
+  Update: check the image exists before freeing buffer.
+Obit/src/ObitDConClean.c \
+  Select: Check if in->currentFields is empty, if so them done
+6 Jan 2017 svn ver 557
+
+VLA C band tabulated beam, bug fixes
+Obit/python/MosaicUtil.py:
+  PWeightImage: correct default iblc, itrc
+Obit/python/Table.inc Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  WriteRow: Fix problem in checking row dict
+Obit/share/scripts/CombineBeam.py:
+  Script to combine Holography beam images
+Obit/src/ObitBeamShape.c:
+  Add tabulated C band beam from holography
+Obit/src/ObitSkyModelVMBeamMF.c:
+  getPBCCTab: remove extra call to ObitBeamShapeCreate
+17 Feb 2017 svn ver 588
+
+VLA beam correction, bug fixes
+Obit/src/ObitAntennaList.c:
+  Fix bugs in calculating parallactic angle
+Obit/src/ObitSkyModelVMBeam.c Obit/src/ObitSkyModelVMBeamMF.c:
+Obit/tasks/MFBeam.c \
+Obit/include/ObitSkyModelVMBeamDef.h  Obit/include/ObitSkyModelVMBeam.h:
+  UpdateModel: Fix bugs in applying beam model
+Obit/share/scripts/EVLAContTemplateParm.py:
+  Fix bug if no polarization angle calibrator.
+Obit/src/ObitFInterpolate.c:
+  Create et al.: Trap 1-D arrays
+2 Mar 2017 svn ver 589
+
+Mostly beam shape bug fixes, move to GitHub
+Obit/src/ObitImageUtil.c:
+  Various, use BeamShape class rather than direct calls
+Obit/src/ObitBeamShape.c:
+  GainSym: include trap for KAT-7
+  Copy/Clone: Add doTab options.
+  Update EVLA C band tabulated beam
+Obit/src/ObitImageMF.c:
+  FitSpec2:  use BeamShape class rather than direct calls
+  MFEffFqCorr: Correct flux density plane for effective frequency 
+Obit/python/ImageUtil.py:
+  PPBImage: fix arguments to ImageUtilPBImage
+Obit/python/ImageMF.py Obit/python/ImageMF.inc:
+Obit/include/ObitImageMF.h:
+  Add PEffFqCorr for effective frequency correction
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Update python interface
+Obit/src/ObitIOImageFITS.c Obit/src/ObitIOImageAIPS.c:
+  Set: initialize rows, planes to sel BLC values
+Obit/tasks/Convol.c Obit/tasks/SubImage.c:
+  History: Copy input history
+Obit/python/Image.py:
+  GaussFit: Allow higher dimensionality
+Obit/tasks/MapBeam2.c
+  Fix normalization issues
+17 Mar 2017 svn (git) ver 561
+
+Beam shape and other bug fixes
+Obit/changes.log:
+  Update
+Obit/tasks/Feather.c:
+  History: Copy input history
+Obit/src/ObitSkyModelVMBeam.c:
+  Correct interpretation of beam image.
+Obit/src/ObitImageInterp.c:
+  Create: reset input image info
+Obit/../ObitTalk/bin/ObitTalk.in:
+  Better test for python executable
+Obit/lib/Makefile ObitSD/lib/Makefile:
+  Allow shared libraries in binary distro build
+Obit/../ObitVersion:
+  Trigger NRAO update
+24 Mar 2017 svn (git) ver 562
+
+BDFIn, Beam shape and other bug fixes
+Obit/changes.log:
+  Update
+Obit/src/ObitBeamShape.c:
+  Update S & C add X Band beams.
+Obit/src/ObitHistory.c:
+  Don't copy SNPLT records.
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/python/UVVis.inc Obit/python/UVVis.py:
+   Fix for Eric's new UV format.
+Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Update python interface
+Obit/TDF/FndSou.TDF Obit/tasks/FndSou.c
+  Enable setting maximum allowable fraction of island blanked
+Obit/tasks/BDFIn.c:
+  Read Solar Cals if present
+  Holography fixes for bin Pointing table 
+Obit/bin/ObitTables.pl:
+  Update copyright
+Obit/doc/OBITdoc.tex:
+  Add SOLCAL to AIPS CD table
+Obit/src/ObitTableCD.c
+Obit/include/ObitTableCDDef.h Obit/include/ObitTableCDRowDef.h:
+  Add SOLCAL
+Obit/TDF/MFBeam.TDF Obit/tasks/MFBeam.c:
+  Add CLEANFile parameter
+Obit/TDF/SetJy.TDF Obit/tasks/SetJy.c:
+  Implement Perley & Butler 2017
+Obit/src/ObitPointing.c:
+  Better handling of remaining data in buffer reading binary table.
+7 Apr 2017 svn(git) ver 564
+
+Summary: Bug fixes, esp. to BDFIn holography
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitPointing.c:
+  Better handling of remaining data in buffer reading binary table.
+  for real this time
+Obit/TDF/Imager.TDF:
+  Change default do3D to False
+Obit/TDF/Squint.TDF Obit/tasks/Squint.c:
+  Add CLEANFile
+Obit/src/ObitSkyModelVMSquint.c:
+  Possible fix to squint angle.
+Obit/tasks/UVSub.c:
+  Fix bugs in input FITS CLEAN model file names
+17 Apr 2017 svn(git) ver 565
+
+Summary: MeerKAT improvements, Squint and other bug fixes
+Obit/TDF/Squint.TDF Obit/tasks/Squint.c:
+  Change default do3D to False
+Obit/src/ObitSkyModelVMSquint.c:
+  FeedAzE: fix bug in determining band
+Obit/src/ObitImage.c:
+  FromFileInfo: Trap outDType
+Obit/tasks/Faces.c:
+  Make image no bigger than 1024 pixels
+Obit/python/MakeIFs.py
+  Added in place mofification routines
+Obit/python/MeerKATH5toAIPS.py
+  Translate MeerKAT data to AIPS
+Obit/share/data/MKATTemplate.uvtab.gz
+  Template MeerKAT data
+16 May 2017 svn 566
+
+Summary: EVLA solar BDFIn and planetary bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitVersion.c:
+  Get subversion number for binary distribution
+Obit/doc/Obitdoc.tex Obit/src/ObitTableSY.c Obit/include/ObitTableSY.h
+Obit/include/ObitTableSYDef.h Obit/include/ObitTableSYClassDef.h 
+Obit/include/ObitTableSYRowDef.h Obit/include/ObitTableSYRowClassDef.h
+Obit/tasks/BDFIn.c:
+  Add CAL TYPE column to AIPS SY Table
+Obit/src/ObitSDMData.c:
+  Correctly intreprete <timeInterval> in ASDM
+  Get line rest frequency, velocity
+Obit/tasks/BASMangle.c Obit/TDF/BASMangle.TDF:
+  New task for survey processing
+9 Jun 2017 svn ver. 567
+
+Summary: Extract poln info for VL table, bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitVersion.c:
+  Get subversion number for binary distribution
+Obit/src/ObitImageUtil.c:
+  ThreadImagePBCor: Fix indexing bug
+  MakeCube: Modify alt ref pixel for channel averaging.
+Obit/tasks/UVAppend.c:
+  Deal with another EWG format surprise
+Obit/doc/OBITdoc.tex Obit/src/ObitTableVL.c \
+Obit/include/ObitTableVL*.h \
+  Add RM and RM ERR columns for rotation measure to VL Table
+Obit/tasks/VLPoln.c Obit/TDF/VLPoln.TDF
+  Task to extract polarization information and add to VL table
+Obit/src/ObitImage.c Obit/tasks/Faces.c:
+  FromFileInfo: correct default for outDType
+Obit/tasks/BDFIn.c:
+  Better cleanup
+Obit/include/ObitPolnCalFit.h:
+  ReadData, another EWG format surprise.
+Obit/src/ObitSpectrumFit.c:
+  NLFit: Use avg if only one term used
+14 Jul 2017 svn 568
+
+Summary: Extract poln info for VL table, inner UV Taper, BDFIn bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitDConClean.c:
+  AddCleanFileWindow: Change error parsing CLEANfile to a warning
+Obit/python/MosaicUtil.py:
+  PWeightImage: improve logic
+Obit/python/UVDesc.inc  Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c 
+Obit/include/ObitUVWeightDef.h Obit/src/ObitUVWeight.c Obit/src/ObitUVImagerMF.c:
+  Implement inner UV Taper
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF:
+  Inner UV Weight
+Obit/src/ObitSourceEphemerus.c:
+  Setup: fix loop count bug, caused BDFIn to crash
+18 Aug 2017 svn 569
+
+-------------------------------------------------------------------------
+Summary: ngVLA, Random numbers, bug fixes
+Obit/TDF/MFImage.TDF:
+  Fix description of UVITaper
+Obit/src/ObitUV.c:
+  GetSelect: if UVRange[1]<=0 set it to very large
+Obit/src/ObitParser.c:
+  Increase size of buffer reading Input file
+Obit/tasks/UVSim.c Obit/TDF/UVSim.TDF:
+  Increase max number of antennas to 240, add Name, UVRange
+Obit/tasks/BPass.c:
+  SN2BPTable: In search for BP row corresponding to SN row trap zero TimeI
+Obit/tasks/Faces.c Obit/TDF/Faces.TDF:
+  Add parameter addSI for spectral index to add
+Obit/src/ObitUVEdit.c Obit/src/ObitUVGSolve.c Obit/src/ObitUVReweight.c:
+Obit/src/ObitUVRFIXize.c Obit/src/ObitUVUtil.c:
+Obit/include/ObitUVRFIXizeDef.h:
+   Allow for >2^31 baseline/vis values
+Obit/src/ObitTableCCUtil.c Obit/python/TableUtil.inc Obit/python/TableUtil.py:
+Obit/python/Obit_wrap.c  ObitSD/python/Obit_wrap.c:
+   Improve position shift in AppendShift, pyton interface
+Obit/src/ObitFArray.c Obit/include/ObitFArray.h  Obit/include/ObitFArrayClassDef.h:
+Obit/python/FArray.inc Obit/python/FArray.py:
+   Gaussian random number generator
+Obit/tasks/BDFIn.c:
+   Get position for ephemeris objects.
+11 Sept. 2017 svn 571
+
+Summary: bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/tasks/Lister.c Obit/src/ObitUVSoln.c:
+  Trap too many antennas in calibration tables
+Obit/python/SkyGeom.inc Obit/python/SkyGeom.py Obit/python/Obit_wrap.c:
+ObitSD/python/Obit_wrap.c:
+   python interface to position shift parameters.
+Obit/src/ObitSDMData.c Obit/tasks/BDFIn.c:
+   Fix bugs in one polarization mode.
+17 Sept. 2017 svn 572
+
+Summary: Allow larger number of antennas, limit MFImage run time, bug fixes
+Obit/src/ObitUVWeight.c:
+  Input: Fix bug in intrepreting UVITaper
+Obit/src/ObitUVEdit.c:
+  FD: Fix bug introduced in ngVLA upgrade
+Obit/src/ObitImageMF.c:
+  FitSpec2: Fix indexing bug in selecting plane in image.
+Obit/tasks/Lister.c:
+  getSNValue: Fix test for bad antenna
+Obit/src/ObitSurveyUtil.c:
+  GenCorErr: Add missing factor of 2 in flux error
+Obit/src/ObitImageUtil.c:
+  PBImage: fix problem with plane number
+Obit/include/ObitSystemDef.h Obit/include/ObitSystemDef.h Obit/src/ObitSystem.c:
+  Add facility to limit run time.
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF
+Obit/src/ObitDConCleanVis.c Obit/include/ObitDConCleanVisDef.h
+Obit/src/ObitUVSelfCal.c Obit/include/ObitUVSelfCalDef.h
+  Enable maximum run time.
+Obit/python/EVLACal.py:
+  Various, tolerate failure of AIPS plotting
+6 Oct. 2017 svn 573
+
+Summary: Add missing change
+Obit/include/ObitSystem.h:
+  Add facility to limit run time.
+6 Oct. 2017 svn 574
+
+Summary: Limit MFImage run time, bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/TDF/MFImage.TDF Obit/tasks/MFImage.c:
+  Implement time limit for run time
+Obit/src/ObitSystem.c:
+  OutOfTime: Add return value to error return
+Obit/tasks/UVSim.c Obit/tasks/UVSub.c Obit/tasks/Calib.c Obit/tasks/BPass.c:
+  getInputSkyModel: Fix bug disabling using an image as a model
+Obit/src/ObitUVUtil.c:
+  BlAvgTF: Double 64 bit buffer to 4 GByte
+ObitTalk/python/ObitTalkUtil.py:
+   SetEnviron: change default AIPS to LNX64
+20 Oct. 2017 svn 575
+
+Summary: Bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitUVUtil.c :
+  BlAvgTF: Double 64 bit buffer to 4 GByte
+Obit/python/EVLACal.py:
+  EVLAStdModel: Always use full CBand model.
+Obit/python/MosaicUtil.py:
+  PWeightImage: Fix bug zapping WtImage
+Obit/src/ObitImageUtil.c:
+  OTFBeam: Actually use array of position offsets
+2 Nov 2017 svn 576
+
+Summary: Peeling scripts, Bug fixes
+Obit/src/ObitSourceEphemerus.c:
+  Setup: Trap no ephemerisId in Field.xml table
+Obit/src/ObitSkyModelMF.c:
+  LoadComps: properly handle components with delta Z.
+Obit/src/ObitDConCleanVis.c:
+  Determine maximum number of autoWindow loops from ratio of
+  image volume to data volume.
+Obit/python/UV.py:
+  PTableCLfromNX: fix bug with 1 poln.
+Obit/share/data/NVSS_SUMMS_VZ.FIT.gz:
+  Combined NVSS/SUMMS VZ table
+Obit/src/ObitDoppler.c:
+  ObitDopplerCVel: CopySelect SoUrce Table
+Obit/tasks/SNCor.c Obit/TDF/SNCor.TDF:
+  Add mode UNBK to replace blanked entries with (1,0)
+Obit/TDF/TabCopy.TDF:
+  Allow larger inFile and outFile strings
+Obit/python/PeelScripts.py:
+  New module for manual peeling
+Obit/TDF/MFImage.TDF Obit/TDF/Imager.TDF:
+  Correct documentation
+12 Dec 2017 svn 577
+
+Summary: Missed fixes
+Obit/src/ObitSourceEphemerus.c:
+  Setup: Trap no ephemerisId in Field.xml table
+Obit/src/ObitSkyModelMF.c:
+  LoadComps: properly handle components with delta Z.
+Obit/src/ObitDConCleanVis.c:
+  Determine maximum number of autoWindow loops from ratio of
+  image volume to data volume.
+Obit/src/ObitDoppler.c:
+  ObitDopplerCVel: CopySelect SoUrce Table
+12 Dec 2017 svn 578
+
+Summary: Peeling scripts, Bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitSourceEphemerus.c:
+  Setup: Trap no ephemerisId in Field.xml table
+Obit/src/ObitSkyModelMF.c:
+  LoadComps: properly handle components with delta Z.
+Obit/src/ObitDConCleanVis.c:
+  Determine maximum number of autoWindow loops from ratio of
+  image volume to data volume.
+Obit/python/UV.py:
+  PTableCLfromNX: fix bug with 1 poln.
+Obit/share/data/NVSS_SUMMS_VZ.FIT.gz:
+  Combined NVSS/SUMMS VZ table
+Obit/src/ObitDoppler.c:
+  ObitDopplerCVel: CopySelect SoUrce Table
+Obit/tasks/SNCor.c Obit/TDF/SNCor.TDF:
+  Add mode UNBK to replace blanked entries with (1,0)
+Obit/TDF/TabCopy.TDF:
+  Allow larger inFile and outFile strings
+Obit/python/PeelScripts.py:
+  New module for manual peeling
+Obit/TDF/MFImage.TDF Obit/TDF/Imager.TDF:
+  Correct documentation
+19 Jan 2018 svn 579
+
+Summary: new S, C, XBand cal images, bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/share/data/3C138XModel.fits.gz Obit/share/data/3C147XModel.fits.gz 
+Obit/share/data/3C196XModel.fits.gz Obit/share/data/3C286XModel.fits.gz 
+Obit/share/data/3C295XModel.fits.gz Obit/share/data/3C380XModel.fits.gz 
+Obit/share/data/3C48XModel.fits.gz:
+Obit/share/data/3C138CModel.fits.gz Obit/share/data/3C147CModel.fits.gz 
+Obit/share/data/3C196CModel.fits.gz Obit/share/data/3C286CModel.fits.gz 
+Obit/share/data/3C295CModel.fits.gz Obit/share/data/3C380CModel.fits.gz 
+Obit/share/data/3C48CModel.fits.gz:
+Obit/share/data/3C138SModel.fits.gz Obit/share/data/3C147SModel.fits.gz 
+Obit/share/data/3C196SModel.fits.gz Obit/share/data/3C286SModel.fits.gz 
+Obit/share/data/3C295SModel.fits.gz Obit/share/data/3C380SModel.fits.gz 
+Obit/share/data/3C48SModel.fits.gz:
+  new S and C band and X band calibration images
+Obit/TDF/MFImage.TDF Obit/TDF/Imager.TDF:
+  Increase default maxpixel to 200,000
+Obit/src/ObitImageUtil.c:
+  GetXYPixels: check that outImage and XPix&YPix compatable
+Obit/bin/ObitTables.pl:
+  change copyright data to 2018
+Obit/doc/OBITdoc.tex
+Obit/src/ObitTableCT.c Obit/include/ObitTableCT.h  Obit/include/ObitTableCTDef.h
+Obit/include/ObitTableCTClassDef.h  Obit/include/ObitTableCTRowClassDef.h 
+Obit/include/ObitTableCTRowDef.h:
+  Add "TIME INT" column
+Obit/tasks/BDFIn.c:
+   TIME INT to 1 day in CT table, fix swapped NO_BAND, NO_CHAN
+8 Feb 2018 svn 580
+
+Summary: fix error in last update
+Obit/doc/OBITdoc.tex
+Obit/src/ObitTableCT.c Obit/include/ObitTableCT.h  Obit/include/ObitTableCTDef.h
+Obit/include/ObitTableCTClassDef.h  Obit/include/ObitTableCTRowClassDef.h 
+Obit/include/ObitTableCTRowDef.h:
+  Add "TIME INT" column
+Obit/tasks/BDFIn.c:
+   TIME INT to start and end time +/- 0.5 day in CT table
+9 Feb 2018 svn 581
+
+
+Summary: bug fixes, cleanup
+Obit/src/ObitPolnCalFit.c:
+  rearrange resetting. cleanup.
+Obit/share/data/3C286XModel.fits.gz 
+   Fix bad reference pixel
+Obit/python/EVLACal.py:
+  EVLAInitContParms: Set correct rlflagVer (1)
+23 Feb 2018 svn 582
+
+Summary: RM fitting, Mosaicing, bug fixes
+Obit/changes.log:
+  Update
+Obit/../ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitRMFit.c Obit/include/ObitRMFitDef.h Obit/python/RMFit.py:
+  Add "doRMSyn" options for pure RM synthesis returning max value.
+Obit/tasks/VLPoln.c Obit/TDF/VLPoln.TDF:
+  Fix error handling blanked values; handle doRMSyn images.
+Obit/src/ObitImageFit.c Obit/src/ObitImageFitData.c
+Obit/python/Image.py Obit/python/ImageFit.py:
+   Add flux, position constraints for Gaussian fitting
+Obit/share/scripts/CopyHistory.py:
+   Script to copy beam and history from image to (beam) image.
+Obit/src/ObitTableSUUtil.c:
+   Treat duplicate or missing input source name as an error
+Obit/src/ObitImageUtil.c:
+  PBImage: don't reset BLC,TRC
+Obit/python/MosaicUtil.py:
+  Added PWeightImageEq optimized for case of no rotation (e.g. gal coord)
+Obit/python/OSurvey.py:
+  Change NRAOserver names from http: to https:
+27 Apr 2018 svn 583
+
+=========================================================================================
+Summary: Speedup, BDFIn bug fix
+Obit/changes.log:
+  Update
+Obit/ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitFArray.c:
+   Added AVX intrinsics versions numerous places
+Obit/src/ObitFInterpolate.c:
+   Faster kernal calculation
+Obit/src/ObitAIPSCat.c:
+   Fix logic bug when lrec==1024
+4 May 2018 svn 584
+
+=========================================================================================
+Summary: bug fix, speedup, new tasks: MaskCube, Lin2Cir, DFTIm
+Obit/changes.log:
+  Update
+Obit/ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitFArray.c:
+   Added AVX intrinsics versions in Blank
+Obit/tasks/MaskCube.c Obit/TDF/MaskCube.TDF:
+   New take to mask cube with and image and quantize output
+Obit/include/avx2_mathfun.h:
+   Updated version to compile with gcc >4.9
+Obit/tasks/Lin2Cir.c Obit/TDF/Lin2Cir.TDF:
+   New task to convert XX,YY,XY,YX data to RR,LL,RL,LR
+Obit/src/ObitPolnCalFit.c Obit/include/ObitPolnCalFitDef.h:
+   Make initialization more robust, average input Stokes I as starting value
+Obit/src/ObitUVWeight.c:
+   Fiddle weighting of super uniform weighting to reduce weighting errors near u=0.
+Obit/include/avx_mathfun_May18.h:
+   New version of avx function library
+Obit/src/ObitFArray.c Obit/include/ObitFArrayClassDef.h Obit/include/ObitFArray.h:
+   New SinCos and copy features
+Obit/src/ObitSinCos.c Obit/include/ObitSinCos.h:
+   New sin and cos features (avx and sse may be broken)
+Obit/src/ObitVecFunc.c Obit/include/ObitVecFunc.h:
+   Upgrade avx math library 
+Obit/tasks/DFTIm.c Obit/TDF/DFTIm.TDF:
+   New DFT imaging task
+Obit/src/ObitDConClean.c:
+   PixelStats: set Beam before use.
+25 May 2018 svn 585
+
+Summary: bug fix, speedup, doLast option in MFImage
+Obit/src/ObitVecFunc.c:
+   Explicit AVX2 support
+Obit/src/Obit.c Obit/include/Obit.h:
+   inline ObitMagicF
+Obit/include/ObitImageUtil.h Obit/src/ObitImageUtil.c:
+   New Routine NoInterWeight to copy pixels when interpolation 
+   not needed in flatten
+Obit/src/ObitFArray.c:
+    inClip: fix logic in AVX version
+Obit/src/ObitImageMosaic.c Obit/src/ObitImageMosaicMF.c:
+    Flatten: implement NoInterWeight
+Obit/share/data/3C*SModel.fits.gz:
+    fix bad reference pixel
+Obit/python/EVLACal.py:
+    Enable "SELF" interMode in EVLAApply
+Obit/python/EVLAContPipe.py:
+    Enable "SELF" interMode in Delay calibration
+Obit/tasks/MFImage.c Obit/TDF/MFImage.TDF:
+    Add doLast option to control if last CLEAN after SC is done
+11 June 2018 svn 586
+
+Summary: Add CQ table to BDFIn, new all  MeerKAT updates, sky VZ file, bug fixes
+Obit/src/ObitUVDesc.c:
+    ObitUVDescShiftPhase: make phase shift more robust for unshifted images.
+Obit/python/TableUtil.py:
+    Fix typo (from T. Mauch)
+Obit/src/ObitTableCCUtil.c:
+    T2Spec: Add doPBCor option with default False
+Obit/share/scripts/scriptFetchNVSS.py:
+    Script for fetch NVSS postage stamps from command line
+Obit/tasks/SetJy.c Obit/TDF/SetJy.TDF:
+    Add spectrum from T. Mauch & Ben Hugo for 0406-65
+Obit/src/ObitUVCalSelect.c:
+    Allow 'HALF' for XX,YY
+    Set poln increment to -1 for RR,LL,XX,YY etc
+Obit/TDF/UVBlAvg.TDF:
+    Longer file names
+Obit/share/data/AllSkyVZ.FIT.gz
+    All Sky (NVSS,SUMMS, MGPS) VZ table, replace NVSS_SUMMS_VZ.fit.gz
+Obit/tasks/BDFIn.c:
+    Write CQ Table to record VLA online frequency averaging.
+Obit/include/ObitFArray.h  Obit/src/ObitFArray.c:
+    Add fn ObitFArrayShiftAddNT without threads to use in threaded routine
+Obit/src/ObitDConCleanVisMF.c:
+    ThreadImSub: use ObitFArrayShiftAddNT, other bug
+10 August 2018 svn 588
+
+Summary: bug fixes
+Obit/changes.log:
+  Update
+Obit/ObitVersion:
+  Trigger NRAO update
+ObitFArray.c:
+  fix bugs introduced in snv 584
+Obit/tasks/Split.c:
+  Cleanup
+Obit/src/ObitUVEdit.c Obit/src/ObitUVGSolve.c
+  Use maxAnt from the uv decriptor for maximum antenna number or all subarrays
+Obit/src/ObitDConCleanVis.c:
+  Max 4 middle clean loops
+Obit/src/ObitDConCleanVisMF.c:
+  Another attempt to deal with middle loop threading bug
+Obit/src/ObitSDMData.c:
+  Trap and implement ever more baroque EVLA ASDM OTF variant
+Obit/tasks/BDFIn.c:
+  Write NX table entry for first subscan
+Obit/src/ObitUVUtil.c:
+   Hann - fix errors in frequency labeling
+14 Sept 2018 svn 589
+
+Summary: bug fixes
+Obit/src/ObitSDMData.c:
+   Fix bug introduced in last fix -doh!
+18 Sept 2018 svn 590
+
+Summary: bug fixes
+Obit/python/Image.py:
+  GaussFit: More sensible default for cen, trap no max in header, zero blanking
+Obit/src/ObitTableCCUtil.c:
+  ObitTableCCUtilCrossListSpec: Fix bug for CCs with spectra
+9 Oct 2018 svn 591
+
+Summary: bug fixes
+Obit/src/ObitFArray.c:
+  Fixes back into system
+1 Nov 2018 svn 592
+
+Summary: bug fixes
+Obit/src/ObitUVWCalc.c
+  ObitUVWCalcUVW: Correct usage of dataUtc, ut1Utc in AntList (use in UVFix)
+Obit/src/ObitImageUtil.c
+  FitBeam: default size changed from 3 to 6 pixels
+1 Dec 2018 svn ver 593
+
+Summary: bug fixes in MFImage, FndSou
+Obit/changes.log:
+  Update
+Obit/ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitImageUtil.c:
+  MakePBCorImageArgs: add doInvert to output structure
+Obit/share/data/AllSkyVZ.FIT.gz
+  Fix reference frequency
+Obit/src/ObitDConCleanVis.c:
+  Implement optional parameter maxAWLoop
+Obit/TDF/MFImage.TDF Obit/tasks/MFImage.c:
+  Implement optional parameter maxAWLoop, user override for 
+  number of middle CLEAN loops.
+Obit/src/ObitDConCleanWindow.c:
+    WindowStats: also ignore pixels in unboxes
+Obit/tasks/FndSou.c:
+  - Add "Blank" parameter to enable blanking in image before fit.
+  - Fix doWidth=False option
+  - allow up to 1000 sources per island
+  - better default for fraction blanked
+  - fix bug determining if an island were new ||->&&
+  - smaller guardband around islands
+  - ignore components blanked at center
+Obit/TDF/FndSou.TDF:
+  Add "Blank" parameter to enable blanking in image before fit.
+  Allow more islands
+  improve documentation
+Obit/src/ObitImageFit.c
+  FitFit: tolerate fitting failures
+  Document call to FitFit
+  Print residual peak (optional)
+Obit/src/ObitImageFitData.c
+  Allow fitting both Gaussians and points
+  Create blank pixels in the fitting array.
+  Better test for no data.
+Obit/src/ObitFitRegionList.c Obit/include/ObitFitRegionList.h:
+  Add function ObitFitRegionListNext
+Obit/src/ObitTableMFUtil.c:
+  Regions2MF: implement ObitFitRegionListNext to get all regions
+Obit/src/ObitImageUtil.c:
+   Add doInvert value to thread arg
+Obit/python/FArray.py
+   Fix bug in Log.
+1 Feb 2019 svn ver 594
+
+Summary: improvements in source finding, bug fixes
+Obit/changes.log:
+  Update
+Obit/ObitVersion:
+  Trigger NRAO update
+Obit/tasks/FndSou.c:
+   Get it right this time.
+Obit/src/ObitTableMFUtil.c:
+  Regions2MF: Get it right this time.
+Obit/share/scripts/CLEANMask.py
+  MakeMask: Function to make an MFImage CLEANFile from VL table.
+Obit/python/ODisplay.py
+  PMosaic: Fix logic in displaying window
+Obit/src/ObitDConClean.c:
+  DefWindow: Make sure CLEANFile exists before assuming it's there.
+Obit/tasks/BDFIn.c:
+  GetSourceInfo,UpdateSourceInfo: fix bug in calculating center time
+22 Feb 2019 svn ver 595
+
+
+Summary: Fixes to BDFIn
+Obit/tasks/BDFIn.c:
+  Change planetary position update interval from 10 to 1 sec
+Obit/src/ObitSourceEphemerus.c:
+  Reset validity time if it is too far in the future.
+25 Feb 2019 svn ver 596
+
+Summary:  Enhancements to source fitting bug fixes
+Obit/changes.log:
+  Update
+Obit/ObitVersion:
+  Trigger NRAO update
+Obit/src/ObitImageMF.c:
+  Trap problems in creating scratch file for EffFqCorr
+  Add maxSNR option to pixel fitting routines.
+Obit/tasks/FndSou.c Obit/TDF/FndSou.TDF
+  Add "Blank" parameter to enable blanking in image before fit.
+  Fix doWidth=False option
+  Add parameter sizeLim for piecewise linear max size. v. flux
+  Implement maximum size per component
+Obit/src/ObitImageFit.c
+  Document call to FitFit
+Obit/src/ObitImageFitData.c
+  Create blank pixels in the fitting array.
+  Implement max size per model component.
+Obit/src/ObitFitRegion.c  Obit/include/ObitFitRegion.h
+  Add blanking to Subtract
+Obit/src/ObitFitRegionList.c Obit/include/ObitFitRegionList.h:
+  Add function ObitFitRegionListNext
+Obit/src/ObitTableMFUtil.c:
+  Regions2MF: implement ObitFitRegionListNext to get all regions
+Obit/src/ObitFitModel.c Obit/include/ObitFitModelDef.h:
+  Add maxSize to give the maximum size per component. 
+Obit/src/ObitImageUtil.c:
+  FitBeam: fix beam peak at 1.0
+7 Mar 2019 svn 597
+
+Summary: MeerKAT polarization, multilevel minFLux in MFImage, bug fixes
+Obit/src/ObitCUDASkyModel.cu
+ DFTprocessWithStreams: more care in only transfering valid data to GPU
+Obit/TDF/MFImage.TDF Obit/tasks/MFImage.c
+  Add optional multilevel minFlux with phase selfcal
+  Add optional niter, minFlux for Stokes V
+Obit/src/ObitUVGSolveWB.c:
+  finalSolve: fix frequency bug in correcting IF phases.
+Obit/tasks/MKXPhase.c Obit/TDF/MKXPhase.TDF:
+  New task to get MeerKAT cross hand phase spectra from the noise diode
+27 Mar 2019 svn 598
+
+Summary:  vain attempts on MeerKAT polarimetry, beam correction, bug fixes
+Obit/python/OTObit.py
+  Add unpickle function to read pickle jar
+Obit/src/ObitImageUtil.c:
+  T2Spec: DON'T relable frequency axis 'FREQ"
+Obit/tasks/MFImage.c:
+  History: Add all optional parameters
+Obit/src/ObitUVCalPolarization.c Obit/include/ObitUVCalPolarizationDef.h :
+  Testing in attempt to use MeerKAT polarimetry
+Obit/src/ObitAntennaList.c:
+  Flip sign of Parallactic angle for MeerKAT
+   Fix sign error in Az:
+Obit/tasks/Lin2Cir.c:
+  Fix bugs, MeerKAT debugging
+Obit/tasks/SwaPol.c Obit/TDF/SwaPol.TDF:
+  New task to swap polarizations in all visibilities.
+Obit/python/Table.inc Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c:
+  Patch bug in FQ table with 1 IF, copying BandCode
+Obit/src/ObitSkyModelVMBeam.c:
+  Update: Better trapping of blanked beam pixels.
+Obit/tasks/BeamCor.c Obit/TDF/BeamCor.TDF Obit/tasks/MFBeam.c Obit/TDF/MFBeam.TDF 
+  Add parameters
+Obit/tasks/MFImage.c
+  Add recent parameters to history.
+3 May 2019 svn 599
+
+Summary:  Stokes selection to BDFIn, bug fixes
+Obit/python/OSurvey.py:
+  Document request for contour plot
+Obit/share/scripts/scriptFetchNVSS.py:
+  Enable different output types
+Obit/tasks/BDFIn.c ObitTDF/BDFIn.TDF:
+   Add parameter selStoke to select number of Stokes correlations
+Obit/include/ObitSDMData.h Obit/include/ObitSDMDataDef.h Obit/include/ObitSDMDataTypeDef.h:
+   Add selStoke to SDMData and Tables
+Obit/tasks/ASDMList.c:
+   In configuraton summary give number of Stokes correlations.
+24 May 2019 svn 600
+
+Summary:  bug fixes
+Obit/tasks/MKXPhase.c:
+   Fix number of antennas in BP table, referencing bug
+Obit/src/ObitDConCleanVis.c Obit/src/ObitUVImager.c:
+   Fix bugs in handling autoCentering
+Obit/src/ObitBDFData.c:
+   Fix logic bugs in selecting autocorrelations
+5 Jun 2019 svn 601
+
+Summary:  bug fixes
+Obit/include/ObitFullBeamDef.h Obit/src/ObitFullBeam.c:
+  Correctly fill in plane frequencies.
+Obit/src/ObitIO.c:
+  UpdateTables: don't openClose if inactive
+Obit/tasks/MKXPhase.c Obit/TDF/MKXPhase.TDF:
+   Better defaulting of solInt
+Obit/python/UV.inc Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c 
+  UVRead: trap ReadCal and call ObitUVReadSelect
+  Full Beam interface
+ObitTalk/python/AIPSData.py:
+  Add name to AIPS UV data, Image  objects
+Obit/python/OTObit.py:
+  getFITS: Trap if UV data but not specified.
+  alldest: fix bugs
+Obit/python/Image.py, Obit/python/UV.py:
+  Add functions to explicitly test the existance of AIPS or FITS files
+  trap AIPSUVData or AIPS Image when the function can't handle.
+Obit/src/ObitAntennaList.c Obit/python/AntennaList.py:
+  ParAng: Better parallactic angle calculation
+  several, trap missing antennas, throw exception
+Obit/src/ObitTableANUtil.c:
+  GetList: Correct longitude for MeerKAT
+Obit/python/FullBeam.inc Obit/python/FullBeam.py:
+  Implement GetDesc and GetList
+Obit/tasks/SwaPol.c Obit/TDF/SwaPol.TDF:
+   Add swapHand parameter to swap par with cross hand data
+Obit/TDF/MFBeam.TDF:
+   Save updates
+Obit/python/Source.py:
+  Trap failures
+28 Jun 2019 svn 602
+
+Summary: Mostly bug fixes, esp. poln related
+Obit/src/ObitTableANUtil.c:
+  GetList: Check GST@iat0 and is not within 0.01 deg use calculated value
+Obit/TDF/MKXPhase.TDF
+  Fix documentation
+Obit/src/ObitUVSoln.c:
+  NewTime: wanted=TRUE if SN sourID<=0
+  refAnt: don't let Open reduce numAnt
+Obit/src/ObitPolnCalFit.c:
+  UpdateBandpassTab: Don't write PD into BP table, only in PD
+  UpdateBandpassTab, UpdateInstrumentalTab: Fill orphans at end of IF
+     Add phase difference to BP table entries.
+Obit/python/UV.py:
+  PTableCLfromNX (from Tom M.) change inUV to outUV.
+  Document PDVer.
+Obit/python/Image.py:
+   PClone2:Fix bug with inImage which should be inImage1.
+Obit/src/ObitUVCalBandpass.c Obit/include/ObitUVCalBandpass.h:
+   Add routine BP to calibrate a BP table row
+   Init: make sure tables at least as large as the BP table.
+Obit/TDF/BPCal.TDF Obit/tasks/BPCal.c:
+   New task to apply one BP table to another
+Obit/src/ObitUVRLDelay.c:
+   undo debugging, fix bugs with circular feeds.
+Obit/tasks/MFImage.c Obit/tasks/MFBeam.c:
+   Better test for minFluxQU, minFluxV
+Obit/tasks/RLDly.c:
+   Fix comments
+Obit/src/ObitUVCalPolarization.c:
+   Fix bugs in Lin pol.
+Obit/src/ObitUVCal.c:
+   Apply bandpass calibration before poln cal.
+Obit/src/ObitImageUtil.c:
+   Fix bug in UVFilter
+Obit/task/AutoFlag.c:
+   Fix bug in determining is data is from circular feeds.
+Obit/include/include/ObitUV.h Obit/src/ObitUV.c:
+   GetSource: New routine to return a Source object
+Obit/src/ObitTableDesc.c:
+	CopyDesc: Copy infoList
+Obit/src/ObitUVCalCalibrate.c
+  Init: Don't let Open reset the number of SN table antennas
+9 Aug 2019 svn 603
+
+Summary: Bug fixes, including a baddie hitting BDFIn CL table
+Obit/src/ObitImageMF.c:
+   Add prototype for ObitImageMFFullInstantiate to keep MacCompiler happy
+Obit/python/Image.py, Obit/python/UV.py:
+   PCompare: Fix typo in test for AIPSImage
+Obit/bin/ObitTables.pl:
+   Change which InfoList DumpKey writes to
+Obit/src/ObitTableBL.c, Obit/src/ObitTableBP.c, Obit/src/ObitTableCL.c, 
+Obit/src/ObitTablePD.c, Obit/src/ObitTableSN.c, Obit/src/ObitTableSY.c:
+  DumpKey write to infolist on Desc rather than IO->myDesc
+
+14 Aug 2019 svn 604
+
+Summary: Bug fixes, more calibrator models
+Obit/TDF/MFImage.TDF:
+   improve description of maxAWLoop
+Obit/python/EVLACal.py
+Obit/share/data:
+   3C138KaModel.fits.gz 3C138KModel.fits.gz 3C138QModel.fits.gz 3C48KaModel.fits.gz 3C48KModel.fits.gz 3C48QModel.fits.gz
+   More standard calibration models
+Obit/src/
+  ObitTableAN.c ObitTableFG.c                 ObitTableIDI_FREQUENCY.c            ObitTableMF.c ObitTableSN.c
+  ObitTableAT.c ObitTableFQ.c                 ObitTableIDI_GAIN_CURVE.c           ObitTableNI.c ObitTableSU.c
+  ObitTableBL.c ObitTableFS.c                 ObitTableIDI_INTERFEROMETER_MODEL.c ObitTableNX.c ObitTableSY.c
+  ObitTableBP.c ObitTableGC.c                 ObitTableIDI_PHASE_CAL.c            ObitTableOB.c ObitTableTY.c
+  ObitTableCC.c ObitTableHistory.c            ObitTableIDI_SOURCE.c               ObitTableOF.c ObitTableVL.c
+  ObitTableCD.c ObitTableIDI_ANTENNA.c        ObitTableIDI_SYSTEM_TEMPERATURE.c   ObitTablePC.c ObitTableVZ.c
+  ObitTableCL.c ObitTableIDI_ARRAY_GEOMETRY.c ObitTableIDI_UV_DATA.c              ObitTablePD.c ObitTableWX.c
+  ObitTableCP.c ObitTableIDI_BANDPASS.c       ObitTableIDI_WEATHER.c              ObitTablePO.c
+  ObitTableCQ.c ObitTableIDI_CALIBRATION.c    ObitTableIM.c                       ObitTablePS.c
+  ObitTableCT.c ObitTableIDI_FLAG.c           ObitTableMC.c                       ObitTablePT.c
+    DumpKey write to infolist on myDesc rather than IO->myDesc
+20 Aug 2019 svn 605
+
+Summary: Bug fixes
+Obit/tasks/MFImage.c Obit/tasks/MFBeam.c Obit/tasks/BeamCor.c :
+   Better handling of Niter,NiterQU, NiterV, minFluxQU,minFluxV
+Obit/src/ObitFitRegion.c:
+   Subtract: Better subtracton of model from image.
+Obit/tasks/UVBlAvg.c:
+   Index output uvdata.
+Obit/include/ObitFITS.h  Obit/src/ObitFITS.c:
+    Added routine ObitFITSGetNumDisk 
+Obit/src/ObitImageFitData.c:
+    Create: trap bad region
+Obit/src/Obit.c:
+    Unref: don't return NULL if only decrement refCount
+Obit/src/ObitUV.c:
+    GetSubA: delete extra Unref of ANTable
+Obit/src/ObitUV.c:
+    Open: rebuild Table List member each call
+Obit/src/ObitDConCleanVis.c, bit/src/ObitDConClean.c:
+    various: better image buffer handling
+ObitTableList.c:
+   Put: make copy of structure rather than just referencing.
+23 Sep 2019 svn 606
+
+Summary: Bug fixes
+Obit/src/ObitUV.c:
+    Open: Don't delete input tableList
+          Just copy reference for IO tableList
+    CopyTablesSelect: exclude "AIPS OT"
+Obit/src/ObitTableList.c:
+    Put: correct rebuilding list
+Obit/src/ObitUVUtil.c:
+    various, add "AIPS OT" to exclude list.
+Obit/src/ObitTable.c:
+   Clone: don't replicate "Clone" in output name, copy myHost
+Obit/src/ObitData.c:
+   newObitDataTable: better table handling
+Obit/tasks/SYGain.c
+   various: trap tableList problems
+Obit/src/ObitSwPower.c:
+   InitSubarray: set table parameters
+Obit/src/ObitIO.c Obit/src/ObitIOImageAIPS.c Obit/src/ObitIOImageFITS.c 
+Obit/src/ObitIOUVAIPS.c Obit/src/ObitIOUVFITS.c Obit/src/ObitImage.c:
+    Don't unreference I/O tableList - now just a copy of the main tableList
+Obit/src/ObitUVCal.c:
+    Shutdown: NULL table pointers to avoid multiple unreferences
+Obit/src/ObitSDMData.c:
+    various: trest schema version 4 the same as 3
+30 Sep 2019 svn 607
+
+Summary: Python3 upgrade, Bug fixes
+Obit/include/ObitBeamShapeDef.h Obit/include/ObitBeamShape.h
+Obit/src/ObitBeamShape.c Obit/src/ObitImageMF.c
+    Implement MeerKAT cosine beam shape
+Obit/src/ObitRMFit.c
+    ThreadRMSynFit: min dRM not 0.01 (was 1.0)
+Obit/src/ObitFInterpolate.c Obit/src/ObitImageUtil.c
+    various: make data indices a ollong (longlong)
+NO Obit/src/ObitFArray.c Obit/include/FArray.h Obit/include/FArrayDef.h 
+NO     Upgrade many integers to ollong (longlong)
+NO     Index: use ollong for address calculation
+Obit/src/ObitBeamShape.c
+    GetMKBeam: protect against zero divides
+Obit/src/ObitDConCleanPxListMF.c
+    Update: Don't free pixarray used as inFArray
+Obit/python/*.inc Obit/python/*.py Obit/python/Makefile.in 
+  ObitSD/python/*.inc ObitSD/python/*.py ObitSD/python/Makefile.in
+  Obit/python/Obit_wrap.c ObitSD/python/Obit_wrap.c 
+    Python3 upgrade.  ObitSD now defunct.
+Obit/../../InstallObit.sh
+    Drop build, references to ObitSD, now defunct
+Obit/tasks/SubImage.c
+    Don't try to copy a CC table that doesn't exist
+../ObitTalk/configure ../ObitTalk/configure.am
+18 Nov 2019 svn 609
+
+Summary: Python 3 upgrade fixes, Bug fixes
+Obit/python/Makefile.in
+    fix which version of libObit to reference  - now libObit.so
+ObitTalk/python/*.py ObitTalk/python/Proxy/*.py ObitTalk/python/Wizardry/*.py
+    Fixed versions missed, also Makefiles
+21 Nov 2019 svn 609
+
+Summary: Python 3 upgrade fixes, Bug fixes
+git rm ObitSystem/Obit/python/python.swg
+ObitTalk/bin/ObitTalk.in
+   change comment about parseltongue to ObitTalk
+22 Nov 2019 svn 610
+
+Summary: bug fixes
+Obit/python/RMFit.py
+    Fix bugs from python 3 upgrade
+Obit/python/SpectrumFit.py
+    fit call to SpectrumFitEval
+    ImArr: fix SWIG failure
+    Add corAlpha parameter
+Obit/python/SpectrumFit.inc  Obit/python/RMFit.inc Obit/python/RMFit.py
+    ImArr: fix SWIG failure
+Obit/src/ObitSpectrumFit.c
+    trap CASA images in FitImArr
+    Add corAlpha parameter in FitImArr
+Obit/TDF/SubImage.TDF
+     Allow larger BLC,TRC
+Obit/tasks/Convol.c Obit/TDF/Convol.TDF
+Obit/include/ObitConvUtil.h Obit/src/ObitConvUtil.c Obit/python/ConvUtil.inc 
+Obit/src/ObitImageUtil.c 
+    Add "FILT" high pass filter
+Obit/python/Obit_wrap.c
+    Rebuilt python interface
+Obit/python/ImageMF.py
+    Add PMFPBCor to primary beam correcy frequency bins
+Obit/share/scripts/MKPlotSpec.py
+    New script to plot pixel spectra from an ImageMF
+Obit/tasks/MFImage.py
+    Write Stokes in image header
+9 Jan 2020 svn 611
+
+Summary: bug fixes
+Obit/include/ObitConvUtil.h Obit/src/ObitConvUtil.c 
+    Add "FILT" high pass filter - get it right this time
+ Jan 2020 svn 612
+
+Summary: bug fixes
+Obit/python/InfoList.inc Obit/python/Obit_wrap.c
+    Fix declaration of count in Info2List, fix from Tom
+13 Jan 2020 svn 613
+
+Summary: bug fixes
+Obit/python/Makefile.in Obit/python/Obit_wrap.c Obit/python/ObitSystem.inc
+    Fix what went wrong last time
+14 Jan 2020 svn 614
+
+Summary: bug fixes
+Obit/python/ImageMF.py Obit/python/ImageMF.inc Obit/python/OData.py 
+Obit/python/Image.py Obit/python/Obit_wrap.c
+   Use casts to allow ImageMFs to call Image routines
+Obit/tasks/HGeom.c:
+    update output pixel increments, fix CD matrix
+17 Jan 2020 svn 615
+
+Summary: bug fixes
+Obit/python/Obit.py Obit_wrap.c
+    Redefined python interface.
+Obit/python/Makefile.in
+    improved Make
+Obit/src/ObitIOImageFITS.c
+    GetFileInfo: correct type on FileType, also outDType if needed
+Obit/share/scripts/testFuncCont.c
+    Test program for FuncContainer
+Obit/share/data/FuncContainerInput1.inp Obit/share/data/FuncContainerInput2.inp
+    Test input files for FuncContainer
+Obit/python/OTObit.py
+    imlod,uvlod: Open and close file around copying tables to update header
+Obit/src/Obit.c:
+    Unref: don't return NULL if only decrement refCount
+Obit/src/ObitIOImageAIPS.c Obit/src/ObitIOImageFITS.c 
+    Don't unreference I/O tableList - now just a copy of the main tableList
+
+cd  /export/raid_2/bcotton/ObitGitMaster/Obit/ObitSystem/Obit
+git rm AIPSSetup103.py NewDebug.py TableDebug.py TableListDebug.py runtest.py
+   more cleanup from python3 spectacle
+27 Jan 2020 svn 616
+
+Summary: bug fixes
+Obit/src/ObitDConCleanPxList.c Obit/src/ObitDConCleanPxListMF.c 
+   More more important messages to prtLv=1
+Obit/src/ObitTableUtil.c
+   Fix sort key types
+   ReorderTable: don't zap scrTable - go boom
+Obit/python/Makefile.in
+   Ask for libObit.a rather than libObit.so
+ObitTalk/configure.ac ObitTalk/configure
+   Better (hacked) test for the version of python >= 2.7
+Obit/python/EVLACal.py
+     EVLAEditSNAmp: better test in insufficient statistics  
+ObitView/src/XMLRPCserver.c
+    server_loop: check RPC failure to connect to port
+ObitView/include/Image2Pix.h ObitView/include/histo.h ObitView/include/imagedisp.h
+    includeObit.h to get ObitMagicF 
+ObitView/src/infobox.c
+    leave source info box where user puts it.
+Obit/tasks/GetJy.c 
+    Make averaging more robust using Median averaging
+Obit/python/OTObit.py
+    remove imhead from getname
+Obit/src/ObitUVImager.c
+    Image: Check for auto center images before forcing beam for single field
+Obit/share/scripts/MKCosBeam.py Obit/share/scripts/PBCorImageMF.py
+    New MeerKAT related scripts
+Obit/python/ImageFit.py
+    Fix IsA to use isinstance
+Obit/tasks/Convol.c
+    Get beam orientations correct
+Obit/src/ObitConvUtil.c
+    Deconv: local variables to double
+Obit/src/ObitFArrayUtil.c
+    UVGaus: correct indexing of center of array    
+29 Feb 2020 svn 617
+
+Summary: bug fixes
+Obit/python/Makefile.in
+   Ask for libObit.so rather than libObit.a
+01 Mar 2020 svn 618
+
+Summary: AVX512 additions, bug fixes
+Obit/src/ObitDConCleanVis.c
+    Next2D: trap premature termination of autoCenter CLEAN
+Obit/tasks/Imager.c:
+    doImage: turn off any doCalib set on input data
+Obit/src/ObitErr.c:
+    IsA: add some sanity checks
+Obit/tasks/MFImage.c:
+    Better test for autoCen flux, trap extra CLEAN
+ObitTDF/SNCpy.TDF Obit/tasks/SNCpy.c:
+    New task to copy selected information from one SN table to another.
+Obit/src/ObitUVUtil.c:
+    Hann: correct crpix if not 1
+Obit/include/avx512_mathfun.h Obit/include/avx512_mathfun.hxx
+Obit/include/avx_mathfun.h Obit/include/avx_mathfun.hxx
+Obit/include/ObitVecFunc.h 
+Obit/src/ObitExp.c Obit/src/ObitSinCos.c Obit/src/ObitVecFunc.c
+Obit/src/ObitThreadGrid.c Obit/src/ObitFArray.c 
+    Implementations of AXV512
+Obit/tasks/MFImage.c Obit/tasks/UVSub.c
+    Cleanup gripes from gcc 8
+Obit/src/ObitSkyModelMF.c
+    ThreadSkyModelMFFTDFT: increase FazArrSize to 256 
+    Implement Sum in AVX512 
+Obit/include/ObitAIPSDir.h
+    Call type agreement ObitAIPSDirCatEntry.access
+15 Apr 2020 svn 619
+
+Summary: bug fixes
+Obit/python/Makefile.in
+    Correct libObit for binary build
+Obit/tasks/MKXPhase.c 
+    Call ObitUVGetSubA to get antenna info
+Obit/src/ObitThreadGrid.c
+    Initialize counter properly
+    Add some slop in defining the size of work arrays.
+Obit/src/ObitDConCleanVis.c:
+    Deconvolve: Fix bug not remaking facets after autoCen CLEAN
+    Make autoCen facets 256x256, blank bigger region around brightest.
+    Add unbox even if center outside of outer box
+Obit/tasks/GetJy.c
+   Allow it to use a minimal amount of calibration data.
+23 Apr 2020 svn 620
+
+Summary: bug fixes
+Obit/tasks/MFImage.c
+    Use minFList to A&P SC as well as P only.
+Obit/python/UVSoln.inc Obit/python/Obit_wrap.c Obit/python/PeelScripts.py
+    Another goddamn patch for python 3
+Obit/python/FullBeam.py
+    Another goddamn patch for python 3
+Obit/src/ObitImageMF.c Obit/python/ImageMF.py
+    Add history to FitSpec*
+    add minWt to SpecFit2 to set minimum fraction of weight
+Obit/src/ObitSpectrumFit.c Obit/include/ObitSpectrumFitDef.h
+    NLFit: Correct flux density error and chi^2 if only fitting flux density
+Obit/src/ObitRMFit.c 
+    FitCube: minLamb2 of 1.0e-10 to avoid zero divide., do history
+Obit/src/ObitBeamShape.c
+    GetMKBeam: implement minimum gain
+14 May 2020 svn 621
+
+Summary: Add limited restart & recovery to MFImage, bug fixes
+Obit/src/ObitSkyGeom.c
+    ShiftXY: Trap backwards wrap around 0 RA
+Obit/src/ObitDConCleanVis.c
+    Reimage: Hack to supress autoCen artifacts
+Obit/src/ObitImageMosaic.c
+    FlyEye: initialize arrays
+Obit/src/ObitDConCleanVisMF.c 
+    Create2: Double size of arrays
+ObitSkyModelMF.c
+    Create: Double size of arrays
+Obit/src/ObitSpectrumFit.c 
+    MakeArg: increase size of coef array.
+Obit/include/ObitFInterpolate.h Obit/src/ObitFInterpolate.c
+    Add Clone2 for less shallow copies, copied descriptor
+Obit/src/ObitImageInterp.c
+    Clone: use ObitFInterpolateClone2 for interpolator
+    Create: copy descriptor (not reference) descriptor fo interpolator
+Obit/TDF/MFImage.TDF Obit/tasks/MFImage.c:
+    Add limited restart
+    Fix A&P minFList override
+Obit/include/ObitImageMosaicMFDef.h Obit/include/ObitImageMosaicMF.h 
+Obit/src/ObitImageMosaicMF.c
+    New routine AddOld to add facets to mosaic
+Obit/include/ObitDConCleanPxListMF.h Obit/src/ObitDConCleanPxListMF.c
+    New routine InitCC
+Obit/src/ObitDConCleanVis.c
+    Diagnostics, don't put unbox on autoCen facets.
+Obit/include/ObitVecFunc.h
+    Make definition of ALIGN32_END consistent with mathfun
+Obit/src/ObitSinCos.c
+    SinCosVec AVX512 version, do remainders with sincosf
+    more clever version with 0 fill now segvs
+Obit/include/ObitVecFunc.h Obit/src/ObitVecFunc.c
+Obit/src/ObitSinCos.c  Obit/src/ObitExp.c
+    Back put of using avx512_mathfun - it now segvs whenever used.
+Obit/share/scripts/PBCorImageMF.py
+    Check that the first argument is an image 
+Obit/src/ObitErr.c
+    IsA: allow 50,000 messages
+Obit/src/ObitFArray.c
+    Create/Realloc: Allow axis size larger than 524288 (doh!!!)
+    This is 2^19
+Obit/TDF/Restore.TDF Obit/tasks/Restore.c
+    New task to restore/flatten/fit CLEANed facets
+05 June 2020 svn 622
+
+Summary: ObitView improvements, bug fixes
+Obit/src/ObitThreadGrid.c
+    fast_rot: fix AVX512 indexing bug.
+Obit/src/ObitVecFunc.c Obit/include/ObitVecFunc.h
+Obit/src/ObitSinCos.c Obit/src/ObitExp.c 
+    reenable avx512
+Obit/src/ObitDConCleanVis.c
+    Hack for autoCen problem - needs more work
+Obit/src/ObitSpectrumFit.c
+    Single: increase size of coef array
+Obit/tasks/MFImage.c
+    doChanPoln: reset restartFlux after each polarization imaging.
+Obit/src/ObitSkyModelVMBeam.c
+    UpdateModel: correct beam gain correction,test lin, not circ
+Obit/src/ObitSkyModelVMBeamMF.c
+    Create: Use mosaic image rather then RXBeam for BeamShape.
+Obit/share/data/1934-638LModel.fits.gz Obit/share/data/0408-65LModel.fits.gz
+    MeerKAT flux density calibrators 
+Obit/src/ObitRMFit.c
+    RMCube: add history
+Obit/python/Image.py
+    UpdateDesc: Fix logic to allow updating AIPS header keywords
+ObitView/ObitView.c ObitView/include/imagedisp.h
+ObitView/src/aboutbox.c ObitView/src/requestbox.c
+    Add port number to "About"
+    Require Abort button twice
+Obit/src/ObitImage.c
+    Zap: Free buffer
+    Clone2: more securely define buffer.	 
+Obit/src/ObitImageSel.c
+    Buffer: Don't recreate image buffer if it's large enough already.
+Obit/src/ObitData.c
+    Zap: Don't try to delete history for memory only image
+Obit/python/MosaicUtil.py
+    PWeightImage: Plug memory leaks
+Obit/python/ImageMF.py
+   Add history to FitSpec*
+   add minWt to SpecFit2 to set minimum fraction of weight
+Obit/python/Image.inc Obit/python/Obit_wrap.c
+   Zap: add robust buffer zapping
+   ImageFreeBuffer: new, robust buffer zapping
+Obit/src/ObitSkyModelMF.c
+   LoadComps: Don't fit SI to poln data
+   LoadComps: use do3D on image involved rather than skyModel
+10 Jul 2020 svn 624

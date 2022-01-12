@@ -1,0 +1,196 @@
+; $Id$
+; WVRCal 
+;---------------------------------------------------------------
+;! Obit Radio interferometry software
+;# Task ALMA WVR calibration
+;-----------------------------------------------------------------------
+;;  Copyright (C) 2011-2013
+;;  Associated Universities, Inc. Washington DC, USA.
+;;
+;;  This program is free software; you can redistribute it and/or
+;;  modify it under the terms of the GNU General Public License as
+;;  published by the Free Software Foundation; either version 2 of
+;;  the License, or (at your option) any later version.
+;;
+;;  This program is distributed in the hope that it will be useful,
+;;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;  GNU General Public License for more details.
+;;
+;;  You should have received a copy of the GNU General Public
+;;  License along with this program; if not, write to the Free
+;;  Software Foundation, Inc., 675 Massachusetts Ave, Cambridge,
+;;  MA 02139, USA.
+;;
+;;  Correspondence concerning Obit should be addressed as follows:
+;;         Internet email: bcotton@nrao.edu.
+;;         Postal address: W. D. Cotton
+;;                         National Radio Astronomy Observatory
+;;                         520 Edgemont Road
+;;                         Charlottesville, VA 22903-2475 USA
+;---------------------------------------------------------------
+WVRCal     LLLLLLLLLLLLUUUUUUUUUUUU CCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+WVRCal:    ALMA WVR calibration
+**PARAM** str 4
+DataType                            "FITS" or "AIPS" type of input
+**PARAM** str 48
+inFile                              FITS input uvdata if Type=='FITS'
+**PARAM** str 12
+inName                              Input multisource UV data AIPS
+**PARAM** str 6
+inClass                             Input UV (WVR) data (class)
+**PARAM** int 1
+inSeq                               Input UV (WVR) data (seq. #)
+**PARAM** int 1
+inDisk                              Input UV (WVR) disk drive #
+**PARAM** float 2
+timeRange                           Time range to process.
+**PARAM** int 50
+Antennas         0.0     1000.0     List of antennas to calibrate
+**PARAM** str 16 30
+calSour                             Cal sources for calibration
+**PARAM** str 16 30
+Sources                             Source to process
+**PARAM** int 1 **DEF** -1
+Qual            -10.0               Source qualifier -1=>any
+**PARAM** str 4
+souCode                             Source code '    '=>all
+**PARAM** str 4
+calCode                             Calibrator code '    '=>all
+**PARAM** int 1
+flagVer                             Flag table version
+**PARAM** str 48
+outFile                             FITS output (SN) if Type=='FITS'
+**PARAM** str 12
+outName                             Output UV AIPS SN name
+**PARAM** str 6
+outClass                            Output UV AIPS SN class
+**PARAM** int 1
+outSeq           -1.0     9999.0    Output UV AIPS SN seq. #
+**PARAM** int 1
+outDisk                             Output UV SN disk unit #.
+**PARAM** float 1   **DEF** 10.0
+solInt1           0.0               1st Solution interval (min)
+**PARAM** float 1   **DEF** 1.0
+solInt2           0.0               2nd Solution interval (min)
+**PARAM** int 1
+solnVer                             SN table to write
+**PARAM** int 1
+refAnt                              Reference antenna 0=>pick.
+**PARAM** boo 1 **DEF** T
+doFlip                              Flip sign of corrections
+**PARAM** int 1
+prtLv             0.0               Print level in selfcal
+**PARAM** int 1 **DEF** 1
+nThreads            0               Number of threads to use
+**PARAM** str 128
+taskLog                             Logfile for task messages
+----------------------------------------------------------------
+WVRCal Convert an ALMA WVR dataset to an SN table
+Type:  Task
+ Use:  Phase calibration of ALMA data
+
+   This reads an ALMA WVR data set (stored as autocorrelations)
+and converts into an AIPS SN calibration table with delay and 
+phase corrections.  The SN table is written on the output UV 
+data file and the frequencies are those of the output data.
+   Two passes are made through the data, the first selecting data
+by calSour and calCode doing averages of data (defined by 
+source changes and solInt1) to compute average coefficients to 
+convert WVR sky temperature measurements to excess path lengths.
+These excess path lengths are then used to calculate phase and 
+delay corrections. 
+   Uses Bojan Nikolic's libalmawvr package for the fitting.
+
+   NOTE: Determining the coefficients to convert wvr radiometer 
+output to delays is *VERY SLOW* so proper selection of calSour 
+and solInt1 are important as is a healthy dose of patience.
+Use as many threads as you have cores available.
+
+Adverbs:
+  DataType..'FITS' or 'AIPS'  type of input/output
+  inFile.....FITS input uvdata if Type=='FITS'
+  inName.....Input multisource UV data file
+  inClass....Input UV data file (class).      Standard defaults.
+  inSeq......Input UV data file (seq. #).     0 => highest.
+  inDisk.....Input UV data file disk drive #. 0 => any.
+
+  outFile....output FITS UV data for SN table
+  outName....Output UV AIPS SN name    Standard defaults.
+  outClass...Output UV AIPS SN class.  Standard defaults.
+  outSeq.....Output UV AIPS SN seq. #. 0 => highest unique.
+  outDisk....Disk drive # of output UV (FITS or AIPS) NO default
+
+       Data selection
+  timeRange..Time range of the data to be processed. 
+  flagVer....FG table to use for editing. 0 => highest.
+  Antennas...A list of the antennas to  have solutions
+             determined. If any number is negative then all
+             antennas listed  are NOT to be used to determine
+             solutions and all others are. All 0 => use all.
+  Sources....List of sources to calibrate.
+             '*' or blank = all; a "-" before a source name
+             means all except ANY source named. 
+             These are the sources for which SN table entries in
+             the output SN table are top be written.
+  calSour....List of calibrators during whose observations
+             to calibrate the WVR data.  These are only used for 
+             determining the coefficients to convert the wvr 
+             radiometer output to delays which only needs to 
+             track the general conditions.  The target(s) don't 
+             need to be be included here.
+  Qual.......Only sources with a source qualifier number in the
+             SU table matching Qual will be used if Qual is not
+             -1.  Qual affects the selection of both the list of
+             sources and the list of calibrators.
+  souCode....Calibrators may be selected on the basis of the
+             calibrator code given in the SU table.
+                  '    ' => any calibrator code selected
+                  '*   ' => any non blank code (cal. only)
+                  '-CAL' => blank codes only (no calibrators)
+                  anything else = calibrator code to select.
+             NB: The souCode test is applied in addition to the
+             other tests, i.e. Sources and Qual, in the
+             selection of sources to process.
+  calCode....Calibrators may be selected on the basis of the
+             calibrator code given in the SU table.
+                  '    ' => any calibrator code selected
+                  '*   ' => any non blank code (cal. only)
+                  '-CAL' => blank codes only (no calibrators)
+                  anything else = calibrator code to select.
+             NB: The calCode test is applied in addition to the
+             other tests, i.e. calSour and Qual, in the
+             selection of calibrators.
+             calCode affects only the selection of calibrators.
+
+   The following control the conversion
+  solInt1....Maximum "scan" solution interval (min)
+             This is the time interval over which wvr radiometer
+             data is averaged to determine the coefficients for
+             converting the radiometer outputs to phases and delays.
+             Scan averages are advisable.
+  solInt2....Solution interval (min) for gains
+             This is the frequency of entries in the output SN 
+             table and need not be much shorter that the interval 
+             in the CL table (from BDFIn) to which it is to be
+             applied.
+  solnVer....Solution (SN) table to write, 0=> create new
+  refAnt.....Reference antenna to use.  All phase-like values in the
+             combined SN table will be referenced to this antenna. 
+             0 => lowest antenna number with valid data.
+  doFlip.....ALMA occasionally changes their phase sign conventions.
+             Depending on which way was used in your data, 
+             you may need this True or False.  Use whichever one
+             best flattens the phase on a calibrator.
+  prtLv......Diagnostic level in solution, 0=>none [def. 0]
+  nThreads...If the Obit libraries are compiled with multiple
+             thread operation enabled, this parameter sets the 
+             number of threads that can be used for parallel 
+             operations. 
+             NB: This only improves performance if there are 
+             multiple processors and/or cores in the host.
+
+  taskLog.....Log file to write messages to INSTEAD of the terminal
+              Path is absolute or relative to where the task 
+              executes.
+----------------------------------------------------------------

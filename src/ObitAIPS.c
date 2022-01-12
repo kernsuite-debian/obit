@@ -1,4 +1,4 @@
-/* $Id: ObitAIPS.c 116 2009-07-01 12:16:53Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2003-2009                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -72,7 +72,11 @@ void ObitAIPSClassInit (olong number, gchar* dir[], oint F_TRUE, oint F_FALSE)
   gchar *da[]={"01","02","03","04","05","06","07","08","09","0A",
 	       "0B","0C","0D","0E","0F","0G","0H","0I","0J","0K",
 	       "0L","0M","0N","0O","0P","0Q","0R","0S","0T","0U",
-	       "0V","0W","0X","0Y","0Z"};
+	       "0V","0W","0X","0Y","0Z","10",
+	       "11","12","13","14","15","16","17","18","19","1A",
+	       "1B","1C","1D","1E","1F","1G","1H","1I","1J","1K",
+	       "1L","1M","1N","1O","1P","1Q","1R","1S","1T","1U",
+	       "1V","1W","1X","1Y","1Z"};
 
   myAIPSInfo->NumberDisks = 0;
   for (i=0; i<MAXAIPSDISK; i++) {

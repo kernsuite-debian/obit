@@ -1,6 +1,6 @@
-/* $Id: ObitTypes.h 32 2008-09-17 19:25:51Z bill.cotton $     */
+/* $Id$     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2008                                          */
+/*;  Copyright (C) 2002-2013                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -65,8 +65,11 @@ typedef gint32 oint;
 /* if sizeof(glong) == sizeof(gfloat)
    typedef glong oint;*/
 
-/** Typedef for Obit integers */
+/** Typedef for Obit 32 integers */
 typedef gint32 olong;
+
+/** Typedef for Obit 64 bit integers */
+typedef gint64 ollong;
 
 /** Typedef for Obit floats */
 typedef gfloat ofloat;
@@ -79,6 +82,7 @@ typedef gdouble odouble;
 /** Equivalence for obtaining a single element of an uncertain type
    from InfoList */
   union ObitInfoListEquiv { 
+    ollong  ltg;
     olong   otg;
     oint    itg;
     ofloat  flt;
@@ -215,6 +219,8 @@ enum obitInfoType {
   OBIT_uint,  
   /** 32 bit unsigned signed integer */
   OBIT_ulong, 
+  /** 64 bit signed signed integer */
+  OBIT_llong, 
   /** single precision float */
   OBIT_float, 
   /** double precision float */

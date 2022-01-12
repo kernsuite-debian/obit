@@ -1,10 +1,10 @@
-; $Id: BeamCor.TDF 130 2009-09-28 11:24:36Z bill.cotton $
+; $Id$
 ; BeamCor 
 ;---------------------------------------------------------------
 ;! Imaging software correcting for tabulated beamshape
 ;# Task Obit self calibration Imaging
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2010
+;;  Copyright (C) 2010-2019
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -80,6 +80,9 @@ BPVer                               Bandpass table version
 flagVer                             Flag table version
 **PARAM** boo 1 **DEF** F
 doPol                               Apply polarization cal?
+**PARAM** int 1 **DEF** 1
+PDVer                               PD table to apply
+                                    If >=0, per channel corrections
 **PARAM** float 1  **DEF** 0.0
 Alpha           -20.       20.      Spectral Index to correct
 **PARAM** float 1 **DEF** 0.999
@@ -165,6 +168,8 @@ DecShift                           Declination shift (AIPS convention)
 
 **PARAM** float 3
 UVTaper         0.                 (U,V) Gaussian taper klambda
+**PARAM** float 1  **DEF** 0.8
+MFTaper                            Multi frequency Taper Factor
 **PARAM** float 2
 UVRange         0.                 Min & max baseline (klambda)
 **PARAM** float 1
@@ -178,6 +183,8 @@ doRestore                          Restore CCs to images?
 do3D                               3D imaging, else 2D
 **PARAM** str 48  **DEF** NVSSVZ.FIT
 Catalog                            Outlier catalog name (NVSSVZ.FIT)
+**PARAM** int 1 **DEF** 1
+CatDisk                            Catalog FITS disk number
 **PARAM** float 1
 OutlierDist                        Maximum distance to add outliers (deg)
 **PARAM** float 1
@@ -260,7 +267,7 @@ WtUV              0.0              Weight outside full wt uvrange
 avgPol                             Avg. poln?
 **PARAM** boo 1 **DEF** F
 avgIF                              Avg. IFs?
-**PARAM** boo 1 **DEF** F
+**PARAM** boo 1 **DEF** T
 noNeg                              exclude negative summed CLEAN comps?
 **PARAM** boo 1  **DEF** F
 doMGM                              Apply mean gain modulus
@@ -308,15 +315,22 @@ noScrat                            AIPS disk numbers for which
 ----------------------------------------------------------------
 BeamCor Imaging with beam correction  and Self calibration
 Type:  Task
- Use:  Imaging of UV data
+ Use:  Imaging of UV data with beam corrections
+
+   A discussion of the beam correction technique is in Obit 
+Development Memo 17 
+(Obit page: http://www.cv.nrao.edu/~bcotton/Obit.html), 
+and EVLA beam correction images c. Dec 2009 are available from 
+ftp://ftp.cv.nrao.edu/NRAO-staff/bcotton/Obit/BeamImages
+as gzipped FITS files. ***************OUT OF DATE!
 
    The products of this task are a CLEAN image and an improved 
 calibration. Unless otherwise specified, a fly's eye pattern of
 fields with circular CLEAN boxes will be used to cover the specified
 field of view (FOV).  When processing is finished, the CLEAN images 
 are "flattened" onto a single image and the (first) CLEAN model is 
-subtracted from the output data.  If a second Stokes (V only) is 
-specified it is imaged and CLEANed as well.
+subtracted from the output data.  If further Stokes are
+specified they is imaged and CLEANed as well.
    The imaging model corrects for the effects of the deviation of
 the measured beamshape from a nominal one.  Polarized data corrected
 as well if the polarization beam are given.
@@ -392,9 +406,9 @@ Adverbs:
              [5,0,2,1] means every other channel from 5 to the highest
              in IF 1.  All zeroes means all channels and all IFs 
              selected by BChan, EChan, BIF, EIF.
-  doCalib....If true, apply SN or CL table
+  doCalib....If >0, apply SN or CL table
   gainUse....CL/SN table version number to apply. 0=> highest.
-  doBand.....If true (>0) then correct the data for the shape of the
+  doBand.....If >0 then correct the data for the shape of the
              antenna bandpasses using the BP table specified by BPVer.
              The correction has five modes:
              (a) if doBand=1 all entries for an antenna in the table
@@ -413,7 +427,10 @@ Adverbs:
                 0 => highest numbered table.
                <0 => no bandpass correction to be applied.
   flagVer....AIPS FG table to use for editing. 0 => highest.
-  doPol......>=1 apply polarization calibration
+  doPol......If True apply polarization calibration
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   Alpha......If != 0.0 then correct data by spectral index Alpha before 
              imaging and self calibration. 
              -0.7 is typical for synchrotron.
@@ -443,31 +460,39 @@ Adverbs:
       Beamshape files
   in3DType..'FITS' or 'AIPS'  type of Beam images, defaults to
              DataType.
-  in3Name....Power Beam AIPS name.      Standard defaults.
-  in3Class...Power Beam AIPS class. Expected form "Sxxxxx" where "S"
-             is the Stokes parameter (IVQU) and "xxxx" arbitrary.
+  in3Name....Voltage Beam AIPS name.      Standard defaults.
+  in3Class...Voltage Beam AIPS class. Expected form "SSxxxx" where "S"
+             is the correlation ('RR', 'XX'...) and "xxxx" arbitrary.
              The task will search for the different stokes images 
-             and I+V or I+V+Q+U should be provided.
+             and "RR'+"LL" (or "XX"+"YY") or "RR'+"LL"+"RL'+"LR" 
+	     NB: Application of instrumental poln cal. for linear 
+	     feeds will convert to a circular basis
   in3Seq.....Beam AIPS seq. # .    0 => highest.
   in3Disk....Disk drive # of beam (FITS or AIPS). NO default for AIPS
-  in3File....FITS Power Beam input root if in3DType=='FITS'
-             Expected form "Sxxxxx" where "S" is the Stokes parameter 
-             (IVQU) and "xxxx" is arbitrary. 
-             The task will search for the different Stokes images 
-             and I+V or I+V+Q+U should be provided
+  in3File....FITS Voltage Beam input root if in3DType=='FITS'
+             Expected form "Sxxxxx" where "S" is the correlation 
+	     parameter ('RR', 'XX'...) and "xxxx" arbitrary.
+              The task will search for the different stokes images 
+             and "RR'+"LL" (or "XX"+"YY") or "RR'+"LL"+"RL'+"LR" 
+	     NB: Application of instrumental poln cal. for linear 
+	     feeds will convert to a circular basis
   doPhase....If True, also include phase in beam images
-  in4Name....Power Beam phase AIPS name. Only used if doPhase = True
-  in4Class...Beam phase AIPS class. Expected form "Sxxxxx" where "S"
-             is the Stokes parameter (IVQU) and "xxxx" arbitrary.
+  in4Name....Voltage Beam phase AIPS name. Only used if doPhase = True
+  in4Class...Beam phase AIPS class.  Expected form "SSxxxx" where "S"
+             is the correlation ('RR', 'XX'...) and "xxxx" arbitrary.
              The task will search for the different stokes images 
-             and I+V or I+V+Q+U should be provided.
+             and "RR'+"LL" (or "XX"+"YY") or "RR'+"LL"+"RL'+"LR" 
+	     NB: Application of instrumental poln cal. for linear 
+	     feeds will convert to a circular basis
   in4Seq.....Beam phase AIPS seq. # .    0 => highest.
   in4Disk....Disk drive # of beam phase (FITS or AIPS).
   in4File....Power FITS Beam phase input root if in3DType=='FITS'
-             Expected form "Sxxxxx" where "S" is the Stokes parameter 
-             (IVQU) and "xxxx" is arbitrary. 
+             Expected form "Sxxxxx" where "S" is the correlation 
+	     parameter ('RR', 'XX'...) and "xxxx" arbitrary.
              The task will search for the different stokes images 
-             and I+V or I+V+Q+U should be provided
+             and "RR'+"LL" (or "XX"+"YY") or "RR'+"LL"+"RL'+"LR" 
+	     NB: Application of instrumental poln cal. for linear 
+	     feeds will convert to a circular basis
              Only used if doPhase = True
 
       Output files
@@ -542,6 +567,7 @@ Adverbs:
              Default  NVSSVZ.FIT
              This must be in the form of an "AIPS VZ" table.
              'None' =. Use no outliers
+  CatDisk......FITS disk number for Catalog, 0=>cwd, 1=>$FITS
   OutlierDist..max. distance from pointing to include (deg)
                default = 10
   OutlierFlux..min. estimated flux density (Jy)
@@ -553,6 +579,11 @@ Adverbs:
                the FOV or the program may die.
   UVTaper....(U,V) Gaussian taper (kilo-lambda) at 30% level
              as (major, minor axis, position angle)
+  MFTaper....Multi frequency taper factor to control the frequency 
+             dependent taper to get constant resolution with frequency.
+             Values between 0.5 and 1.0 are plausible but depend on 
+             the actual uv coverage.
+             If <0 then do not apply frequency dependent taper.
   UVRange....(Minimum,Maximum) baseline (kilo-lambda) to
              process. 
   Robust.....Briggs' "robustness" parameter.  "Uniform" weights are
@@ -747,6 +778,116 @@ Adverbs:
   noScrat.....A list of AIPS disk numbers on which you do not 
               wish scratch files
 ----------------------------------------------------------------
+
+Polarization dependent CLEAN
+----------------------------
+   Optional CLEANing parameters, NiterQU, minFluxQU may be given
+to control the CLEANing of Stokes Q, U or V.
+e.g. to add NiterQU=50; minFluxQU=0.001 to task object mf
+addParam(bc,"NiterQU", paramVal=NiterQU, shortHelp="Niter for Q,U", \
+	longHelp="  NiterQU.....Niter for Q,U\n")
+addParam(bc,"minFluxQU", paramVal=minFluxQU, \
+        shortHelp="minFlux for Q,U", \
+	longHelp="  minFluxQU...minFlux for Q,U\n")
+
+e.g. to add NiterV=50; minFluxV=0.00001 to task object mf
+addParam(bc,"NiterV", paramVal=NiterV, shortHelp="Niter for V", \
+	longHelp="  NiterQU.....Niter for V\n")
+addParam(bc,"minFluxV", paramVal=minFluxV, \
+        shortHelp="minFlux for V", \
+	longHelp="  minFluxV...minFlux for V\n")
+
+Minimum CLEAN Flux density
+--------------------------
+   Input parameter minFlux sets the minimum depth of the initial
+Stokes I CLEAN; or Stokes Q,U,V lacking minFluxQU, minFluxV.
+Thereafter, the default Stokes minimum CLEAN depth is the RMS of 
+the previous CLEANed central facet.  This can be overridden using
+optional parameter minFList.  This gives a list of minimum CLEAN
+flux densities as a function of self calibration after the first.
+The last entry is used for any subsequent IPol CLEANs.
+minFList = [0.0001,0.00001]  # 0.0001 Jy after 1st, 0.00001 after 2nd
+addParam(bc,"minFList", paramVal=minFList, \
+        shortHelp="minFlux list after SC", \
+	longHelp="  minFList....minFluxes to use in IPol after selfcals\n")
+
+
+Frequency Dependent Resolution
+------------------------------
+   The natural resolution of an interferometer is inversely
+proportional to the frequency but for the algorithm used in this
+program to work properly, the resolution must be at least
+approximately constant.
+   There are two means provided to attempt this, the patameter,
+MFTaper which is used to adjust an algorithm attemption to give
+constant resolution.  The default value, 0.8, is approximately correct
+for VLA uv coverage but depends in detail on the actual coverage.  The
+achieved beams can be determined using saveBeam=True and then Image
+class function GaussFit.
+
+   If no value of MFTaper is adequate, it is possible to specify the
+Robustness factor and a convolving Taper for each IF selected in the
+data.   The parameters RobustIF and TaperIF need to be defined and
+added to the task interface object (mf in the following examples):
+RobustIF=[0.0,0.1,0.2,0.3]  # One element per IF
+addParam(bc,"RobustIF", paramVal=RobustIF, shortHelp="Robust per IF", \
+	longHelp="  RobustIF....Robust per IF\n"+ \
+	"              Give only for selected IFs\n")
+ # One element per IF:
+TaperIF=[[1000.,20.,0.], [1000.,20.,0.], [1000.,21.,0.] ...]
+addParam(bc,"TaperIF", paramVal=TaperIF, shortHelp="Taper per IF", \
+	longHelp="  TaperIF....Taper per IF\n"+ \
+	"              Give only for selected IFs\n")
+
+RobustIF and TaperIF have the same meaning as Robust and UVTaper.
+
+   When the CLEAN is finished and before restoration of CLEAN
+components, the beam psf in each plane of each facet is fitted by an
+elliptical Gaussian and the residual image convolved with a Gaussian
+which when convolved with the fitted psf will give the restoring beam.
+(Note, any dimensions for which the fitted beam is larger that the
+restoring beam are replaces by zero size).  The intent of this is that
+the residuals have the same resolution as the CLEANed portion of the
+image. 
+
+Inverse taper
+------------
+To downweight short baselines it is possible to use an "inverse 
+taper", UVITaper.  This is less harsh alternative to UVRange.
+  UVITaper...(U,V) Inverse Gaussian taper (kilo-lambda) at 70% level
+             as (min wt., major, minor axis, position angle)
+This multiplies the data weight by 
+max(UVITaper[0], 1-exp(UVITaper[1:3] dot baseline))
+# To implement in ObitTalk:
+UVITaper = [0.1, 0.2, 0.2, 0.] 
+addParam(bc,"UVITaper", paramVal=UVITaper, shortHelp="Inverse Taper", \
+	longHelp="  UVITaper....Inverse Taper\n"+ \
+	"              Taper inner portion of uv space\n"+ \
+	"              multiplies weight by "+ \
+	"              max(taper[0],1-exp(taper(13) dot BL))\n")
+
+Maximum Run time
+----------------
+An approximate upper limit (in sec) to the run (wall clock) time can be set,
+maxRealtime = 1000.
+addParam(bc,"maxRealtime", paramVal=maxRealtime, shortHelp="Max. run time (sec)", \
+	longHelp="  maxRealtime....Max. run time (sec)\n"+ \
+	"              Time after which task will begin to shut down, CLEAN\n"+
+	"              and Self cal will be declared done after this time.\n")
+
+Maximum middle CLEAN Loop 
+-------------------------
+When autoWindowing is being used, there is a middle CLEAN loop in which an image 
+plane model subtraction is done allowing more cycles in which a new CLEAN box 
+can be added to each facet.  This is intended as an efficiency measure but if there
+there is a large number of components subtracted this way (>50,000 per cycle) it 
+may become very slow and a value of maxAWLoop = 1 (no middle loop) may be needed. 
+Values larger than 5 are not recommended.
+maxAWLoop = 0
+addParam(bc,"maxAWLoop", paramVal=maxAWLoop, shortHelp="Max. middle CLEAN loop", \
+	longHelp="  maxAWLoop....Max. middle CLEAN Loop count\n"+ \
+	"              Override the default behavior for the autoWin middle loop\n"+
+	"              if > 0.\n")
 
 
 PS Table

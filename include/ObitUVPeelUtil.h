@@ -1,4 +1,4 @@
-/* $Id: ObitUVPeelUtil.h 195 2010-06-01 11:39:41Z bill.cotton $   */
+/* $Id$   */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2007-2010                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

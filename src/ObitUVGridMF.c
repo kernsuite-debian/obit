@@ -1,6 +1,6 @@
-/* $Id: ObitUVGridMF.c 76 2009-02-04 14:51:56Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -27,7 +27,11 @@
 /*--------------------------------------------------------------------*/
 
 #include <math.h>
+#include <unistd.h>
+#include "ObitFFT.h"
 #include "ObitUVGridMF.h"
+#include "ObitImageUtil.h"
+#include "ObitThreadGrid.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -60,30 +64,6 @@ static ObitGetClassFP ObitParentGetClass = ObitUVGridGetClass;
 static ObitUVGridMFClassInfo myClassInfo = {FALSE};
 
 /*---------------Private structures----------------*/
-/** Gridding threaded function argument */
-typedef struct {
-  /* ObitThread with restart queue */
-  ObitThread *thread;
-  /* SkyModel with model components loaded (ObitSkyModelLoad) */
-  ObitUVGridMF *in;
-  /* UV data set to model and subtract from current buffer */
-  ObitUV       *UVin;
-  /* Range of IF (0-rel) to process this thread  */
-  olong        BIF, EIF;
-  /* Range of channel (0-rel) to process this thread  */
-  olong        BChan, EChan;
-  /* thread number, >0 -> no threading   */
-  olong        ithread;
-  /* Gridding array for thread */
-  ObitCArray  *grid;
-  /* Array of u,v,w values */
-  ObitFArray  *uvw;
-  /* Number of floats in buffer   */
-  olong        buffSize;
-  /* I/O buffer to be coppied to UVin buffer */
-  ofloat       *buffer;
-} UVGridFuncArg;
-
 /** gridding correction threaded function argument */
 typedef struct {
   /* ObitThread with restart queue */
@@ -92,6 +72,8 @@ typedef struct {
   ObitUVGrid *in;
   /* UV data set to model and subtract from current buffer */
   ObitFArray *array;
+  /* plane number 0-rel  */
+  olong       iplane;
   /* thread number, >0 -> no threading   */
   olong       ithread;
 } FFT2ImFuncArg;
@@ -105,29 +87,8 @@ void  ObitUVGridMFClear (gpointer in);
 /** Private: Set Class function pointers. */
 static void ObitUVGridMFClassInfoDefFn (gpointer inClass);
 
-/** Private: Grid a single image/Beam possibly with Threads */
-static void GridOne (ObitUVGridMF* in, ObitUV *UVin, UVGridFuncArg **args, 
-		     ObitThread *thread, ObitErr *err);
-
-/** Private: Prepare visibility data for gridding */
-static void PrepBufferMF (ObitUVGridMF* in, ObitUV *uvdata, olong BIF, olong EIF,
-			  olong BChan, olong EChan, ObitFArray *uvw,
-			  ObitCArray *accGrid);
-
-/** Private: Grid visibility data */
-static void GridBufferMF (ObitUVGridMF* in, ObitUV *uvdata, olong BIF, olong EIF,
-			  olong BChan, olong EChan, ObitFArray *uvw, 
-			  ObitCArray *accGrid);
-
-
-/** Private: Threaded prep/grid buffer */
-static gpointer ThreadUVGridMFBuffer (gpointer arg);
-
 /** Private: Threaded FFT/gridding correct */
 static gpointer ThreadFFT2ImMF (gpointer arg);
-
-/** Private: Copy UVW portion of a data buffer */
-static void copyUVW (UVGridFuncArg *arg);
 
 /*----------------------Public functions---------------------------*/
 /**
@@ -174,7 +135,7 @@ gconstpointer ObitUVGridMFGetClass (void)
 /**
  * Prepares for gridding uv data of the type described by UVin and
  * with derived image as described by image.
- * Wideband version
+ * Wideband, multi frequency version
  * Input data should be fully edited and calibrated, with any weighting applied 
  * and converted to the appropriate Stokes type.
  * The object UVin will be opened during this call if it is not already open.
@@ -182,9 +143,21 @@ gconstpointer ObitUVGridMFGetClass (void)
  * image.
  * The beams corresponding to each image should be made first using the
  * same ObitUVGridMF.
+ * If imagee is of type ObitImageMF then the selection of IFs and channels per 
+ * output channel are obtained from this object, otherwise, the imagee info member 
+ * is expected to contain
+ * \li "nSpec"     OBIT_long scalar = number of spectral channels, imagee should be 
+ *                 adequately dimensioned.
+ * \li "BIFSpec"   OBIT_long(nSpec)  = Beginning IF 0-rel in UVIn per spectral channel
+ * \li "EIFSpec"   OBIT_long(nSpec)  = Endinging IF 0-rel in UVIn per spectral channel
+ * \li "BChanSpec" OBIT_long(nSpec)  = Beginning channel 0-rel in UVIn per spectral channel
+ * \li "EChanSpec" OBIT_long(nSpec)  = Endinging channel 0-rel in UVIn per spectral channel
  * \param in       Object to initialize
  * \param UVin     Uv data object to be gridded.
+ *                 info entry "MFTaper" gives frequency dependent taper fudge factor
  * \param imagee   Image (beam) to be gridded. (as Obit*)
+ *                 Descriptor infoList entry "BeamTapr" gives any additional
+ *                 tapering in degrees.
  * \param doBeam   TRUE is this is for a Beam.
  * \param err      ObitErr stack for reporting problems.
  */
@@ -195,16 +168,17 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
   ObitUVDesc *uvDesc;
   ObitUVGridMF *in = (ObitUVGridMF*)inn;
   ObitImageDesc *theDesc=NULL;
-  ObitImageMF *image = (ObitImageMF*)imagee;
+  ObitImage *image = (ObitImage*)imagee;
   ObitImage *myBeam;
   olong nx, ny, naxis[2], iSpec, size, nif, nfreq, nn;
-  ofloat cellx, celly, dxyzc[3], xt, yt, zt;
+  ofloat cellx, celly, dxyzc[3], xt, yt, zt, MFTape=0.8, BeamTaper=0.0;
+  olong nSpec=1, maxOrder=-1, *BIFSpec=NULL, *EIFSpec=NULL, *BChanSpec=NULL, *EChanSpec=NULL;
   ofloat *ramp=NULL, *data=NULL;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   gboolean doCalSelect = FALSE;
   ObitIOAccess access;
-  ofloat Beam[3] = {0.0,0.0,0.0}, tarBeam[3], corrBeam[3];
+  ofloat Beam[3] = {0.0,0.0,0.0}, tarBeam[3]={0.,0.,0.}, corrBeam[3]={0.,0.,0.};
   ofloat sigma2v, sigma2u, cpa, spa, taper;
   odouble tarFreq;
   gchar *routine="ObitUVGridMFSetup";
@@ -214,7 +188,7 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
   if (err->error) return;
   g_assert (ObitUVGridMFIsA(in));
   g_assert (ObitUVIsA(UVin));
-  g_assert (ObitImageMFIsA(image));
+  g_assert (ObitImageIsA(image));
   Obit_return_if_fail((image->myDesc->inaxes[0]>0) && 
 		      (image->myDesc->inaxes[1]>0), err,
 		      "%s: MUST fully define image descriptor %s",
@@ -230,6 +204,35 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
   ObitInfoListGetTest(UVin->info, "doCalSelect", &type, dim, &doCalSelect);
   if (doCalSelect) access = OBIT_IO_ReadCal;
   else access = OBIT_IO_ReadOnly;
+
+  /* Spectral information */
+  if (ObitImageMFIsA(image)) {  /* MF Image */
+      nSpec      = ((ObitImageMF*)image)->nSpec;     /* save number of coarse channels */;
+      maxOrder   = ((ObitImageMF*)image)->maxOrder;  /* save max imaging order */
+      BIFSpec    = ((ObitImageMF*)image)->BIFSpec;
+      EIFSpec    = ((ObitImageMF*)image)->EIFSpec;
+      BChanSpec  = ((ObitImageMF*)image)->BChanSpec;
+      EChanSpec  = ((ObitImageMF*)image)->EChanSpec;
+    } else {                   /* Spectral cube */
+      ObitInfoListGetTest(image->info, "nSpec",     &type, dim, &nSpec);
+      ObitInfoListGetP(image->info, "BIFSpec",   &type, dim, (gpointer*)&BIFSpec);
+      ObitInfoListGetP(image->info, "EIFSpec",   &type, dim, (gpointer*)&EIFSpec);
+      ObitInfoListGetP(image->info, "BChanSpec", &type, dim, (gpointer*)&BChanSpec);
+      ObitInfoListGetP(image->info, "EChanSpec", &type, dim, (gpointer*)&EChanSpec);
+      /* Check consistency with image size */
+      Obit_return_if_fail((image->myDesc->inaxes[image->myDesc->jlocf]>=nSpec), err,
+			  "%s: Image %s inadequately dimensioned for %d channels", 
+			  routine, image->name, nSpec);
+    }
+
+    /* Spectral stuff defined? */
+    Obit_return_if_fail(((BIFSpec!=NULL)   && (EIFSpec!=NULL) &&
+			 (BChanSpec!=NULL) && (EChanSpec!=NULL)), err,
+			"%s: Channel selection not given", 
+			routine);
+    in->nSpec    = nSpec;
+    in->maxOrder = maxOrder;
+
   
   /* open uv data to fully instantiate if not already open */
   if (in->myStatus==OBIT_Inactive) {
@@ -238,8 +241,6 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
   }
 
   uvDesc = UVin->myDesc;
-  in->nSpec    = ((ObitImageMF*)image)->nSpec;     /* save number of coarse channels */
-  in->maxOrder = ((ObitImageMF*)image)->maxOrder;  /* save max imaging order */
 
   /* Get source position if it's not already in header */
   if ((uvDesc->crval[uvDesc->jlocr]==0.0) && 
@@ -250,16 +251,29 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
   }
 
   /* Beam, image dependent stuff */
-  in->nxBeam = myBeam->myDesc->inaxes[0];
-  in->nyBeam = myBeam->myDesc->inaxes[1];
-  in->icenxBeam = in->nxBeam/2 + 1; 
-  in->icenyBeam = in->nyBeam/2 + 1;
-  in->nxImage = image->myDesc->inaxes[0];
-  in->nyImage = image->myDesc->inaxes[1];
+  in->nxBeam     = myBeam->myDesc->inaxes[0];
+  in->nyBeam     = myBeam->myDesc->inaxes[1];
+  in->icenxBeam  = in->nxBeam/2 + 1; 
+  in->icenyBeam  = in->nyBeam/2 + 1;
+  in->nxImage    = image->myDesc->inaxes[0];
+  in->nyImage    = image->myDesc->inaxes[1];
   in->icenxImage = in->nxImage/2 + 1;
   in->icenyImage = in->nyImage/2 + 1;
+   
+  /* Frequency dependent fudge factor */
+  ObitInfoListGetTest(UVin->info, "MFTaper", &type, dim, &MFTape);
+
+  /* Any additional tapering (deg) */
+  ObitInfoListGetTest(image->myDesc->info, "BeamTapr", &type, dim, &BeamTaper);
+  if (BeamTaper>0.0) {
+    /* DEBUG taper   = (1.0 / (BeamTaper*DG2RAD/2.35)/(G_PI));
+       in->BeamTaperUV = log(0.3)/(taper*taper);*/
+    taper = BeamTaper*DG2RAD*sqrt(2.0)*G_PI/2.35482;
+    taper = BeamTaper*DG2RAD*sqrt(2.0)*G_PI / 1.17741022; /* DEBUG */
+    in->BeamTaperUV = -taper*taper;
+  } else in->BeamTaperUV = 0.0;
   
-  /* Get values by Beam/Image */
+ /* Get values by Beam/Image */
   in->doBeam = doBeam;
   if (doBeam) {
     theDesc = myBeam->myDesc;  /* Which descriptor in use */
@@ -296,10 +310,10 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
     } else {
       in->grids[iSpec] = ObitCArrayRealloc (in->grids[iSpec], 2, naxis);
     }
-    in->BIFSpec[iSpec]   = image->BIFSpec[iSpec];
-    in->EIFSpec[iSpec]   = image->EIFSpec[iSpec];
-    in->BChanSpec[iSpec] = image->BChanSpec[iSpec];
-    in->EChanSpec[iSpec] = image->EChanSpec[iSpec];
+    in->BIFSpec[iSpec]   = BIFSpec[iSpec];
+    in->EIFSpec[iSpec]   = EIFSpec[iSpec];
+    in->BChanSpec[iSpec] = BChanSpec[iSpec];
+    in->EChanSpec[iSpec] = EChanSpec[iSpec];
   } /* end loop over coarse channel */
 
   /* Scaling to cells */
@@ -368,7 +382,7 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
     GridCorrFn (inn, in->nyImage, in->icenyImage, data, ramp, in->yCorrImage);    
   }
 
-  /* tapers for forcing beam size */
+  /* tapers for forcing beam size - include additional beam tapers here */
   if (uvDesc->jlocif>=0) nif = uvDesc->inaxes[uvDesc->jlocif];
   else  nif = 1;
   nfreq = uvDesc->inaxes[uvDesc->jlocf];
@@ -380,29 +394,37 @@ void ObitUVGridMFSetup (ObitUVGrid *inn, ObitUV *UVin, Obit *imagee,
   in->sigma2 = g_malloc0(nn*sizeof(ofloat));
   in->sigma3 = g_malloc0(nn*sizeof(ofloat));
 
-  /* Get restoring beam */
-  ObitInfoListGetTest(UVin->info, "Beam", &type, dim, Beam);
+   /* Get target restoring beam */
+  if (!ObitInfoListGetTest(UVin->info, "targBeam", &type, dim, Beam)) 
+    ObitInfoListGetTest(UVin->info, "Beam", &type, dim, Beam);
   tarFreq = UVin->myDesc->freqIF[0];  /* Frequency of lowest IF */
 
   for (iSpec=0; iSpec<nn; iSpec++) {
-    /* Target beam size scaled to this frequency */
-    tarBeam[0] = Beam[0] * tarFreq/uvDesc->freqArr[iSpec];
-    tarBeam[1] = Beam[1] * tarFreq/uvDesc->freqArr[iSpec];
-    tarBeam[2] = Beam[2];
-    /* Correction beam */
-    corrBeam[0] = sqrt (MAX(1.0e-10,Beam[0]*Beam[0]-tarBeam[0]*tarBeam[0]));
-    corrBeam[1] = sqrt (MAX(1.0e-10,Beam[1]*Beam[1]-tarBeam[1]*tarBeam[1]));
-    corrBeam[2] = Beam[2];
-    /* 0.8 fudge factor 0.9 may be better */
-    taper   = (0.8/ (((corrBeam[0]/2.35)/206265.))/(G_PI));
-    sigma2u = log(0.3)/(taper*taper);
-    taper   = (0.8/ (((corrBeam[1]/2.35)/206265.))/(G_PI));
-    sigma2v = log(0.3)/(taper*taper);
-    cpa     = cos(corrBeam[2]*DG2RAD);
-    spa     = sin(corrBeam[2]*DG2RAD);
-    in->sigma1[iSpec]  = (cpa*cpa*sigma2v + spa*spa*sigma2u);
-    in->sigma2[iSpec]  = (spa*spa*sigma2v + cpa*cpa*sigma2u);
-    in->sigma3[iSpec]  = 2.0*cpa*spa*(sigma2v - sigma2u);
+    if (MFTape>0) {
+      /* Target beam size scaled to this frequency */
+      tarBeam[0] = Beam[0] * tarFreq/uvDesc->freqArr[iSpec];
+      tarBeam[1] = Beam[1] * tarFreq/uvDesc->freqArr[iSpec];
+      tarBeam[2] = Beam[2];
+      /* Correction beam including any additional */
+      corrBeam[0] = sqrt (MAX(1.0e-10,Beam[0]*Beam[0]-tarBeam[0]*tarBeam[0]) + BeamTaper);
+      corrBeam[1] = sqrt (MAX(1.0e-10,Beam[1]*Beam[1]-tarBeam[1]*tarBeam[1]) + BeamTaper);
+      corrBeam[2] = Beam[2];
+      /* MFTape = beam fudge factor */
+      taper   = (MFTape/ (((corrBeam[0]/2.35)/206265.))/(G_PI));
+      sigma2u = log(0.3)/(taper*taper);
+      taper   = (MFTape/ (((corrBeam[1]/2.35)/206265.))/(G_PI));
+      sigma2v = log(0.3)/(taper*taper);
+      cpa     = cos(corrBeam[2]*DG2RAD);
+      spa     = sin(corrBeam[2]*DG2RAD);
+      in->sigma1[iSpec]  = -fabs((cpa*cpa*sigma2v + spa*spa*sigma2u));
+      in->sigma2[iSpec]  = -fabs((spa*spa*sigma2v + cpa*cpa*sigma2u));
+      in->sigma3[iSpec]  = -fabs(2.0*cpa*spa*(sigma2v - sigma2u));
+    } else {
+      /* No frequency dependent taper */
+      in->sigma1[iSpec]  = 0.0;
+      in->sigma2[iSpec]  = 0.0;
+      in->sigma3[iSpec]  = 0.0; 
+    }
   } /* End setting tapers */
  
   if (ramp) g_free (ramp); ramp = NULL;
@@ -438,9 +460,8 @@ void ObitUVGridMFReadUV (ObitUVGrid *inn, ObitUV *UVin, ObitErr *err)
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   ofloat temp;
-  olong   itemp, naxis[2];
-  olong i;
-  UVGridFuncArg *args=NULL;
+  olong   itemp;
+  ObitThreadGrid *grids=NULL;
   gboolean doCalSelect;
   gchar *routine="ObitUVGridMFReadUV";
 
@@ -493,25 +514,12 @@ void ObitUVGridMFReadUV (ObitUVGrid *inn, ObitUV *UVin, ObitErr *err)
   in->nThreads = MAX (1, ObitThreadNumProc(in->thread));
   in->nThreads = MIN (in->nThreads, in->nSpec);
 
-  /* Initialize threadArg array  */
-  if (in->threadArgs==NULL) {
-    in->threadArgs = g_malloc0(in->nThreads*sizeof(UVGridFuncArg*));
-    for (i=0; i<in->nThreads; i++) 
-      in->threadArgs[i] = g_malloc0(sizeof(UVGridFuncArg)); 
-  } 
-  
-  /* Set up thread arguments */
-  naxis[0] = 3; naxis[1] = UVin->mySel->nVisPIO;  /* Size of uvw buffer */
-  for (i=0; i<in->nThreads; i++) {
-    args = (UVGridFuncArg*)in->threadArgs[i];
-    args->thread   = in->thread;
-    args->in       = in;
-    args->UVin     = UVin;
-    args->grid     = in->grids[i];
-    args->uvw      = ObitFArrayCreate("UVW", 2, naxis);
-    args->buffSize = 0;
-    args->buffer   = NULL;
-  }
+   /* Create threaded gridding object */
+  grids = newObitThreadGrid("thread gridder");
+  /* Init */
+  ObitThreadGridSetup (grids, UVin, 1, &inn, in->nThreads, err);
+  if (err->error) Obit_traceback_msg (err, routine, in->name);
+
   /* end initialize */
 
   /* loop gridding data */
@@ -522,25 +530,23 @@ void ObitUVGridMFReadUV (ObitUVGrid *inn, ObitUV *UVin, ObitErr *err)
     else retCode = ObitUVRead (UVin, NULL, err);
     if (err->error) Obit_traceback_msg (err, routine, in->name);
     
-    GridOne(in, UVin, (UVGridFuncArg **)in->threadArgs, in->thread, err);
+    /* Do operation on buffer possibly with threads to grid all */
+    ObitThreadGridGrid(grids);
   } /* end loop reading/gridding data */
 
   /* Shut down any threading */
   ObitThreadPoolFree (in->thread);
-  if (in->threadArgs) {
-    for (i=0; i<in->nThreads; i++) {
-      if (in->threadArgs[i]) {
-	args = (UVGridFuncArg*)in->threadArgs[i];
-	args->uvw  = ObitFArrayUnref(args->uvw);
-	g_free(in->threadArgs[i]);
-      }
-    }
-    g_free(in->threadArgs);
-  }
-  in->threadArgs = NULL;
-  in->nThreads   = 0;
 
-  /* Close data */
+  /* fold negative u columns to conjugate cells */
+  ObitThreadGridFlip(grids);
+  
+  /* Accumulate grids to "grid" members on in swapped for FFT */
+  ObitThreadGridMerge(grids);
+  
+  /* release ThreadGrid object  */
+  grids = ObitThreadGridUnref(grids);
+
+   /* Close data */
   retCode = ObitUVClose (UVin, err);
   if (err->error) Obit_traceback_msg (err, routine, in->name);
 } /* end ObitUVGridMFReadUV  */
@@ -565,49 +571,44 @@ void ObitUVGridMFReadUV (ObitUVGrid *inn, ObitUV *UVin, ObitErr *err)
  *                Each should be initialized by ObitUVGridSetup
  *                To include beams, double nPar and set doBeam member 
  *                on one of each pair.
- * \param UVin    Array of UV data objects to be gridded.
+ * \param UVin    UV data objects to be gridded.
  *                Should be the same as passed to previous call to 
  *                #ObitUVGridSetup for input in element.
- *                MUST all point to same data set with same selection
- *                but possible different calibration.
- *                All but [0] should be closed.
  * \param err     ObitErr stack for reporting problems.
  */
-void ObitUVGridMFReadUVPar (olong nPar, ObitUVGrid **inn, ObitUV **UVin, ObitErr *err)
+void ObitUVGridMFReadUVPar (olong nPar, ObitUVGrid **inn, ObitUV *UVin, ObitErr *err)
 {
   ObitUVGridMF **in = (ObitUVGridMF**)inn;
   ObitIOCode retCode = OBIT_IO_OK;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   ofloat temp;
-  olong i, ip, itemp, naxis[2];
-  olong nTh, nnTh, off, nCopy, nLeft, doCalib;
-  UVGridFuncArg *args=NULL;
+  olong ip, itemp;
+  olong nTh,  nCopy, doCalib;
+  ObitThreadGrid *grids=NULL;
   gboolean doCalSelect;
-  ObitUV **UVArr  = NULL;
-  ofloat **buffers= NULL;
   gchar *routine="ObitUVGridMFReadUVPar";
   /* DEBUG 
   ObitFArray *dbgRArr=NULL, *dbgIArr=NULL;*/
 
   /* error checks */
   if (err->error) return;
+  g_assert (ObitUVIsA(UVin));
+  g_assert (ObitUVDescIsA(UVin->myDesc));
+  g_assert (UVin->myDesc->fscale!=NULL); /* frequency scaling table */
   if (nPar<=0) return;
   for (ip=0; ip<nPar; ip++) {
     g_assert (ObitUVGridIsA(in[ip]));
-    g_assert (ObitUVIsA(UVin[ip]));
-    g_assert (ObitUVDescIsA(UVin[ip]->myDesc));
-    g_assert (UVin[ip]->myDesc->fscale!=NULL); /* frequency scaling table */
   }
 
   /*  ObitErrTimeLog(err, routine);  Add Timestamp */
 
    /* If more than one Stokes issue warning */
-  if ((UVin[0]->myDesc->jlocs>=0) && 
-      (UVin[0]->myDesc->inaxes[UVin[0]->myDesc->jlocs]>1)) {
+  if ((UVin->myDesc->jlocs>=0) && 
+      (UVin->myDesc->inaxes[UVin->myDesc->jlocs]>1)) {
       Obit_log_error(err, OBIT_InfoWarn, 
 		    "%s: More than one Stokes  ( %d) in data, ONLY USING FIRST", 
-		     routine, UVin[0]->myDesc->inaxes[UVin[0]->myDesc->jlocs]);
+		     routine, UVin->myDesc->inaxes[UVin->myDesc->jlocs]);
   }
 
   /* get gridding information */
@@ -636,137 +637,57 @@ void ObitUVGridMFReadUVPar (olong nPar, ObitUVGrid **inn, ObitUV **UVin, ObitErr
 
   /* Calibrating and/or selecting? */
   doCalib = 0;
-  ObitInfoListGetTest(UVin[0]->info, "doCalib", &type, dim, &doCalib);
+  ObitInfoListGetTest(UVin->info, "doCalib", &type, dim, &doCalib);
   doCalSelect = FALSE;
-  ObitInfoListGetTest(UVin[0]->info, "doCalSelect", &type, dim, &doCalSelect);
+  ObitInfoListGetTest(UVin->info, "doCalSelect", &type, dim, &doCalSelect);
 
   /* UVin[0] should have been opened in  ObitUVGridSetup */
   
   /* How many threads? */
   in[0]->nThreads = MAX (1, ObitThreadNumProc(in[0]->thread));
-  in[0]->nThreads = MIN (in[0]->nSpec, in[0]->nThreads);
-
-  /* Initialize threadArg array put all on in[0] */
-  if (in[0]->threadArgs==NULL) {
-    in[0]->threadArgs = g_malloc0(in[0]->nThreads*sizeof(UVGridFuncArg*));
-    for (i=0; i<in[0]->nThreads; i++) 
-      in[0]->threadArgs[i] = g_malloc0(sizeof(UVGridFuncArg)); 
-  } 
-  
-  /* Set up thread arguments */
-  naxis[0] = 3; naxis[1] = UVin[0]->mySel->nVisPIO;  /* Size of uvw buffer */
-  for (i=0; i<in[0]->nThreads; i++) {
-    args = (UVGridFuncArg*)in[0]->threadArgs[i];
-    args->thread   = in[0]->thread;
-    args->uvw      = ObitFArrayCreate("UVW", 2, naxis);
-    args->buffSize = 0;
-    args->buffer   = NULL;
-  }
 
   /* How many threads? */
   nTh = in[0]->nThreads;
 
-  /* Array for UV data */
-  UVArr = g_malloc0(2*sizeof(ObitUV*));
+  /* Create threaded gridding object */
+  grids = newObitThreadGrid("thread gridder");
 
-  /* Buffer array */
-  buffers    = g_malloc0(2*sizeof(ofloat*));
-  buffers[0] = g_malloc0(UVin[0]->bufferSize*sizeof(ofloat));
-  buffers[1] = g_malloc0(UVin[0]->bufferSize*sizeof(ofloat));
-
-  /* delete buffer on UVin[0] */
-  g_free(UVin[0]->buffer); UVin[0]->buffer=NULL;
-  UVin[0]->bufferSize = 0;
+  /* Init */
+  ObitThreadGridSetup (grids, UVin, nPar, (ObitUVGrid**)inn, in[0]->nThreads, err);
+  if (err->error) goto cleanup;
 
   ObitErrLog(err);
 
   /* loop gridding data */
   while (retCode == OBIT_IO_OK) {
-
-    /* Initial buffer load */
-    off = 0;
-    UVArr[0] = UVin[0]; /* used for master buffer */
-    UVArr[1] = UVin[1]; /* UVArr[1] is the one to actually be used */
-
-    /* read buffer - first used as master - do copy in GridOne */
+    /* read buffer  */
     nCopy = 1;
-    if (doCalSelect) 
-      retCode = ObitUVReadMultiSelect (nCopy, UVArr, buffers, err);
-    else 
-      retCode = ObitUVReadMulti (nCopy, UVArr, buffers, err);
+    if (doCalSelect) retCode = ObitUVReadSelect (UVin, NULL, err);
+    else             retCode = ObitUVRead (UVin, NULL, err);
     if (retCode==OBIT_IO_EOF) break;  /* Finished */
     if (err->error) goto cleanup;
     
-    /* Set up thread arguments for first Beam/Image */
-    for (i=0; i<nTh; i++) {
-      args = (UVGridFuncArg*)in[0]->threadArgs[i];
-      if (doCalib<=0) { /* Copy buffer info? */
-	UVArr[1]->myDesc->numVisBuff =  UVArr[0]->myDesc->numVisBuff;
-	args->buffer   = buffers[0];
-	args->buffSize = UVArr[1]->myDesc->numVisBuff*UVArr[1]->myDesc->lrec;
-      }
-    }
-    if (err->error) goto cleanup;
-
-    /* Do operation on buffer possibly with threads to grid first image/beam */
-    in[off]->nThreads = in[0]->nThreads;
-    UVArr[1]->buffer  = buffers[1];
-    GridOne(in[off], UVArr[1], (UVGridFuncArg **)in[0]->threadArgs, in[0]->thread, err);
-    if (err->error) goto cleanup;
-
-    /* reset buffers */
-    UVin[0]->buffer  = buffers[0];     /* master buffer */
-    UVArr[1]->buffer = NULL;
-
-    /* Loop over rest of griddings */
-    nLeft = nPar - 1;
-    off   = 1;
-    while (nLeft>0) {
-      nnTh = MIN (1, nLeft);  /* How many to do? */
- 
-      /* Set up thread arguments for next griddings
-	 UVArr[0] and buffers[0] not used for gridding */
-      UVArr[1]   = UVin[off];
-
-      /* reload buffers - first used as master - copy buffer in thread unless doCalib */
-      nCopy = 1;
-      if (doCalSelect) 
-	retCode = ObitUVReReadMultiSelect (nCopy, UVArr, buffers, err);
-      else 
-	retCode = ObitUVReReadMulti (nCopy, UVArr, buffers, err);
-      if (err->error) goto cleanup;
-      
-      /* Set up thread arguments for next Beam/Image */
-      for (i=0; i<nTh; i++) {
-	args = (UVGridFuncArg*)in[0]->threadArgs[i];
-	if (doCalib<=0) { /* Copy buffer info? */
-	  UVArr[1]->myDesc->numVisBuff =  UVArr[0]->myDesc->numVisBuff;
-	  args->buffer = buffers[0];
-	  args->buffSize = UVArr[1]->myDesc->numVisBuff*UVArr[1]->myDesc->lrec;
-	}
-      }
-      if (err->error) goto cleanup;
-      
-      /* Do operation on buffer possibly with threads to grid next image/beam */
-      in[off]->nThreads = in[0]->nThreads;
-      UVArr[1]->buffer  = buffers[1];
-      GridOne(in[off], UVArr[1], (UVGridFuncArg **)in[0]->threadArgs, in[0]->thread, err);
-      if (err->error) goto cleanup;
-      
-      /* reset buffers */
-      UVin[0]->buffer  = buffers[0]; /* master buffer */
-      UVArr[1]->buffer = NULL;
-
-      off   += 1;  /* update offset */
-      nLeft -= 1;  /* update number left */
-   } /* end loop over others */
+    /* Do operation on buffer possibly with threads to grid all */
+    ObitThreadGridGrid(grids);
   } /* end loop reading/gridding data */
+
+  /* Shut down any threading */
+  ObitThreadPoolFree (grids->GridInfo->thread);
+  
+  /* fold negative u columns to conjugate cells */
+  ObitThreadGridFlip(grids);
+
+  /* Accumulate grids to "grid" members on in swapped for FFT */
+  ObitThreadGridMerge(grids);
+
+  /* release ThreadGrid object  */
+  grids = ObitThreadGridUnref(grids);
 
   /*ObitErrTimeLog(err, "Stop Grid Loop");  DEBUG */
   ObitErrLog(err);
 
   /* DEBUG - look at first complex grid
-  dbgRArr = ObitCArrayMakeF(in[0]->grids[0]);
+  dbgRArr = ObitCArrayakeF(in[0]->grids[0]);
   dbgIArr = ObitCArrayMakeF(in[0]->grids[0]);
   ObitCArrayReal (in[0]->grids[0], dbgRArr);
   ObitCArrayImag (in[0]->grids[0], dbgIArr);
@@ -779,37 +700,10 @@ void ObitUVGridMFReadUVPar (olong nPar, ObitUVGrid **inn, ObitUV **UVin, ObitErr
  /* Cleanup */
  cleanup:
 
-  /* Shut down any threading */
-  ObitThreadPoolFree (in[0]->thread);
-  if (in[0]->threadArgs) {
-    for (i=0; i<in[0]->nThreads; i++) {
-      args = (UVGridFuncArg*)in[0]->threadArgs[i];
-      args->uvw  = ObitFArrayUnref(args->uvw);
-     if (in[0]->threadArgs[i]) g_free(in[0]->threadArgs[i]);
-    }
-    g_free(in[0]->threadArgs);
-  }
-  in[0]->threadArgs = NULL;
-  in[0]->nThreads   = 0;
-
-  /* Remove buffers from UV objects - they are deleted below */
-  for (ip=0; ip<nPar; ip++) {
-    UVin[ip]->buffer     = NULL;
-    UVin[ip]->bufferSize = 0;
-  }
-
   /* Close data */
-  retCode = ObitUVClose (UVin[0], err);
-
- if (buffers) {
-   g_free(buffers[0]);
-   g_free(buffers[1]);
-   g_free(buffers);
-  }
-  if (UVArr) g_free(UVArr);
+  retCode = ObitUVClose (UVin, err);
 
   if (err->error) Obit_traceback_msg (err, routine, in[0]->name);
-
 } /* end ObitUVGridMFReadUVPar  */
 
 /**
@@ -826,7 +720,7 @@ void ObitUVGridMFReadUVPar (olong nPar, ObitUVGrid **inn, ObitUV **UVin, ObitErr
 void ObitUVGridMFFFT2Im (ObitUVGrid *inn, Obit *oout, ObitErr *err)
 {
   ObitImage *out = (ObitImage*)oout;
-  ofloat *imagep=NULL, *xCorrp=NULL, *yCorrp=NULL, fact;
+  ofloat *imagep=NULL, *xCorrp=NULL, *yCorrp=NULL, fact, fblank = ObitMagicF();
   ObitUVGridMF *in = (ObitUVGridMF*)inn;
   olong j,pos[5], pln, plane[5]={1,1,1,1,1};
   ObitFArray *xCorrTemp=NULL;
@@ -837,7 +731,10 @@ void ObitUVGridMFFFT2Im (ObitUVGrid *inn, Obit *oout, ObitErr *err)
   ObitInfoType type;
   ObitImageClassInfo *imgClass;
   gchar *routine = "ObitUVGridMFFFT2Im";
-  
+  gboolean allBlank=FALSE;
+   /* DEBUG
+  ObitFArray *dbgRArr=NULL, *dbgIArr=NULL; */
+ 
   /* error checks */
   if (err->error) return;
   g_assert (ObitUVGridIsA(in));
@@ -858,13 +755,14 @@ void ObitUVGridMFFFT2Im (ObitUVGrid *inn, Obit *oout, ObitErr *err)
     array = ObitFArrayCreate("Beam", 2, xdim);
 
     /* Loop over spectral planes */
+    in->BeamNorm = 0.0;
+    allBlank = TRUE;  /* All planes blanked */
     for (j=0; j<in->nSpec; j++) {
       /* do FFT */
       ObitFFTC2R (in->FFTBeam, in->grids[j], array);
       /* reorder to center at center */
       ObitFArray2DCenter (array);
  
-
       /* Do gridding corrections */
       /* Normalization: use center value of beam */
       pos[0] = in->icenxBeam-1; pos[1] = in->icenyBeam-1;
@@ -873,34 +771,42 @@ void ObitUVGridMFFFT2Im (ObitUVGrid *inn, Obit *oout, ObitErr *err)
       pos[0] = in->icenyBeam-1;
       yCorrp = ObitFArrayIndex(in->yCorrBeam, pos);
       in->BeamNorms[j] = (*imagep) * (*xCorrp) * (*yCorrp);
+      in->BeamNorm += in->BeamNorms[j]; /* track sum of weights */
 
       /* MUST have beam peak for normalization */
-      if (in->BeamNorm==0.0) {
+      if (in->BeamNorms[j]==0.0) {
 	Obit_log_error(err, OBIT_Error, 
 		       "ObitUVGridFFT2Im: MUST have made beam first: %s",
 		       in->name);
 	goto cleanup;
       }
       
-      /* Correct xCorr by normalization factor */
-      fact = 1.0 / MAX (1.0e-20, in->BeamNorms[j]);
-      xCorrTemp = ObitFArrayCopy (in->xCorrBeam, xCorrTemp, err);
-      ObitFArraySMul (xCorrTemp, fact);
-      
-      /* Do multiply */
-      ObitFArrayMulColRow (array, xCorrTemp, in->yCorrBeam, array);
+      /* Bad plane? */
+      if (in->BeamNorms[j]==fblank) {
+	ObitFArrayFill (array, fblank); /* Blank fill */
+      } else { /* OK */
+	/* Correct xCorr by normalization factor */
+	fact = 1.0 / MAX (1.0e-20, in->BeamNorms[j]);
+	xCorrTemp = ObitFArrayCopy (in->xCorrBeam, xCorrTemp, err);
+	ObitFArraySMul (xCorrTemp, fact);
+	
+	/* Do multiply */
+	ObitFArrayMulColRow (array, xCorrTemp, in->yCorrBeam, array);
+      }
       
       /* Write output */
-      pln = 2+in->maxOrder+j;  /* Get channel/plane number */
-      if (in->nSpec==1) pln = 1;       /* Normal imaging */
+      pln = 2+in->maxOrder+j;                             /* MF channel/plane number */
+      if ((in->nSpec>1)  && (in->maxOrder<0)) pln = j+1;  /* Spectral imaging */
+      if (in->nSpec==1)                       pln = 1;    /* Normal imaging */
       plane[0] = pln;
       ObitImagePutPlane (out, array->array, plane, err);
       if (err->error) goto cleanup;
       
     } /* end loop over spectral planes */
 
-    /* Determine combined beam */
-    if (in->nSpec>1) ObitImageMFCombine ((ObitImageMF*)out, FALSE, err);
+    /* Determine combined beam unless a spectral cube */
+    if ((in->nSpec>1) && (ObitImageMFIsA(out))) 
+      ObitImageMFCombine ((ObitImageMF*)out, FALSE, err);
     if (err->error) goto cleanup;
 
     /* Save BeamNorms array on Beam */
@@ -913,6 +819,17 @@ void ObitUVGridMFFFT2Im (ObitUVGrid *inn, Obit *oout, ObitErr *err)
     xdim[0] = in->nxImage; 
     xdim[1] = in->nyImage; 
     array = ObitFArrayCreate("Beam", 2, xdim);
+
+    /* DEBUG - look at first complex grid 
+    dbgRArr = ObitCArrayMakeF(in->grids[0]);
+    dbgIArr = ObitCArrayMakeF(in->grids[0]);
+    ObitCArrayReal (in->grids[0], dbgRArr);
+    ObitCArrayImag (in->grids[0], dbgIArr);
+    ObitImageUtilArray2Image ("DbugGridReal1.fits", 0, dbgRArr, err);  
+    ObitImageUtilArray2Image ("DbugGridImag1.fits", 0, dbgIArr, err);  
+    dbgRArr = ObitFArrayUnref(dbgRArr);
+    dbgIArr = ObitFArrayUnref(dbgIArr);  */
+    /*   end DEBUG */
 
     /* Fetch BeamNorms from beam */
     imgClass  = (ObitImageClassInfo*)out->ClassInfo;    /* Image class */
@@ -931,30 +848,35 @@ void ObitUVGridMFFFT2Im (ObitUVGrid *inn, Obit *oout, ObitErr *err)
 	goto cleanup;
       }
       
-      /* Create FFT object if not done before */
-      if (in->FFTImage==NULL) {
-	xdim[0] = in->nxImage; 
-	xdim[1] = in->nyImage; 
-	in->FFTImage = newObitFFT ("Image FFT", OBIT_FFT_Reverse, OBIT_FFT_HalfComplex,
-				   2, xdim);
-      }
-      
-      ObitFFTC2R (in->FFTImage, in->grids[j], array);
-      
-      /* reorder to center at center */
-      ObitFArray2DCenter (array);
-      
-      /* Do gridding corrections */
-      /* Create arrays / initialize if not done */
-       
-      /* Normalization: use center value of beam */
-      /* Correct xCorr by normalization factor */
-      fact = 1.0 / MAX (1.0e-20, in->BeamNorms[j]);
-      xCorrTemp = ObitFArrayCopy (in->xCorrImage, xCorrTemp, err);
-      ObitFArraySMul (xCorrTemp, fact);
-      
-      /* Do multiply   */
-      ObitFArrayMulColRow (array, xCorrTemp, in->yCorrImage, array); 
+      /* Bad plane? */
+      if (in->BeamNorms[j]==fblank) {
+	ObitFArrayFill (array, fblank); /* Blank fill */
+      } else { /* OK */
+	/* Create FFT object if not done before */
+	if (in->FFTImage==NULL) {
+	  xdim[0] = in->nxImage; 
+	  xdim[1] = in->nyImage; 
+	  in->FFTImage = newObitFFT ("Image FFT", OBIT_FFT_Reverse, OBIT_FFT_HalfComplex,
+				     2, xdim);
+	}
+	
+	ObitFFTC2R (in->FFTImage, in->grids[j], array);
+	
+	/* reorder to center at center */
+	ObitFArray2DCenter (array);
+	
+	/* Do gridding corrections */
+	/* Create arrays / initialize if not done */
+	
+	/* Normalization: use center value of beam */
+	/* Correct xCorr by normalization factor */
+	fact = 1.0 / MAX (1.0e-20, in->BeamNorms[j]);
+	xCorrTemp = ObitFArrayCopy (in->xCorrImage, xCorrTemp, err);
+	ObitFArraySMul (xCorrTemp, fact);
+	
+	/* Do multiply   */
+	ObitFArrayMulColRow (array, xCorrTemp, in->yCorrImage, array); 
+      } /* end if valid plane */
 
       /* Write output */
       pln = 2+in->maxOrder+j;  /* Get channel/plane number */
@@ -966,7 +888,8 @@ void ObitUVGridMFFFT2Im (ObitUVGrid *inn, Obit *oout, ObitErr *err)
     } /* end loop over spectral planes */
 
     /* Determine combined image */
-    if (in->nSpec>1) ObitImageMFCombine ((ObitImageMF*)out, TRUE, err);
+    if ((in->nSpec>1)  && (ObitImageMFIsA(out))) 
+      ObitImageMFCombine ((ObitImageMF*)out, TRUE, err);
     if (err->error) goto cleanup;
 
   } /* end make image */
@@ -1000,7 +923,7 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
 {
   ObitImage **out = (ObitImage**)oout;
   olong i, ii, j, ip, nTh, nnTh, off, nLeft, pos[5], xdim[7], pln;
-  olong narr, plane[5]={1,1,1,1,1};
+  olong narr, nThread, plane[5]={1,1,1,1,1};
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   FFT2ImFuncArg *args=NULL;
@@ -1009,11 +932,11 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
   ObitFArray **array=NULL;
   ObitImageClassInfo *imgClass;
   ObitImage *theBeam;
-  gboolean OK;
-  ofloat fact, *Corrp;
+  gboolean OK, allBlank=FALSE;
+  ofloat *Corrp, fblank = ObitMagicF();
   gchar *routine = "ObitUVGridMFFFT2ImPar";
-  /* DEBUG 
-     ObitFArray *dbgRArr=NULL, *dbgIArr=NULL;*/
+  /* DEBUG
+  ObitFArray *dbgRArr=NULL, *dbgIArr=NULL; */
 
   /* error checks */
   if (err->error) return;
@@ -1027,6 +950,16 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
   /* Create FArray array */
   narr = nPar*in[0]->nSpec;
   array = g_malloc0(narr*sizeof(ObitFArray*));
+
+  if (err->prtLv>=5) {  /* Diagnostics */
+    Obit_log_error(err, OBIT_InfoErr, "%s: start FFTs",routine);
+    ObitErrLog(err); 
+  }
+
+  /* How many threads for FFT? 2 per 1K pixels in x */
+  nThread = MAX (1, ObitThreadNumProc(in[0]->thread));
+  nThread = MIN (MAX (1, 2*in[0]->nxImage/1024), nThread);
+  ObitFFTNThreads (nThread);   /* Enable FFT with threading */
 
   /* FFTs, image arrays  */
   ip = 0;
@@ -1079,6 +1012,17 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
 	in[i]->FFTImage = newObitFFT ("Image FFT", OBIT_FFT_Reverse, OBIT_FFT_HalfComplex,
 				      2, xdim);
       }
+      /* DEBUG - look at first complex grid
+      if (i==1) {
+	dbgRArr = ObitCArrayMakeF(in[i]->grids[0]);
+	dbgIArr = ObitCArrayMakeF(in[i]->grids[0]);
+	ObitCArrayReal (in[i]->grids[0], dbgRArr);
+	ObitCArrayImag (in[i]->grids[0], dbgIArr);
+	ObitImageUtilArray2Image ("DbugGridRealPar.fits", 0, dbgRArr, err);  
+	ObitImageUtilArray2Image ("DbugGridImagPar.fits", 0, dbgIArr, err);  
+	dbgRArr = ObitFArrayUnref(dbgRArr);
+	dbgIArr = ObitFArrayUnref(dbgIArr);
+      }  *//* end DEBUG */
       /* Create array of pixel arrays */
       for (j=0; j<in[i]->nSpec; j++) {
 	array[ip] = ObitFArrayCreate("Image", 2, xdim);
@@ -1089,9 +1033,57 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
     
   } /* end loop doing FFTs */
 
-  /* DEBUG 
-  ObitImageUtilArray2Image ("DbugRawBeam0.fits",  0, array[0], err);  */
+  /* DEBUG  
+  ObitImageUtilArray2Image ("DbugRawBeam0.fits",  0, array[0], err); */
   /* END DEBUG */
+
+  if (err->prtLv>=5) {  /* Diagnostics */
+    Obit_log_error(err, OBIT_InfoErr, "%s: finished FFTs",routine);
+    ObitErrLog(err); 
+  }
+
+  /* Get normalization loop looking for an in entry with doBeam member set an,
+   the center peak is measured and used to normalize,  this peak is assumed
+   to be the normalization for the subsequent image.
+   if an image without corresponding beam is encountered, the BeamNorms
+   member of it in[] is used to normalize */
+
+
+  for (i=0; i<nPar; i++) {
+    /* is this a beam? */
+    if (in[i]->doBeam) {
+      pos[0] = 0; pos[1] = 0; pos[2] = 0;
+      /* Loop over planes */
+      in[i]->BeamNorm = 0.0;
+      allBlank = TRUE;  /* All planes blanked */
+      for (j=0; j<in[i]->nSpec; j++) {
+	Corrp = ObitFArrayIndex(array[i*in[i]->nSpec+j], pos);
+	in[i]->BeamNorms[j] = *Corrp;
+	in[i]->BeamNorm += in[i]->BeamNorms[j]; /* track sum of weights */
+	/* Deal with blanked planes */
+	if (in[i]->BeamNorms[j]==0.0) in[i]->BeamNorms[j] = fblank;
+	allBlank = allBlank &&  (in[i]->BeamNorms[j]==fblank);
+	/* Save normalization on in[i+1] */
+	if (!in[i+1]->doBeam) in[i+1]->BeamNorms[j] = in[i]->BeamNorms[j];
+	in[i+1]->BeamNorm = in[i]->BeamNorm;
+      } /* end loop over planes */
+      /* Save BeamNorms array on Beam */
+      dim[0] = in[i]->nSpec;  dim[1] = dim[2] = dim[3] = dim[4] = 1;
+      ObitInfoListAlwaysPut(out[i]->info, "BeamNorms", OBIT_float, dim, in[i]->BeamNorms);
+    } /* end if beam */
+    /* Fetch BeamNorms from beam if needed */
+    if ((!allBlank) && ((in[i]->BeamNorms[0]==0.0) || (in[i]->BeamNorms[0]==fblank))) {
+      imgClass  = (ObitImageClassInfo*)out[i]->ClassInfo;    /* Image class */
+      if (!in[i]->doBeam) {   /* This is not a beam */
+	theBeam   = imgClass->ObitImageGetBeam(out[i], 0, plane, err);
+	ObitInfoListGetTest(theBeam->info, "BeamNorms", &type, dim, in[i]->BeamNorms);
+      } else {  /* Is a beam */
+ 	ObitInfoListGetTest(out[i]->info, "BeamNorms", &type, dim, in[i]->BeamNorms);
+     }
+      if (err->error) goto cleanup;
+    } /* end fetch Beam Norms */
+
+  } /* end normalization factor loop */
 
   /*  Do gridding corrections threaded */
   /* How many threads? */
@@ -1108,9 +1100,8 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
   /* How many threads? */
   nTh = in[0]->nThreads;
 
-  /* Gridding corrections/normalization - do jobs, doing nTh in parallel */
-
-  /* Loop over images - do nSpec planes in parallel using threading */
+  /* Gridding correction 
+     Loop over images - do nSpec planes in parallel using threading */
   for (i=0; i<nPar; i++) {
     nLeft = in[0]->nSpec;
     off   = i*nLeft;
@@ -1124,6 +1115,7 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
 	args->thread = in[0]->thread;
 	args->in     = inn[i];
 	args->array  = array[ii+off];
+	args->iplane = (ii+off) % in[0]->nSpec;
 	if (nnTh>1) args->ithread = ii;
 	else args->ithread = -1;
       }
@@ -1138,48 +1130,35 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
       }
       nLeft -= nnTh;  /* update number left */
       off += nnTh;
-    } /* end loop over rest */
+    } /* end loop over channels */
   } /* End loop gridding correcting images */
 
-  /* DEBUG
-  ObitImageUtilArray2Image ("DbugRawBeam1.fits",  0, array[0], err);   */
+  /* DEBUG 
+  ObitImageUtilArray2Image ("DbugRawBeam1.fits",  0, array[0], err);  */
   /* END DEBUG */
 
-  /* Normalize - loop looking for an in entry with doBeam member set an,
-   the center peak is measured and used to normalize,  this peak is assumed
-   to be the normalization for the subsequent image.
-   if an image without corresponding beam is encountered, the BeamNorm
-   member of it in[] is used to normalize */
+   if (err->prtLv>=5) {  /* Diagnostics */
+    Obit_log_error(err, OBIT_InfoErr, "%s: finished Gridding corr",routine);
+    ObitErrLog(err); 
+  }
 
-
+  /* Loop writing and combining */
   for (i=0; i<nPar; i++) {
     out[i]->image = ObitFArrayUnref(out[i]->image);  /* Free buffer */
     /* is this a beam? */
     if (in[i]->doBeam) {
-      pos[0] = in[i]->icenxBeam-1; pos[1] = in[i]->icenyBeam-1; pos[2] = 1;
       /* Loop over planes */
       for (j=0; j<in[i]->nSpec; j++) {
-	Corrp = ObitFArrayIndex(array[i*in[i]->nSpec+j], pos);
-	in[i]->BeamNorms[j] = *Corrp;
 	/* Check */
-	if (in[i]->BeamNorms[j]==0.0) {
-	  Obit_log_error(err, OBIT_Error, "%s ERROR peak in beam  %d is zero for:%s",
+	if (in[i]->BeamNorms[j]==0.0) {  /* No data? */
+	  Obit_log_error(err, OBIT_InfoWarn, 
+			 "%s Peak in beam  %d is zero for:%s, blank plane",
 			 routine, j, in[i]->name);
+	  in[i]->BeamNorms[j] = fblank;
 	  /* DEBUG
 	  ObitImageUtilArray2Image ("DbugRawBeamBad.fits",  0, array[i*in[i]->nSpec+j], err);   */
 	  /* END DEBUG */
-	  goto cleanup;
-	}
-	
-	/* Normalize */
-	fact = 1.0 / MAX (1.0e-20, in[i]->BeamNorms[j]);
-	ObitFArraySMul (array[i*in[i]->nSpec+j], fact);  /* Normalize beam */
-	
-	/* Save normalization on in[i+1] */
-	if (!in[i+1]->doBeam) in[i+1]->BeamNorms[j] = in[i]->BeamNorms[j];
-	/* Save BeamNorms array on Beam */
-	dim[0] = in[i]->nSpec;  dim[1] = dim[2] = dim[3] = dim[4] = 1;
-	ObitInfoListAlwaysPut(out[i]->info, "BeamNorms", OBIT_float, dim, in[i]->BeamNorms);
+	} /* end no data */
 	
 	pln = 2+in[i]->maxOrder+j;      /* Get channel/plane number */
 	if (in[i]->nSpec==1) pln = 1;   /* Normal imaging */
@@ -1189,32 +1168,26 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
 	out[i]->image = ObitFArrayUnref(out[i]->image);  /* Free buffer */
       } /* end loop over planes */
 
+      if (err->prtLv>=5) {  /* Diagnostics */
+	Obit_log_error(err, OBIT_InfoErr, "Start Combine Beam field %d",i+1);
+      }
       /* Determine combined beam */
-      if (in[i]->nSpec>1) ObitImageMFCombine ((ObitImageMF*)out[i], FALSE, err);
+      if ((in[i]->nSpec>1) && (ObitImageMFIsA(out[i]))) 
+	ObitImageMFCombine ((ObitImageMF*)out[i], FALSE, err);
       if (err->error) goto cleanup;
+      if (err->prtLv>=5) {  /* Diagnostics */
+	Obit_log_error(err, OBIT_InfoErr, "End Combine Beam");
+	ObitErrLog(err); 
+      }
 
       i++;       /* Advance to image or next beam */
     } /* end if beam */
     /*  Now image */
 
-    /* Fetch BeamNorms from beam */
-    imgClass  = (ObitImageClassInfo*)out[i]->ClassInfo;    /* Image class */
-    theBeam   = imgClass->ObitImageGetBeam(out[i], 0, plane, err);
-    ObitInfoListGetTest(theBeam->info, "BeamNorms", &type, dim, in[i]->BeamNorms);
-    if (err->error) goto cleanup;
-    
     /* Loop over planes */
     for (j=0; j<in[i]->nSpec; j++) {
-      if (in[i]->BeamNorms[j]==0.0) {
-	Obit_log_error(err, OBIT_Error, "%s ERROR image normalization is zero for: %s",
-		       routine, in[i]->name);
-	goto cleanup;
-      }
-
-      /* Normalize */
-      fact = 1.0 / MAX (1.0e-20, in[i]->BeamNorms[j]);
-      ObitFArraySMul (array[i*in[i]->nSpec+j], fact);  /* Normalize image */
-    
+      /* Deal with blanked planes */
+      if (in[i]->BeamNorms[j]==0.0) in[i]->BeamNorms[j] = fblank;
       /* Write output */
       pln = 2+j+in[i]->maxOrder;       /* Get channel/plane number */
       if (in[i]->nSpec==1) pln = 1;    /* Normal imaging */
@@ -1223,9 +1196,17 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
       if (err->error) goto cleanup;
     } /* end loop over planes */
 
-    /* Determine combined image */
-    if (in[i]->nSpec>1) ObitImageMFCombine ((ObitImageMF*)out[i], TRUE, err);
+    if (err->prtLv>=6) {  /* Diagnostics */
+      Obit_log_error(err, OBIT_InfoErr, "Start Combine Image field %d",i+1);
+    }
+     /* Determine combined image */
+    if ((in[i]->nSpec>1) && (ObitImageMFIsA(out[i]))) 
+      ObitImageMFCombine ((ObitImageMF*)out[i], TRUE, err);
     if (err->error) goto cleanup;
+    if (err->prtLv>=6) {  /* Diagnostics */
+      Obit_log_error(err, OBIT_InfoErr, "End Combine Image");
+      ObitErrLog(err); 
+    }
     
   } /* end normalization loop */
   
@@ -1233,7 +1214,11 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
     ObitImageUtilArray2Image ("DbugRawBeam1.fits",  0, array[0], err);   */
     /* END DEBUG */
 
-  /*  cleanup */
+   if (err->prtLv>=5) {  /* Diagnostics */
+    Obit_log_error(err, OBIT_InfoErr, "%s: finished imaging",routine);
+    ObitErrLog(err); 
+  }
+ /*  cleanup */
  cleanup:
   if (array) {
     for (i=0; i<narr; i++) {
@@ -1241,7 +1226,23 @@ void ObitUVGridMFFFT2ImPar (olong nPar, ObitUVGrid **inn, Obit **oout, ObitErr *
     }
     g_free(array);
   }
-    if (err->error) Obit_traceback_msg (err, routine, out[0]->name);
+
+  /* Delete FFT objects */
+  for (i=0; i<nPar; i++) {
+   if (in[i]->doBeam) { /* Beam? */
+     in[i]->FFTBeam = ObitFFTUnref(in[i]->FFTBeam);
+   } else { /* Image */
+     in[i]->FFTImage =  ObitFFTUnref(in[i]->FFTImage);
+   }
+  }
+
+  /* Reset FFT threading */
+  ObitFFTNThreads (1);
+
+  /* Clear FFT Threads */
+  ObitFFTClearThreads();
+
+  if (err->error) Obit_traceback_msg (err, routine, out[0]->name);
 } /* end ObitUVGridMFFFT2ImPar */
 
 /**
@@ -1366,518 +1367,6 @@ void ObitUVGridMFClear (gpointer inn)
     ParentClass->ObitClear (inn);
   
 } /* end ObitUVGridMFClear */
-
- /**
- * Grid a buffer load of data into a single image
- * \param in      Gridding Object
- * \param UVin    UV data set to grid from current buffer
- * \param sargs   Array of arguments to use, Must be in->nThreads of these
- * \param thread  Thread object to use
- * \param err     ObitErr stack for reporting problems.
- */
-static void GridOne (ObitUVGridMF* in, ObitUV *UVin, UVGridFuncArg **sargs, 
-		     ObitThread *thread, ObitErr *err)
-{
-  olong i, iSpec, nvis, nTh, nThread;
-  ObitThreadFunc func=(ObitThreadFunc)ThreadUVGridMFBuffer ;
-  UVGridFuncArg *args;
-  gboolean  OK;
-  gsize size;
-  gchar *routine="UVGridMF:GridOne";
-
-  /* error checks */
-  if (err->error) return;
-
-  /* To thread or not to */
-  nvis = UVin->myDesc->numVisBuff;
-  if (nvis<100) nThread = 1;
-  else nThread = in->nThreads;
-  nThread = MIN (nThread, in->nSpec);
-
-
-  /* Need to copy data? Only one copy needed per call. */
-  args = sargs[0];
-  if ((args->buffer!=NULL) && (args->buffSize>0)) {
-    size = (UVin->myDesc->numVisBuff)*UVin->myDesc->lrec*sizeof(ofloat);
-    memcpy (UVin->buffer, args->buffer, size);
-  }
-
-  /* Loop over coarse channel processing nThread at a time */
-  for (iSpec=0; iSpec<in->nSpec; iSpec+=nThread) {
-    nTh = MIN (nThread, in->nSpec-iSpec);
-    
-    for (i=0; i<nTh; i++) {
-      args = sargs[i];
-      if (nThread>1) args->ithread = i;
-      else args->ithread = -1;
-      args->thread = thread;
-      args->in     = in;
-      args->UVin   = UVin;
-      args->BIF    = in->BIFSpec[iSpec+i];
-      args->EIF    = in->EIFSpec[iSpec+i];
-      args->BChan  = in->BChanSpec[iSpec+i];
-      args->EChan  = in->EChanSpec[iSpec+i];
-      args->grid   = in->grids[iSpec+i];
-    } /* end setting up args */
-    
-  
-  /* Do operation on buffer possibly with threads */
-  OK = ObitThreadIterator (thread, nTh, func, (gpointer)sargs);
-    
-  /* Check for problems */
-  if (!OK) 
-    Obit_log_error(err, OBIT_Error,"%s: Problem in threading", routine);
-  } /* end Loop over coarse channel  */
-
-} /* end GridOne  */
-
-/**
- * Prepares a buffer load of visibility data for gridding:
- * \li rotate (u,v,w) if doing 3D imaging and a shift.
- * \li shift position if needed.
- * \li if doBeam then replace data with (1,0).
- * \li enforce guardband - no data near outer edges of grid 
- * \li Convert to cells at the reference frequency.
- * \li All data  converted to the positive V half plane.
- *
- * MF version, threading split by coarse channel
- * \param in       Object with grid to accumulate.
- * \param uvdata   Object with uvdata in buffer.
- * \param BIF      Low IF 0-rel to process
- * \param EIF      High IF 0-rel to process
- * \param BChan    Low channel 0-rel to process
- * \param EChan    High channel 0-rel to process
- * \param uvw      array of UVW values 
- */
-void PrepBufferMF (ObitUVGridMF* in, ObitUV *uvdata, olong BIF, olong EIF,
-		   olong BChan, olong EChan, ObitFArray *uvw, 
-		   ObitCArray *accGrid)
-{
-  olong ivis, nvis, ifreq, nif, iif, nfreq, ifq;
-  ofloat *u, *v, *w, *vis, *ifvis, *vvis;
-  ofloat phase, cp, sp, vr, vi, uu, vv, ww, uf, vf, wf;
-  ofloat bl2, blmax2, blmin2, wt, guardu, guardv;
-  ObitUVDesc *desc;
-  olong fincf, fincif, luvw;
-  gboolean doShift, doFlag, flip;
-  ofloat tape, taperWt;
-  gboolean doTaper;
-
-  /* error checks */
-  g_assert (ObitUVGridIsA(in));
-  g_assert (ObitUVIsA(uvdata));
-  g_assert (uvdata->myDesc != NULL);
-  g_assert (uvdata->buffer != NULL);
-
-  /* how much data? */
-  luvw  = uvw->naxis[0];  /* length of uvw entry */
-  desc  = uvdata->myDesc;
-  nvis  = desc->numVisBuff;
-  if (nvis<=0) return; /* need something */
-  nfreq = desc->inaxes[desc->jlocf];
-  nif = 1;
-  if (desc->jlocif>=0) nif = desc->inaxes[desc->jlocif];
-  
-  /* Channel and IF increments in frequency scaling array */
-  fincf  = MAX (1, (desc->incf  / 3) / desc->inaxes[desc->jlocs]);
-  fincif = MAX (1, (desc->incif / 3) / desc->inaxes[desc->jlocs]);
-
-  /* initialize data pointers into buffer */
-  u   = uvw->array;
-  v   = uvw->array+desc->ilocv-desc->ilocu;
-  w   = uvw->array+desc->ilocw-desc->ilocu;
-  vis = uvdata->buffer + desc->nrparm + desc->incf*BChan + desc->incif*BIF;
-
-  /* what needed */
-  doShift = (in->dxc!=0.0) || (in->dyc!=0.0) || (in->dzc!=0.0);
-  doShift = doShift && (!in->doBeam); /* no shift for beam */
-
-  /* Baseline max, min values */
-  blmax2 = in->blmax * in->blmax;
-  blmin2 = in->blmin * in->blmin;
-
-  /* guardband in wavelengths */
-  guardu = ((1.0-in->guardband) * (ofloat)accGrid->naxis[0]) / fabs(in->UScale);
-  guardv = ((1.0-in->guardband) * ((ofloat)accGrid->naxis[1])/2) / fabs(in->VScale);
-
-  /* Tapering?  */
-  doTaper = fabs(in->sigma1[nfreq*nif/2])>1.0e-20;
-
-  /* Loop over visibilities */
-  for (ivis=0; ivis<nvis; ivis++) {
-
-    /* check exterma */
-    bl2 = (*u)*(*u) + (*v)*(*v);
-    doFlag = ((bl2<blmin2) || (bl2>blmax2));
-
-    /* rotate (u,v,w) if 3D */
-    if (in->do3Dmul ) {
-      uu = (*u)*in->URot3D[0][0] + (*v)*in->URot3D[0][1] + (*w)*in->URot3D[0][2];
-      vv = (*u)*in->URot3D[1][0] + (*v)*in->URot3D[1][1] + (*w)*in->URot3D[1][2];
-      ww = (*u)*in->URot3D[2][0] + (*v)*in->URot3D[2][1] + (*w)*in->URot3D[2][2];
-      *u = uu;
-      *v = vv;
-      *w = ww;
-    } /* end rotate u,v,w */
-    
-    /* in the correct half plane? */
-    flip = (*u) <= 0.0;
-
-    /* loop over IFs */
-    ifvis = vis;
-    for (iif=BIF; iif<=EIF; iif++) {
-
-      /* loop over frequencies */
-      vvis = ifvis;
-      for (ifreq=BChan; ifreq<=EChan; ifreq++) {
-	ifq = iif*fincif + ifreq*fincf;  /* index in IF/freq table */
-
-	/* Scale coordinates to frequency */
-	uf = *u * desc->fscale[ifq];
-	vf = *v * desc->fscale[ifq];
-	wf = *w * desc->fscale[ifq];
-
-	/* Channel tapering weight */
-	if (doTaper) {
-	  /*Sfreq = Starget * tarFreq/desc->freqArr[ifq]; */
-	  /* Scorr = sqrt(MAX (1.0e-10,Starget*Starget - Sfreq*Sfreq));  Correction size */
-	  /*taper = 0.95 / (Scorr*tapeConst) ;*/
-	  /* taper = (0.8/ ((Scorr/2.35)/206265.))/(G_PI); */
-	  /* sigma2  = log(0.3)/(taper*taper); */
-	  tape = (uf*uf*in->sigma2[ifq] + vf*vf*in->sigma1[ifq] + uf*vf*in->sigma3[ifq]);
-	  if (tape<-14.0) taperWt = 0.0; /* underflow */
-	  else taperWt = exp(tape);
-	  vvis[2] *= taperWt;  /* Apply to weight */
-	}
-
-	/* is this one wanted? */
-	if (doFlag)  vvis[2] = 0.0;  /* baseline out of range? */
-	wt = vvis[2];                /* data weight */
-	if (wt <= 0.0) {vvis += desc->incf; continue;}
-	
-	/* shift position if needed */
-	if (doShift) {
-	  phase = (uf*in->dxc + vf*in->dyc + wf*in->dzc);
-	  cp = cos(phase);
-	  sp = sin(phase);
-	  vr = vvis[0];
-	  vi = vvis[1];
-	  /* rotate phase of visibility */
-	  vvis[0] = cp * vr - sp * vi;
-	  vvis[1] = sp * vr + cp * vi;
-	}
-	
-	/* Making a beam - if so replace data with (1,0) */
-	if (in->doBeam) {
-	  vvis[0] = 1.0;
-	  vvis[1] = 0.0;
-	}
-	
-	/* conjugate phase if needed */
-	if (flip)  vvis[1] = - vvis[1];
-	
-	/* enforce guardband */
-	if ((fabs(uf)>guardu) || (fabs(vf)>guardv)) vvis[2] = 0.0;
-	
-	vvis += desc->incf; /* visibility pointer */
-      } /* end loop over frequencies */
-      ifvis += desc->incif; /* visibility pointer */
-    } /* Loop over IFs */
-
-    /* Scale u,v,w to cells at reference frequency */
-    if (flip) { /* put in other half plane */
-      *u = -((*u) * in->UScale);
-      *v = -((*v) * in->VScale);
-      *w = -((*w) * in->WScale);
-    } else { /* no flip */
-      *u *= in->UScale;
-      *v *= in->VScale;
-      *w *= in->WScale;
-    }
-
-    /* update data pointers */
-    u   += luvw;
-    v   += luvw;
-    w   += luvw;
-    vis += desc->lrec;
-  } /* end loop over visibilities */
-} /* end PrepBufferMF */
-
-/**
- * Convolves data in buffer on uvdata onto accGrid
- * Rows in the grid are in U and the data should have all been converted to the 
- * positive U half plane.
- * U, V, and W should be in cells and data not to be included on the grid should 
- * have zero weight.  Convolution functions must be created.
- * Details of data organization are set by FFTW, the zero v row is first and v=-1
- * row is last.
- *
- * MF version, threading split by coarse channel
- * \param inn      UVGrid Object 
- * \param uvdata   Object with uv data in buffer, prepared for gridding.
- * \param BIF      Low IF 0-rel to process
- * \param EIF      High IF 0-rel to process
- * \param BChan    Low channel 0-rel to process
- * \param EChan    High channel 0-rel to process
- * \param uvw      array of UVW values 
- * \param accGrid  Accumulation Grid
- */
-void GridBufferMF (ObitUVGridMF* inn, ObitUV *uvdata, olong BIF, olong EIF,
-		   olong BChan, olong EChan, ObitFArray *uvw, 
-		   ObitCArray *accGrid)
-{
-  ObitUVGridMF *in = (ObitUVGridMF*)inn;
-  olong ivis, nvis, ifreq, nfreq, ncol=0, iu, iv, iuu, ivv, icu, icv;
-  olong iif, nif, ifq, lGridRow, lGridCol, itemp;
-  ofloat *grid, *ggrid, *cconvu, *convu, *convv, *cconvv, *u, *v, *w, *vis, *vvis, *ifvis, *wt;
-  ofloat *convfnp, *gridStart, *gridTop, visWtR, visWtI, visWtVR, visWtVI, rtemp, xtemp;
-  ofloat uf, vf;
-  olong fincf, fincif, luvw;
-  olong pos[] = {0,0,0,0,0};
-  ObitUVDesc *desc;
-
-  /* error checks */
-  g_assert (ObitUVGridMFIsA(in));
-  g_assert (ObitUVIsA(uvdata));
-  g_assert (uvdata->myDesc != NULL);
-  g_assert (uvdata->buffer != NULL);
-
-  /* how much data? */
-  luvw  = uvw->naxis[0];  /* length of uvw entry */
-  desc  = uvdata->myDesc;
-  nvis  = desc->numVisBuff;
-  if (nvis<=0) return; /* need something */
-  nfreq = desc->inaxes[desc->jlocf];
-  nif = 1;
-  if (desc->jlocif>=0) nif = desc->inaxes[desc->jlocif];
- 
-  /* Channel and IF increments in frequency scaling array */
-  fincf  = MAX (1, (desc->incf  / 3) / desc->inaxes[desc->jlocs]);
-  fincif = MAX (1, (desc->incif / 3) / desc->inaxes[desc->jlocs]);
-
-  /* initialize data pointers */
-  u   = uvw->array;
-  v   = uvw->array+desc->ilocv-desc->ilocu;
-  w   = uvw->array+desc->ilocw-desc->ilocu;
-  vis = uvdata->buffer + desc->nrparm + desc->incf*BChan + desc->incif*BIF;
-
-  lGridRow = 2*accGrid->naxis[0]; /* length of row as floats */
-  lGridCol = accGrid->naxis[1];   /* length of column */
-
-  /* beginning of the grid */
-  pos[0] = 0;  pos[1] = 0;
-  gridStart = ObitCArrayIndex (accGrid, pos); 
-  /* beginning of highest row */
-  pos[1] = lGridCol-1;
-  gridTop = ObitCArrayIndex (accGrid, pos); 
-
-  /* convolution fn pointer */
-  pos[0] = 0; pos[1] = 0;
-  convfnp = ObitFArrayIndex (in->convfn, pos);
-
-  /* Loop over visibilities */
-  for (ivis=0; ivis<nvis; ivis++) {
-
-    /* loop over IFs */
-    ifvis = vis;
-    for (iif=BIF; iif<=EIF; iif++) {
-
-      /* loop over frequencies */
-      vvis = ifvis;
-      for (ifreq=BChan; ifreq<=EChan; ifreq++) {
-	ifq = iif*fincif + ifreq*fincf;  /* index in IF/freq table */
-
-	/* is this one wanted? */
-	wt = vvis + 2; /* data weight */
-	if (*wt <= 0.0) {vvis += desc->incf; continue;}
-
-	/* data times weight */
-	visWtR = vvis[0] * (*wt);
-	visWtI = vvis[1] * (*wt);
-	
-	/* Scale u,v for frequency (w not used) */
-	uf = *u * desc->fscale[ifq];
-	vf = *v * desc->fscale[ifq];
-	
-	/* get center cell */
-	if (vf > 0.0) iv = (olong)(vf + 0.5);
-	else iv = (olong)(vf - 0.5);
-	iu = (olong)(uf + 0.5);
-
-	/* back off half Kernel width */
-	iu -= in->convWidth/2;
-	iv -= in->convWidth/2;
-	
-	/* Starting convolution location, table has in->convNperCell points per cell */
-	/* Determine fraction of the cell to get start location in convolving table. */
-	if (uf > 0.0) itemp = (olong)(uf + 0.5);
-	else itemp = ((olong)(uf - 0.5));
-	xtemp = in->convNperCell*(itemp - (uf) - 0.5);
-	if (xtemp > 0.0) xtemp += 0.5;
-	else xtemp -= 0.5;
-	convu = convfnp + in->convNperCell + (olong)xtemp;
-	
-	/* now v convolving fn */
-	if (vf > 0.0) itemp = (olong)(vf + 0.5);
-	else itemp = ((olong)(vf - 0.5));
-	rtemp = in->convNperCell*(itemp - (vf) - 0.5);
-	if (rtemp > 0.0) rtemp += 0.5;
-	else rtemp -= 0.5;
-	convv = convfnp + in->convNperCell + (olong)rtemp;
-	
-	/* if too close to the center, have to break up and do conjugate halves */
-	if (iu >= 0) { /* all in same half */
-	  ncol = in->convWidth; /* Complex addressed as floats */
-	  pos[0] = iu;
-	  /* Do v center at the edges */
-	  if (iv>=0) pos[1] = iv;
-	  else pos[1] = iv + lGridCol;
-	  
-	} else { 
-	  /* have to split - grid part in conjugate half */
-	  /* FFTW uses only half of the first plane so split U */
-	  iuu = -iu; /* hermitian */
-	  ivv = -iv;
-	  pos[0] = iuu;
-	  /* Do v center at the edges */
-	  if (ivv>=0) pos[1] = ivv;
-	  else pos[1] = ivv + lGridCol;
-	  /*grid = ObitCArrayIndex (accGrid, pos); pointer in grid */ 
-	  if ((pos[0]<=accGrid->naxis[0]) && (pos[1]<=accGrid->naxis[1]) &&
-	      (pos[0]>=0) && (pos[1]>=0) )
-	    grid = accGrid->array+2*(pos[1]*accGrid->naxis[0]+pos[0]);
-	  else
-	    grid = NULL;
-
-	  /* Ignore if outside grid */
-	  if (grid!=NULL) {
-	    ncol = iuu;
-	    cconvv = convv;
-	    for (icv=0; icv<in->convWidth; icv++) {
-	      cconvu = convu;
-	      visWtVR = visWtR * (*cconvv);
-	      visWtVI = visWtI * (*cconvv);
-	      /* Trickery with the v row to get data in the correct place for the FFT 
-		 the following will only be triggered if the iv wraps */
-	      if ((pos[1]-icv)==-1) {
-		grid = gridTop+2*iuu; /* top of grid */
-	      }
-	      ggrid  = grid;
-	      for (icu=0; icu<=ncol; icu++) {
-		ggrid[0]   += visWtVR * (*cconvu);
-		ggrid[1]   -= visWtVI * (*cconvu); /* conjugate */
-		cconvu += in->convNperCell;  /* U Convolution kernel pointer */
-		ggrid -= 2; /* gridding pointer - opposite of normal gridding */
-	      } /* end inner u gridding loop */
-	      cconvv += in->convNperCell;  /* V Convolution kernel pointer */
-	      grid -= lGridRow; /* gridding pointer - reverse direction for conjugate */
-	    } /* end outer v loop */
-	    
-	    /* set up for rest of grid */
-	    ncol = (in->convWidth + iu); /* how many columns left? */
-	    iu = 0;      /* by definition  start other half plane at iu=0 */
-	    pos[0] = iu; 
-	    /* Do v center at the edges */
-	    if (iv>=0) pos[1] = iv;
-	    else pos[1] = iv + lGridCol;
-	    convu = convu + iuu * in->convNperCell; /* for other half in u */
-	  } /* end if in grid */
-	} /* End of dealing with conjugate portion */
-	  
-	/* main loop gridding - only if in grid */
-	/*grid = ObitCArrayIndex (accGrid, pos);   pointer in grid */
-	if ((pos[0]<=accGrid->naxis[0]) && (pos[1]<=accGrid->naxis[1]) &&
-	    (pos[0]>=0) && (pos[1]>=0) )
-	  grid = accGrid->array+2*(pos[1]*accGrid->naxis[0]+pos[0]);
-	else
-	  grid = NULL;
-
-	if (grid!=NULL) {
-	  for (icv=0; icv<in->convWidth; icv++) {
-	    cconvu = convu;
-	    visWtVR = visWtR * (*convv);
-	    visWtVI = visWtI * (*convv);
-	    /* Trickery with the v row to get data in the correct place for the FFT 
-	       the following will only be triggered if the iv row goes non negative */
-	    if ((iv<0) && ((iv+icv)==0)) grid = gridStart+2*iu; /* beginning of grid */
-	    ggrid  = grid;
-	    for (icu=0; icu<ncol; icu++) {
-	      ggrid[0] += visWtVR * (*cconvu);  /* real */
-	      ggrid[1] += visWtVI * (*cconvu) ; /* imag */
-
-	      /* Hard core debug
-	      if (ggrid-gridStart==72) {
-		fprintf (stdout," reglr %10.5f %10.5f %3ld %10.5f %10.5f %15.5f %15.5f %5ld %5ld  %d\n",
-			 uf, vf, ifq, visWtVR*(*cconvu), visWtVI*(*cconvu),ggrid[0],ggrid[1],icu,icv,ggrid-gridStart);
-	      } */
-	      cconvu += in->convNperCell;  /* Convolution kernel pointer */
-	      ggrid += 2; /* gridding pointer */
-	    } /* end inner gridding loop */
-	    convv += in->convNperCell;  /* Convolution kernel pointer */
-	    grid += lGridRow; /* gridding pointer */
-	  } /* end outer gridding loop */
-	} /* end if in grid */
-	vvis += desc->incf; /* visibility pointer */
-	
-      } /* end loop over frequencies */
-      ifvis += desc->incif; /* visibility pointer */
-    } /* Loop over IFs */
-    
-    /* update data pointers */
-    u   += luvw;
-    v   += luvw;
-    w   += luvw;
-    vis += desc->lrec;
-  } /* end loop over visibilities */
-} /* end GridBufferMF */
-
-/** 
- * Prepare and Grid a portion of the data buffer
- * Arguments are given in the structure passed as arg
- * Note the images and beams are not normalized.
- * \param arg  Pointer to UVGridFuncArg argument with elements
- * \li thread Thread with restart queue
- * \li in     ObitUVGrid object
- * \li UVin   UV data set to grid from current buffer
- * \li BIF    Low IF 0-rel to process
- * \li EIF    High IF 0-rel to process
- * \li BChan  Low channel 0-rel to process
- * \li EChan  High channel 0-rel to process
- * \li grid   Array of nSpec gridding arrays
- * \li uvw    Array of u,v,w values
- * \li ithread thread number, >0 -> no threading 
- * \li buffSize if >0 then the number of ofloats to copy from buffer to buffer on UVin
- * \li buffer   Data buffer to copy
- */
-static gpointer ThreadUVGridMFBuffer (gpointer arg)
-{
-  /* Get arguments from structure */
-  UVGridFuncArg *largs = (UVGridFuncArg*)arg;
-  ObitUVGridMF *in = largs->in;
-  ObitUV *UVin     = largs->UVin;
-  olong BIF        = largs->BIF;
-  olong EIF        = largs->EIF;
-  olong BChan      = largs->BChan;
-  olong EChan      = largs->EChan;
-  ObitCArray *grid = largs->grid;
-  ObitFArray  *uvw = largs->uvw;
- 
-  /* Make copy of u,v,w */
-  copyUVW(largs);   
-  
-  /* prepare data */
-  PrepBufferMF (in, UVin, BIF, EIF, BChan, EChan, uvw, grid);
-  
-  /* grid */
-  GridBufferMF (in, UVin, BIF, EIF, BChan, EChan, uvw, grid);
-
-  /* Indicate completion */
-  if (largs->ithread>=0)
-    ObitThreadPoolDone (largs->thread, (gpointer)&largs->ithread);
-  
-  return NULL;
-} /* end ThreadUVGridBuffer */
-
 /** 
  * Reorders grid and does gridding correction.
  * NOTE: threading in FFTW apparently conflicts with Obit threads.
@@ -1892,17 +1381,37 @@ static gpointer ThreadFFT2ImMF (gpointer arg)
 {
   /* Get arguments from structure */
   FFT2ImFuncArg *largs = (FFT2ImFuncArg*)arg;
-  ObitUVGrid *in     = largs->in;
-  ObitFArray *array  = largs->array;
+  ObitUVGridMF *in     = (ObitUVGridMF*)largs->in;
+  ObitFArray *array    = largs->array;
+  olong iplane         = largs->iplane;
 
+  olong  i;
+  ObitFArray *YCorr   = NULL;
+  ofloat norm, fblank = ObitMagicF();
+
+  if ((in->BeamNorms[iplane]<=0.0) || (in->BeamNorms[iplane]==fblank)){
+    ObitFArrayFill (array, fblank); /* Blank fill */
+    goto finish;
+  } else norm = 1.0/in->BeamNorms[iplane]; /* Normalization factor */
+ 
   /* reorder to center at center */
   ObitFArray2DCenter (array);
   
   /* Do multiply to make griding correction */
-  if (in->doBeam) 
-    ObitFArrayMulColRow (array, in->xCorrBeam, in->yCorrBeam, array);
-  else
-    ObitFArrayMulColRow (array, in->xCorrImage, in->yCorrImage, array);
+  if (in->doBeam) {
+    /* Temporary array with normalization */
+    YCorr = ObitFArrayCreate ("tmp", in->yCorrBeam->ndim, in->yCorrBeam->naxis);
+    for (i=0; i<in->yCorrBeam->arraySize; i++) 
+      YCorr->array[i] = in->yCorrBeam->array[i] * norm;
+    ObitFArrayMulColRow (array, in->xCorrBeam, YCorr, array);
+  } else {
+    /* Temporary array with normalization */
+    YCorr = ObitFArrayCreate ("tmp", in->yCorrImage->ndim, in->yCorrImage->naxis);
+    for (i=0; i<in->yCorrImage->arraySize; i++) 
+      YCorr->array[i] = in->yCorrImage->array[i] * norm;
+    ObitFArrayMulColRow (array, in->xCorrImage, YCorr, array);
+  }
+  YCorr = ObitFArrayUnref(YCorr);
   goto finish;
   
   /* cleanup */
@@ -1914,29 +1423,3 @@ static gpointer ThreadFFT2ImMF (gpointer arg)
   return NULL;
 } /* end ThreadFFT2ImMF */
 
-/** 
- * Copy u,v,w from uv buffer on UVin to uvw member
- */
-static void copyUVW (UVGridFuncArg *arg)
-{
-  olong i, n, lrec;
-  ObitUVDesc *desc = arg->UVin->myDesc;
-  ofloat *u, *v, *w, *uvw;
-  
-  uvw  = arg->uvw->array;
-  u    = arg->UVin->buffer + desc->ilocu;
-  v    = arg->UVin->buffer + desc->ilocv;
-  w    = arg->UVin->buffer + desc->ilocw;
-  n    = MIN(desc->numVisBuff, arg->uvw->naxis[1]);
-  lrec = desc->lrec;
-  
-  for (i=0; i<n; i++) {
-    *(uvw)   = *u;
-    *(uvw+1) = *v;
-    *(uvw+2) = *w;
-    u   += lrec;
-    v   += lrec;
-    w   += lrec;
-    uvw += 3;
-  } /* end copy loop */
-} /* end copyUVW */

@@ -1,6 +1,6 @@
-/* $Id: ObitInfoList.c 61 2008-12-19 18:14:49Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2002-2008                                          */
+/*;  Copyright (C) 2002-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -205,6 +205,7 @@ ObitInfoList* ObitInfoListCopyData (ObitInfoList* in, ObitInfoList* out)
       telem = ObitInfoElemCopy(elem);
       out->list = g_slist_prepend(out->list, telem); /* add to new list */
     }
+  loop:
     tmp = g_slist_next(tmp);
   }
 
@@ -261,6 +262,7 @@ void  ObitInfoListCopyList (ObitInfoList* in, ObitInfoList* out, gchar **list)
 	out->list = g_slist_prepend(out->list, telem); /* add to output list */
       }
     }
+  loop:
     tmp = g_slist_next(tmp);
   }
 } /* end ObitInfoListCopyList */
@@ -303,17 +305,24 @@ void ObitInfoListCopyListRename(ObitInfoList* in, ObitInfoList* out,
       xelem = ObitInfoListFind(out, outList[i]);
       if (xelem==NULL) { /* not there */
 	/* make copy with rename to attach to list */
-	telem = newObitInfoElem(outList[i], elem->itype, elem->idim, elem->data);
+	telem = ObitInfoElemCopy(elem);
+	/* Change name 
+	g_free(telem->iname);*/
+	telem->iname = g_strdup(outList[i]);
 	out->list = g_slist_prepend(out->list, telem); /* add to output list */
       } else { /* already there - replace*/
 	/* Delete Old */
 	ObitInfoListRemove (out, xelem->iname);
 	
 	/* make copy with rename to attach to list */
-	telem = newObitInfoElem(outList[i], elem->itype, elem->idim, elem->data);
+	telem = ObitInfoElemCopy(elem);
+	/* Change name
+	g_free(telem->iname); */
+	telem->iname = g_strdup(outList[i]);
 	out->list = g_slist_prepend(out->list, telem); /* add to output list */
       }
     }
+  loop:
     tmp = g_slist_next(tmp);
   }
 } /* end ObitInfoListCopyListRename */
@@ -359,6 +368,7 @@ void ObitInfoListCopyAddPrefix(ObitInfoList* in, ObitInfoList* out,
       out->list = g_slist_prepend(out->list, telem); /* add to output list */
     }
     g_free(newName);
+  loop:
     tmp = g_slist_next(tmp);
   }
 } /* end ObitInfoListCopyAddPrefix */
@@ -417,6 +427,7 @@ void ObitInfoListCopyWithPrefix(ObitInfoList* in, ObitInfoList* out,
       }
       g_free(newName);
     } /* end if wanted */
+  loop:
     tmp = g_slist_next(tmp);
   }
 } /* end ObitInfoListCopyWithPrefix */
@@ -740,7 +751,7 @@ ObitInfoListGetNumber (ObitInfoList *in,  olong number,
   }
 
   elem = (ObitInfoElem*)tmp->data;
-  if (elem==NULL) { /* not found */
+  if ((elem==NULL) || (elem->iname==NULL)) { /* not found or bad */
       Obit_log_error(err, OBIT_Error, 
         "%s: I appear to have been corrupted", routine);
       return FALSE;
@@ -798,6 +809,8 @@ ObitInfoListGetNumberP (ObitInfoList *in,  olong number,
 
   elem = (ObitInfoElem*)tmp->data;
   if (elem==NULL) return FALSE;
+  /* Check for bad entry */
+  if (elem->iname==NULL) return FALSE;
 
   /* copy information */
   *type = elem->itype;

@@ -1,6 +1,6 @@
-/* $Id: ObitTableFQUtil.c 149 2010-01-01 18:31:02Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,6 +26,7 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitUVSel.h"
 #include "ObitTableFQUtil.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
@@ -155,10 +156,8 @@ ObitIOCode ObitTableFQPutInfo (ObitTableFQ *in, oint fqid, oint nif,
    
    /* Save on info */
    oitemp = (oint)in->numIF;
-   ObitInfoListPut(in->myDesc->info, "NO_IF", OBIT_oint, dim, 
-		   (gconstpointer)&oitemp, err);
-   if (err->error) /* add traceback,return */
-     Obit_traceback_val (err, routine, in->name, retCode);
+   ObitInfoListAlwaysPut(in->myDesc->info, "NO_IF", OBIT_oint, dim, 
+			 (gconstpointer)&oitemp);
    
    /* Write one row  */
    nRowPIO = 1;
@@ -188,6 +187,7 @@ ObitIOCode ObitTableFQPutInfo (ObitTableFQ *in, oint fqid, oint nif,
    
    /* Mark as modified */
    siRow[in->myDesc->statusOff] = 1;
+   in->myDesc->numRowBuff = 1;
    
    /* rewrite */
    retCode = ObitTableWrite ((ObitTable*)in, fqid, NULL,  err);
@@ -219,9 +219,12 @@ ObitIOCode ObitTableFQSelect (ObitUV *inUV, ObitUV *outUV, odouble *SouIFOff,
   ObitIOCode retCode = OBIT_IO_SpecErr;
   ObitTableFQ    *inTab=NULL, *outTab=NULL;
   ObitTableFQRow *inRow=NULL, *outRow=NULL;
+  ObitUVSel      *sel=inUV->mySel;
   ObitErr *terr=NULL;
-  olong iif, oif, nif;
-  olong iFQver, inFQRow, outFQRow, highFQver;
+  ObitInfoType type;
+  gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  olong iif, oif, nif, nchAvg, chInc, IFInc;
+  olong iFQver, inFQRow, outFQRow, highFQver, maxIF=1;
   oint numIF;
   gboolean wanted;
   gchar *FQType = "AIPS FQ";
@@ -246,12 +249,29 @@ ObitIOCode ObitTableFQSelect (ObitUV *inUV, ObitUV *outUV, odouble *SouIFOff,
   /* Are there any? */
   if (highFQver <= 0) return OBIT_IO_OK;
 
+  /* How many channels to average */
+  nchAvg = 1;
+  chInc  = MAX (1, inUV->mySel->channInc);
+  ObitInfoListGetTest(inUV->info, "NumChAvg",  &type, dim, &nchAvg);  
+  nchAvg /= chInc;   /* Channel increment */
+  nchAvg = MAX (1,nchAvg);
+  nchAvg = MIN (nchAvg, inUV->myDesc->inaxes[inUV->myDesc->jlocf]);
+
   /* Should only be one FQ table */
   iFQver = 1;
-  if (inUV->myDesc->jlocif>=0) 
-    nif = inUV->myDesc->inaxes[inUV->myDesc->jlocif];
-  else
-    nif = 1;
+ 
+  /* How many IFs on input? */
+  if (inUV->myDesc->jlocif>=0) {
+    nif   = inUV->myDesc->inaxes[inUV->myDesc->jlocif];
+    IFInc = MAX (1, inUV->mySel->IFInc);   /* IF increment */
+    maxIF = ((ObitUVDesc*)inUV->myIO->myDesc)->inaxes[((ObitUVDesc*)inUV->myIO->myDesc)->jlocif];
+    /* but no more than selected */
+    maxIF = MIN (maxIF, inUV->mySel->startIF+inUV->mySel->numberIF-1);
+  } else {
+    nif   = 1;
+    IFInc = 1;
+    maxIF = 1;
+  }
 
   /* Get input table */
   numIF = 0;
@@ -308,22 +328,22 @@ ObitIOCode ObitTableFQSelect (ObitUV *inUV, ObitUV *outUV, odouble *SouIFOff,
     wanted = ((inUV->mySel->FreqID<=0) || 
 	      (inRow->fqid==inUV->mySel->FreqID));
     if (!wanted) continue;
-    
+   
     /* Copy selected data */
     outRow->fqid     = inRow->fqid;
     oif = 0;
-    for (iif=inUV->mySel->startIF-1; 
-	 iif<inUV->mySel->startIF+inUV->mySel->numberIF-1;
-	 iif++) {
-      outRow->freqOff[oif]  = inRow->freqOff[iif] - 
-	inRow->freqOff[inUV->mySel->startIF-1]; /* New reference freq */
-      outRow->chWidth[oif]  = inRow->chWidth[iif];
-      outRow->totBW[oif]    = inRow->totBW[iif];
-      outRow->sideBand[oif] = inRow->sideBand[iif];
-      /* Source dependent OFFSets */
-      if (SouIFOff!=NULL) outRow->freqOff[oif] += SouIFOff[oif];
-      if (SouBW>0.0) outRow->totBW[oif] = SouBW;
-      oif++;
+    for (iif=inUV->mySel->startIF-1; iif<maxIF; iif++) {
+      if (sel->IFSel[iif]) {  /* This IF wanted? */
+	outRow->freqOff[oif]  = inRow->freqOff[iif] - 
+	  inRow->freqOff[inUV->mySel->startIF-1]; /* New reference freq */
+	outRow->chWidth[oif]  = inRow->chWidth[iif] * nchAvg;
+	outRow->totBW[oif]    = inRow->totBW[iif];
+	outRow->sideBand[oif] = inRow->sideBand[iif];
+	/* Source dependent OFFSets */
+	if (SouIFOff!=NULL) outRow->freqOff[oif] += SouIFOff[oif];
+	if (SouBW>0.0) outRow->totBW[oif] = SouBW;
+	oif++;
+      }
     }
     
     retCode = ObitTableFQWriteRow (outTab, outFQRow, outRow, err);

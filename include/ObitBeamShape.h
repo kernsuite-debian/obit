@@ -1,6 +1,6 @@
-/* $Id: ObitBeamShape.h 2 2008-06-10 15:32:27Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2008                                               */
+/*;  Copyright (C) 2008-2019                                           */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -31,6 +31,7 @@
 #include "Obit.h"
 #include "ObitErr.h"
 #include "ObitImage.h"
+#include "ObitFInterpolate.h"
 
 /*-------- Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -124,6 +125,22 @@ odouble ObitBeamShapeAngle (ObitBeamShape *in, odouble ra,
 typedef odouble (*ObitBeamShapeAngleFP) (ObitBeamShape *in, odouble ra, 
 					 odouble dec, ofloat parAng);
 
+/** Public: get reference frequency */
+static inline odouble ObitBeamShapeGetFreq (ObitBeamShape *in) {
+  return in->refFreq;
+} /* end ObitBeamShapeGetFreq */
+
+/** Public: set reference frequency */
+static inline void ObitBeamShapeSetFreq (ObitBeamShape *in, odouble newFreq) {
+  in->refFreq = newFreq;
+  in->beamAng = -1.0;
+} /* end  ObitBeamShapeSetFreq */
+
+/** Public: set Antenna size*/
+static inline void ObitBeamShapeSetAntSize (ObitBeamShape *in, ofloat antSize) {
+  in->antSize = antSize;
+} /* end  ObitBeamShapeSetAntSize */
+
 /*----------- ClassInfo Structure -----------------------------------*/
 /**
  * ClassInfo Structure.
@@ -134,4 +151,4 @@ typedef struct  {
 #include "ObitBeamShapeClassDef.h"
 } ObitBeamShapeClassInfo; 
 
-#endif /* OBITFBEAMSHAPE_H */ 
+#endif /* OBITBEAMSHAPE_H */ 

@@ -1,6 +1,6 @@
-/* $Id: ObitUVImagerMF.h 128 2009-09-23 14:48:29Z bill.cotton $     */
+/* $Id$     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010,2011                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -59,15 +59,18 @@
  * There is no explicit destructor.
  *
  * \section ObitUVImagerMFparameters Control Parameters
+ *
  * The imaging control parameters are passed through the info object 
  * on the uv data, these control both the output image files and the 
  * processing parameters.
  * Output images:
- * \li "Type   OBIT_int (1,1,1)   Underlying file type, 1=FITS, 2=AIPS
+ * \li "Type"  OBIT_int (1,1,1)   Underlying file type, 1=FITS, 2=AIPS
  * \li "Name"  OBIT_string (?,1,1) Name of image, used as AIPS name or to derive FITS filename
  * \li "Class" OBIT_string (?,1,1) Root of class, used as AIPS class or to derive FITS filename
  * \li "Seq"   OBIT_int (1,1,1) Sequence number
  * \li "Disk"  OBIT_int (1,1,1) Disk number for underlying files
+ * \li "HalfStoke"   OBIT_boo (1,1,1)   If true, RR/LL are passed in uvwork [def F]
+ *                                      else I
  *
  * UVData selection/calibration/editing control
  * \li "MaxBaseline" OBIT_float scalar = maximum baseline length in wavelengths.
@@ -240,11 +243,15 @@ void ObitUVImagerMFClone (ObitUVImager *inn, ObitUVImager *outn, ObitErr *err);
 
 /** Public: Create/initialize ObitUVImagerMF structures */
 ObitUVImagerMF* ObitUVImagerMFCreate (gchar* name, olong order, ofloat maxFBW, 
-				      ofloat alpha, ObitUV *uvdata,  ObitErr *err);
+				      ofloat alpha, odouble alphaRefF, 
+				      ObitUV *uvdata,  ObitErr *err);
 
 /** Public: Create/initialize ObitUVImagerMF structures given mosaic */
 ObitUVImagerMF* ObitUVImagerMFCreate2 (gchar* name, olong order, ObitUV *uvdata, 
 				       ObitImageMosaicMF *mosaic, ObitErr *err);
+
+/** Public: Weight data */
+ void ObitUVImagerMFWeight (ObitUVImager *in, ObitErr *err);
 
 /** Public: Shift image for 2D */
 void ObitUVImagerMFShifty (ObitUVImager *in, olong *field, gboolean doall, ObitErr *err);
@@ -254,7 +261,7 @@ void ObitUVImagerMFGetInfo (ObitUVImager *inn, gchar *prefix, ObitInfoList *outL
 			    ObitErr *err);
 
 /** Public: Get number of parallel images */
-olong ObitUVImagerMFGetNumPar (ObitUVImager *inn, ObitErr *err);
+olong ObitUVImagerMFGetNumPar (ObitUVImager *inn, gboolean doBeam, ObitErr *err);
 /*----------- ClassInfo Structure -----------------------------------*/
 /**
  * ClassInfo Structure.

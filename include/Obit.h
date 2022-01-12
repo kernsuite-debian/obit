@@ -1,4 +1,4 @@
-/* $Id: Obit.h 2 2008-06-10 15:32:27Z bill.cotton $            */
+/* $Id$            */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2002-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -105,8 +105,24 @@ typedef gpointer (*ObitUnrefFP) (gpointer *in);
 gboolean ObitIsA (gpointer in, gconstpointer type);
 typedef gboolean (*ObitIsAFP) (gpointer in, gconstpointer class);
 
-/** Public: returns magic value blanking value */
-ofloat ObitMagicF (void);
+/**
+ * Returns Obit magic blanking float value
+ * This is adopted from AIPS and correcponds to the string 'INDE'
+ * \return float magic value
+ */
+static inline ofloat ObitMagicF (void)
+{
+  static union FBLANKequiv {
+    gchar string[4];
+    ofloat fblank;
+  } FBLANK;
+  FBLANK.string[0] = 'I'; 
+  FBLANK.string[1] = 'N'; 
+  FBLANK.string[2] = 'D'; 
+  FBLANK.string[3] = 'E'; 
+  
+  return FBLANK.fblank;
+} /* end ObitMagicF */
 
 /** Public: trim trailing blanks from string */
 void ObitTrimTrail (gchar *str);

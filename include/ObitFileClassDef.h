@@ -1,6 +1,6 @@
-/* $Id: ObitFileClassDef.h 98 2009-05-06 16:30:15Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2011                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -51,6 +51,8 @@ ObitFileEndFP ObitFileEnd;
 ObitFileReadFP ObitFileRead;
 /** Function pointer to  Read text line*/
 ObitFileReadLineFP ObitFileReadLine;
+/** Function pointer to  Read XML line*/
+ObitFileReadXMLFP ObitFileReadXML;
 /** Function pointer to  Write */
 ObitFileWriteFP ObitFileWrite;
 /** Function pointer to  Write text line*/

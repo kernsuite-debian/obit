@@ -1,6 +1,6 @@
-/* $Id: ObitDConCleanWindow.c 155 2010-02-04 13:17:17Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2010                                          */
+/*;  Copyright (C) 2004-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -198,7 +198,7 @@ ObitDConCleanWindow* ObitDConCleanWindowCopy  (ObitDConCleanWindow *in,
   out->outWindow = ObitMemAlloc0Name (out->nfield*sizeof(gpointer), "Clean outer Window");
 
   for (i=0; i<in->nfield; i++) {
-    out->naxis = ObitMemAlloc0 (2*sizeof(olong));
+    out->naxis[i] = ObitMemAlloc0 (2*sizeof(olong));
     out->naxis[i][0] = in->naxis[i][0];
     out->naxis[i][1] = in->naxis[i][1];
     maxId            = 0;
@@ -1537,7 +1537,7 @@ olong ObitDConCleanWindowCount (ObitDConCleanWindow *in, olong field,
  * outside the previous inner window, a new round box is added at that position.
  * n=4 for small boxes, 3 large.
  * The added window is round and of a size where the structure function 
- * about the center drops to 10% or 3 sigma whichever is less (max=20)
+ * about the center drops to 10% or 3 sigma whichever is less (max=50)
  * \param in         The Window object
  * \param field      Which field (1-rel) is of interest?
  * \param image      pixel array, will be returned blanked outside the outer
@@ -1563,7 +1563,7 @@ gboolean ObitDConCleanWindowAutoWindow (ObitDConCleanWindow *in,
   ObitFArray *tmpImage=NULL;
   olong ix, iy, nx, ny, pos[2];
   olong window[4];
-  ofloat *data, minFlux, fblank =  ObitMagicF();
+  ofloat *data, minFlux=0.0, fblank =  ObitMagicF();
   gchar *routine = "ObitDConCleanWindowAutoWindow";
 
   /* error checks */
@@ -1630,16 +1630,18 @@ gboolean ObitDConCleanWindowAutoWindow (ObitDConCleanWindow *in,
 
   /* if PeakInPos not blanked and > 4 RMS  addWin = TRUE; */
   data = ObitFArrayIndex(tmpImage, PeakInPos);
-  addWin = addWin || ((*data)!=fblank);
-  /* Reduce threshold for more extended regions */
-  window[0] = GetWindowSize(image, PeakInPos, *RMS);
-  if (window[0]<5)
-    minFlux = 4.0*(*RMS);
-  else
-    minFlux = 3.0*(*RMS);
-  /* Window not set because peak too close to noise? */
-  noWin  = (fabs(*data) < minFlux); 
-  addWin = addWin && (!noWin);
+  if (data!=NULL) {
+    addWin = addWin || ((*data)!=fblank);
+    /* Reduce threshold for more extended regions */
+    window[0] = GetWindowSize(image, PeakInPos, *RMS);
+    if (window[0]<5)
+      minFlux = 4.0*(*RMS);
+    else
+      minFlux = 3.0*(*RMS);
+    /* Window not set because peak too close to noise? */
+    noWin  = (fabs(*data) < minFlux); 
+    addWin = addWin && (!noWin);
+  } else addWin = FALSE;  /* Data all blanked */
 
   /* Add new clean box? */
   if (addWin) {
@@ -1675,6 +1677,8 @@ gboolean ObitDConCleanWindowAutoWindow (ObitDConCleanWindow *in,
   if (fabs(*PeakOut)<=minFlux)  *PeakOut = 0.0;
   /* If no window set because peak too close to noise, set to zero */
   if (noWin)  *PeakOut = 0.0;
+  /* Trap problem */
+  if (fabs(*PeakOut)>1.0e20) *PeakOut = *PeakIn; 
 
   /* Cleanup */
  clean:
@@ -1897,6 +1901,7 @@ void ObitDConCleanWindowStats (ObitDConCleanWindow *in,
     *PeakIn = ObitFArrayMaxAbs (tmpImage, PeakInPos);
   else
     *PeakIn = ObitFArrayMax (tmpImage, PeakInPos);
+  *PeakOut = *PeakIn;  /* In case no inner window */
 
   /* Blank inside the inner window  - if there is one */
   if (in->Lists[field-1]) {
@@ -1910,13 +1915,22 @@ void ObitDConCleanWindowStats (ObitDConCleanWindow *in,
 	  if (mask[ix]) 
 	    data[ix] = fblank;
       }
+      /* Get, invert and apply unboxes */
+      if (ObitDConCleanWindowUnrow(in, field, iy+1, &mask, err)) {
+	for (ix=0; ix<nx; ix++) 
+	  if (mask[ix]) 
+	    data[ix] = fblank;
+      }
     } /* end loop blanking array */
     if (err->error) goto clean;
+
+    /* find peak PeakOut in outer window but outside inner window */
+    if (doAbs)  *PeakOut = ObitFArrayMaxAbs (tmpImage, pos);
+    else *PeakOut = ObitFArrayMax (tmpImage, pos);
+    /* Trap problem */
+    if (fabs(*PeakOut)>1.0e20) *PeakOut = *PeakIn; 
   } /* end if inner window */
 
-  /* find peak PeakOut in outer window but outside inner window */
-  if (doAbs)  *PeakOut = ObitFArrayMaxAbs (tmpImage, pos);
-  else *PeakOut = ObitFArrayMax (tmpImage, pos);
 
   /* Cleanup */
  clean:
@@ -2089,7 +2103,7 @@ void ObitDConCleanWindowClear (gpointer inn)
  */
 olong  GetWindowSize(ObitFArray *image, olong *PeakPos, ofloat sigma)
 {
-#define NWINSIZHIST  20  /* Number of values in histogram */
+#define NWINSIZHIST  50  /* Number of values in histogram */
   olong size = 3;
   ofloat *PeakPtr, *Offset, Peak, hist[NWINSIZHIST+1], minHist;
   ofloat fblank =  ObitMagicF();

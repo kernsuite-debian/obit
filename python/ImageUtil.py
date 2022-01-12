@@ -1,8 +1,8 @@
 """ Python Obit Image utility module
 """
-# $Id: ImageUtil.py 54 2008-11-20 20:25:20Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2004-2008
+#  Copyright (C) 2004-2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -29,39 +29,52 @@
 #-----------------------------------------------------------------------
 
 # Python interface to ObitImageUtil utilities
-import Obit, Image, ImageDesc, FArray, UV, Table, History, OErr
+from __future__ import absolute_import
+from __future__ import print_function
+import Obit, Image, ImageDesc, FArray, UV, Table, TableUtil, History, OErr
 import OSystem
+from six.moves import range
 
 def PICreateImage (inUV, fieldNo, doBeam, err):
-    """ Create an image from information on an ObitUV
-
+    """
+    Create an image from information on an ObitUV
+    
     returns  Python Image
-    inUV     = Python UV object, following read from InfoList member 
-       "nChAvg" OBIT_int (1,1,1) number of channels to average.
-           This is for spectral line observations and is ignored
-           if the IF axis on the uv data has more than one IF.
-           Default is continuum = average all freq/IFs. 0=> all.
-       "rotate" OBIT_float (?,1,1) Desired rotation on sky (from N thru E) in deg. [0]
-       "nx"     OBIT_int (?,1,1) Dimension of image in RA [no default].
-           This and the following are arrays with one entry per field.
-       "nxBeam" OBIT_int (?,1,1) Dimension of beam in RA, [def. nx]
-       "ny"     OBIT_int (?,1,1) Dimension of image in declination[no default]
-       "nyBeam" OBIT_int (?,1,1) Dimension of beam in declination, [def. ny]
+
+    * inUV     = Python UV object, following read from InfoList member 
+
+       ======== ================== =============================================
+       "nChAvg" OBIT_int (1,1,1)   number of channels to average.
+                                   This is for spectral line observations and
+                                   is ignored if the IF axis on the uv data has
+                                   more than one IF.  Default is continuum =
+                                   average all freq/IFs. 0=> all.
+       "rotate" OBIT_float (?,1,1) Desired rotation on sky (from N thru E) in
+                                   deg. [0]
+       "nx"     OBIT_int (?,1,1)   Dimension of image in RA [no default].
+                                   This and the following are arrays with one
+                                   entry per field.
+       "nxBeam" OBIT_int (?,1,1)   Dimension of beam in RA, [def. nx]
+       "ny"     OBIT_int (?,1,1)   Dimension of image in declination[no default]
+       "nyBeam" OBIT_int (?,1,1)   Dimension of beam in declination, [def. ny]
        "xCells" OBIT_float (?,1,1) X (=RA) cell spacing in degrees [no default]
        "yCells" OBIT_float (?,1,1) Y (=dec) cell spacing in degrees [no default]
        "xShift" OBIT_float (?,1,1) Desired shift in X (=RA) in degrees. [0]
        "yShift" OBIT_float (?,1,1) Desired shift in Y (=dec) in degrees. [0]
-       "nuGrid"   OBIT_int (1,1,1) Size in pixels of weighting grid for uniform weighting
-    fieldNo  = Which field (1-rel) in imaging parameter arrays.
-    doBeam   = if TRUE also create beam as the myBeam member of returned image.
-    err      = Python Obit Error/message stack
+       "nuGrid" OBIT_int (1,1,1)   Size in pixels of weighting grid for uniform
+                                   weighting
+       ======== ================== =============================================
+
+    * fieldNo  = Which field (1-rel) in imaging parameter arrays.
+    * doBeam   = if TRUE also create beam as the myBeam member of returned image.
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not UV.PIsA(inUV):
-        raise TypeError,"inUV MUST be a Python Obit UV"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("inUV MUST be a Python Obit UV")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     out    = Image("None")
     out.me = Obit.ImageUtilCreateImage (inUV.me, fieldNo, doBeam, err.me)
@@ -71,29 +84,28 @@ def PICreateImage (inUV, fieldNo, doBeam, err):
     # end PCreateImage
 
 def PMakeImage (inUV, outImage, channel, doBeam, doWeight, err):
-    """ Grids UV, FFTs and makes corrections for the gridding convolution.
+    """
+    Grids UV, FFTs and makes corrections for the gridding convolution.
 
-    inUV     = Input Python uv data. Should be in form of Stokes to be imaged
-               will all calibration and selection applied.
-    outImage = Python Image to be written.  Must be previously instantiated.
-               Beam normalization factor is written to output Beam
-               infoList as SUMWTS
-    channel  = Which frequency channel to image, 0->all.
-    doBeam   = if TRUE also make beam.  Will make the myBeam member of outImage.
-               If FALSE, and myGrid->BeamNorm 0.0 then reads SUMWTS value 
-               from beam infolist
-    doWeigh  = if TRUE Apply uniform weighting corrections to uvdata before imaging
-    err      = Python Obit Error/message stack
+    * inUV     = Input Python uv data. Should be in form of Stokes to be imaged
+      will all calibration and selection applied.
+    * outImage = Python Image to be written.  Must be previously instantiated.
+      Beam normalization factor is written to output Beam infoList as SUMWTS
+    * channel  = Which frequency channel to image, 0->all.
+    * doBeam   = if TRUE also make beam.  Will make the myBeam member of outImage.
+      If FALSE, and myGrid->BeamNorm 0.0 then reads SUMWTS value from beam infolist
+    * doWeigh  = if TRUE Apply uniform weighting corrections to uvdata before imaging
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not UV.PIsA(inUV):
-        raise TypeError,"inUV MUST be a Python Obit UV"
+        raise TypeError("inUV MUST be a Python Obit UV")
     if not Image.PIsA(outImage):
-        print "Actually ",outImage.__class__
-        raise TypeError,"outImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     Obit.ImageUtilMakeImage(inUV.me, outImage.me, channel, doBeam, doWeight, err.me)
     if err.isErr:
@@ -101,166 +113,273 @@ def PMakeImage (inUV, outImage, channel, doBeam, doWeight, err):
     # end PMakeImage
 
 def PInterpolateImage (inImage, outImage, err, 
-                       inPlane=[1,1,1,1,1], outPlane=[1,1,1,1,1], hwidth=2):
-    """ Interpolates one image onto another's grid.
-
+                       inPlane=[1,1,1,1,1], outPlane=[1,1,1,1,1], hwidth=2,
+                       XPix=None, YPix=None, finterp=None):
+    """
+    Interpolates one image onto another's grid.
+    
     Pixels in outImage are interpolated from inImage
-    inImage  = Input Python Image.
-    outImage = Python Image to be written.  Must be previously instantiated.
-    err      = Python Obit Error/message stack
-    inPlane  = 5 element int array with 1, rel. plane number [1,1,1,1,1]
-               giving location of plane to be interpolated
-    outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
-               giving location of plane to be written
-    hwidth   = half width of interpolation kernal [1-4] default 2
+
+    * inImage  = Input Python Image.
+    * outImage = Python Image to be written.  Must be previously instantiated.
+    * err      = Python Obit Error/message stack
+    * inPlane  = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be interpolated
+    * outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be written
+    * hwidth   = half width of interpolation kernal [1-4] default 2
+    * XPix     = image of input x pixels for output, None=>Calculate
+    * YPix     = image of input y pixels for output
+    * finterp  = GPUFInterpolate to use if not NULL and GPU enabled
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not Image.PIsA(outImage):
-        print "Actually ",outImage.__class__
-        raise TypeError,"outImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     if len(inPlane) != 5:
-        raise TypeError,"inPlane must have 5 elements"
+        raise TypeError("inPlane must have 5 elements")
     if len(outPlane) != 5:
-        raise TypeError,"outPlane must have 5 elements"
-    #
-    Obit.ImageUtilInterpolateImage(inImage.me, outImage.me,
-                                   inPlane, outPlane, hwidth, err.me)
+        raise TypeError("outPlane must have 5 elements")
+    # Make sure plane arrays are long
+    linPlane=[]; loutPlane=[]
+    for p in inPlane:
+        linPlane.append(int(p))
+    for p in outPlane:
+        loutPlane.append(int(p))
+    #  GPU?
+    if finterp!=None:
+        Obit.GPUImageInterpolateImageXY(finterp.me, inImage.me, outImage.me,
+                                       linPlane, loutPlane, err.me)
+    elif XPix==None:
+        Obit.ImageUtilInterpolateImage(inImage.me, outImage.me,
+                                       linPlane, loutPlane, hwidth, err.me)
+    # precomputed pixel values
+    else:
+        Obit.ImageUtilInterpolateImageXY(inImage.me, outImage.me, XPix.me, YPix.me,
+                                         linPlane, loutPlane, hwidth, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error interpolating Image")
     # end PInterpolateImage
 
-def PPBApply (inImage, pntImage, outImage, err,
-              inPlane=[1,1,1,1,1], outPlane=[1,1,1,1,1], antSize=25.0):
-    """ Multiply an image by the primary beam pattern of another
-
-    Pixels in outImage are inImage multiplied by the antenna beam pattern
-    from pntImage
-    inImage  = Input Python Image.
-    pntImage = Python Image giving pointing position (ObsRA, ObsDec)
-    outImage = Python Image to be written.  Must be previously instantiated.
-    err      = Python Obit Error/message stack
-    inPlane  = 5 element int array with 1, rel. plane number [1,1,1,1,1]
-               giving location of plane to be interpolated
-    outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
-               giving location of plane to be written
-    antSize  = Antenna diameter assumed, default 25m
+def PGetXYPixels (inImage, outImage, XPix, YPix, err):
+    """
+    Determines inImage x and y pixels for outImage
+    
+    * inImage  = Input Python Image.
+    * outImage = Python Image to be written.  Must be previously instantiated.
+    * XPix     = image of input x pixels for output
+    * YPix     = image of input y pixels for output
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        raise TypeError,"inImage MUST be a Python Obit Image"
-    if not Image.PIsA(pntImage):
-        print "Actually ",pntImage.__class__
-        raise TypeError,"pntImage MUST be a Python Obit Image"
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not Image.PIsA(outImage):
-        print "Actually ",outImage.__class__
-        raise TypeError,"outImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
+    Obit.ImageUtilGetXYPixels(inImage.me, outImage.me, XPix.me, YPix.me, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error determining pixels")
+    # end PGetXYPixels
+
+def PPBApply (inImage, pntImage, outImage, err,
+              inPlane=[1,1,1,1,1], outPlane=[1,1,1,1,1], antSize=25.0):
+    """
+    Multiply an image by the primary beam pattern of another
+    
+    Pixels in outImage are inImage multiplied by the antenna beam pattern
+    from pntImage
+
+    * inImage  = Input Python Image.
+    * pntImage = Python Image giving pointing position (ObsRA, ObsDec)
+    * outImage = Python Image to be written.  Must be previously instantiated.
+    * err      = Python Obit Error/message stack
+    * inPlane  = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be interpolated
+    * outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be written
+    * antSize  = Antenna diameter assumed, default 25m
+    """
+    ################################################################
+    # Checks
+    if not Image.PIsA(inImage):
+        raise TypeError("inImage MUST be a Python Obit Image")
+    if not Image.PIsA(pntImage):
+        print("Actually ",pntImage.__class__)
+        raise TypeError("pntImage MUST be a Python Obit Image")
+    if not Image.PIsA(outImage):
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     if len(inPlane) != 5:
-        raise TypeError,"inPlane must have 5 elements"
+        raise TypeError("inPlane must have 5 elements")
     if len(outPlane) != 5:
-        raise TypeError,"outPlane must have 5 elements"
+        raise TypeError("outPlane must have 5 elements")
+    # Make sure plane arrays are long
+    linPlane=[]; loutPlane=[]
+    for p in inPlane:
+        linPlane.append(int(p))
+    for p in outPlane:
+        loutPlane.append(int(p))
     #
     Obit.ImageUtilPBApply(inImage.me, pntImage.me, outImage.me,
-                          inPlane, outPlane, antSize, err.me)
+                          linPlane, loutPlane, antSize, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error applying Primary beam correction to Image")
     # end PPBApply
 
 def PPBImage (pntImage, outImage, err,
               minGain=0.1, outPlane=[1,1,1,1,1], antSize=25.0):
-    """ Calculate an image with a primary beam pattern
-
+    """
+    Calculate an image with a primary beam pattern
+    
     Make an image of the antenna primary beam pattern based on the pointing
     position in an image.
-    pntImage = Python Image giving pointing position (ObsRA, ObsDec)
-    outImage = Python Image to be written.  Must be previously instantiated.
-    err      = Python Obit Error/message stack
-    minGain  = minimum allowed gain (lower values blanked).
-    outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
-               giving location of plane to be written
-    antSize  = Antenna diameter assumed, default 25m
+
+    * pntImage = Python Image giving pointing position (ObsRA, ObsDec)
+    * outImage = Python Image to be written.  Must be previously instantiated.
+    * err      = Python Obit Error/message stack
+    * minGain  = minimum allowed gain (lower values blanked).
+    * outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be written
+    * antSize  = Antenna diameter assumed, default 25m
     """
     ################################################################
     # Checks
     if not Image.PIsA(pntImage):
-        print "Actually ",pntImage.__class__
-        raise TypeError,"pntImage MUST be a Python Obit Image"
+        print("Actually ",pntImage.__class__)
+        raise TypeError("pntImage MUST be a Python Obit Image")
     if not Image.PIsA(outImage):
-        print "Actually ",outImage.__class__
-        raise TypeError,"outImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     if len(outPlane) != 5:
-        raise TypeError,"outPlane must have 5 elements"
+        raise TypeError("outPlane must have 5 elements")
     #
-    Obit.ImageUtilPBImage(outImage.me, outImage.me,
+    Obit.ImageUtilPBImage(pntImage.me, outImage.me,
                           outPlane, antSize, minGain, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error with primary beam image")
     # end PPBImage
 
+def POTFBeam (pntImage, outImage, RAoff, Decoff, err,
+              minGain=0.1, outPlane=[1,1,1,1,1], antSize=25.0):
+    """
+    Calculate an image with an OTF "Aussie mode" primary beam pattern
+    
+    Make an image of the antenna primary beam pattern based on the pointing
+    position in an image with a set of pointing offsets.
+
+    * pntImage = Python Image giving pointing position (ObsRA, ObsDec)
+    * outImage = Python Image to be written.  Must be previously instantiated.
+    * RAoff    = Array of RA offsets in deg not corrected for Declination
+    * Decoff   = Array of Declinations offsets in deg, same size as RAoff
+    * err      = Python Obit Error/message stack
+    * minGain  = minimum allowed gain (lower values blanked).
+    * outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be written
+    * antSize  = Antenna diameter assumed, default 25m
+    """
+    ################################################################
+    # Checks
+    if not Image.PIsA(pntImage):
+        print("Actually ",pntImage.__class__)
+        raise TypeError("pntImage MUST be a Python Obit Image")
+    if not Image.PIsA(outImage):
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
+    if len(outPlane) != 5:
+        raise TypeError("outPlane must have 5 elements")
+    if len(RAoff) != len(Decoff):
+        raise TypeError("RAoff and Decoff must have same size")
+    #
+    noff = len(RAoff)
+    outImage.List.set("noff",noff)
+    outImage.List.set("RAoff", RAoff, ttype='float')
+    outImage.List.set("Decoff", Decoff, ttype='float')
+    Obit.ImageUtilOTFBeam(outImage.me, outImage.me,
+                          outPlane, antSize, minGain, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error with primary beam image")
+    # end POTFBeam
+
 def PPBCorr (inImage, pntImage, outImage, err,
              inPlane=[1,1,1,1,1], outPlane=[1,1,1,1,1], antSize=25.0):
-    """ Correct (divide) an image by the primary beam pattern of another
-
-    Pixels in outImage are inImage multiplied by the antenna beam pattern
+    """
+    Correct (divide) an image by the primary beam pattern of another
+    
+    Pixels in outImage are inImage divided by the antenna beam pattern
     from pntImage
-    inImage  = Input Python Image.
-    pntImage = Python Image giving pointing position (ObsRA, ObsDec)
-    outImage = Python Image to be written.  Must be previously instantiated.
-    err      = Python Obit Error/message stack
-    inPlane  = 5 element int array with 1, rel. plane number [1,1,1,1,1]
-               giving location of plane to be interpolated
-    outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
-               giving location of plane to be written
-    antSize  = Antenna diameter assumed, default 25m
+
+    * inImage  = Input Python Image.
+    * pntImage = Python Image giving pointing position (ObsRA, ObsDec)
+    * outImage = Python Image to be written.  Must be previously instantiated.
+    * err      = Python Obit Error/message stack
+    * inPlane  = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be interpolated
+    * outPlane = 5 element int array with 1, rel. plane number [1,1,1,1,1]
+      giving location of plane to be written
+    * antSize  = Antenna diameter assumed, default 25m
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not Image.PIsA(pntImage):
-        print "Actually ",pntImage.__class__
-        raise TypeError,"pntImage MUST be a Python Obit Image"
+        print("Actually ",pntImage.__class__)
+        raise TypeError("pntImage MUST be a Python Obit Image")
     if not Image.PIsA(outImage):
-        print "Actually ",outImage.__class__
-        raise TypeError,"outImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     if len(inPlane) != 5:
-        raise TypeError,"inPlane must have 5 elements"
+        raise TypeError("inPlane must have 5 elements")
     if len(outPlane) != 5:
-        raise TypeError,"outPlane must have 5 elements"
-    #
+        raise TypeError("outPlane must have 5 elements")
+     # Make sure plane arrays are long
+    linPlane=[]; loutPlane=[]
+    for p in inPlane:
+        linPlane.append(int(p))
+    for p in outPlane:
+        loutPlane.append(int(p))
+   #
     Obit.ImageUtilPBCorr(inImage.me, pntImage.me, outImage.me,
-                         inPlane, outPlane, antSize, err.me)
+                         linPlane, loutPlane, antSize, err.me)
     if err.isErr:
         OErr.printErrMsg(err, "Error making primary beam correction")
     # end PPBCorr
 
 def PScaleImage (inImage, scale, err):
-    """ Scale the pixel values in an image
-
+    """
+    Scale the pixel values in an image
+    
     Scale image, optionally by plane, scales any CC tables, writes history
-    inImage   Obit Python Image
-    scale     Scaling factor, if scalar, multiply all pixels,
-              otherwise one value per image plane.
-    err       Python Obit Error/message stack
+
+    * inImage = Obit Python Image
+    * scale   = Scaling factor, if scalar, multiply all pixels,
+      otherwise one value per image plane.
+    * err     = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        raise TypeError,"inImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("inImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     # Open image
     Image.POpen (inImage, Image.READWRITE, err)
@@ -281,7 +400,7 @@ def PScaleImage (inImage, scale, err):
 
     # list of planes to loop over (0-rel)
     if (ndim>0) and (inNaxis[2]>0):  
-        planes = range(inNaxis[2])
+        planes = list(range(inNaxis[2]))
     else:
         planes = [0]
     
@@ -326,21 +445,23 @@ def PScaleImage (inImage, scale, err):
 # end PScaleImage
 
 def PCCScale (inCCTab, startComp, endComp, scale, err):
-    """ Scale flux densities in a CC table
-
+    """
+    Scale flux densities in a CC table
+    
     Flux densities of CC entries startComp through endComp are scales by scle
-    inCCTab   = Input Python TableCC
-    startComp = first (1-rel) component
-    endComp   = highest component [1-rel= 0=> all
-    scale     = flux density scaling factor
-    err       = Python Obit Error/message stack
+
+    * inCCTab   = Input Python TableCC
+    * startComp = first (1-rel) component
+    * endComp   = highest component [1-rel= 0=> all
+    * scale     = flux density scaling factor
+    * err       = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Table.PIsA(inCCTab):
-        raise TypeError,"inCCTab MUST be a Python Obit Table"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("inCCTab MUST be a Python Obit Table")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     Obit.ImageUtilCCScale(inCCTab.me, startComp, endComp, scale, err.me)
     if err.isErr:
@@ -348,24 +469,26 @@ def PCCScale (inCCTab, startComp, endComp, scale, err):
     # end PCCScale
 
 def PUVFilter (inImage, outImage, radius, err):
-    """ Filter an image outside of a radius from the origin in FT space.
-
+    """
+    Filter an image outside of a radius from the origin in FT space.
+    
     Intended to filter out out of band noise in single dish images.
     Filters by a function with 1.0/(nx*ny) inside radius and outside tapers
     by an exponential with scale distance 10 pixels.
-    inImage   = Input Image
-    outImage  = Output image, may be inImage
-    radius    = distance from origin in uv space (m)
-    err       = Python Obit Error/message stack
+
+    * inImage   = Input Image
+    * outImage  = Output image, may be inImage
+    * radius    = distance from origin in uv space (m)
+    * err       = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not Image.PIsA(outImage):
-        raise TypeError,"outImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     Obit.ImageUtilUVFilter(inImage.me, outImage.me, radius, err.me)
     if err.isErr:
@@ -374,28 +497,30 @@ def PUVFilter (inImage, outImage, radius, err):
 
 def PImageAdd (in1Image, in2Image, outImage, err, \
                chkPos=False, factor1=1.0, factor2=1.0):
-    """ Adds Pixels in in2Image from in1Image and write to outImage
-
+    """
+    Adds Pixels in in2Image from in1Image and write to outImage
+    
     Adds scaled pixel values, writes history
-    in1Image  input Obit Python Image 1
-    in2Image  input Obit Python Image 2
-    outImage  output Obit Python Image, must be defined but not instantiated
-    err       Python Obit Error/message stack
-    chkPos    If true also check the coordinates on each axis
-              Check is if pixels are within 0.01 of a pixel
-    factor1   Scaling factor for in1Image
-    factor2   Scaling factor for in2Image
+
+    * in1Image = input Obit Python Image 1
+    * in2Image = input Obit Python Image 2
+    * outImage = output Obit Python Image, must be defined but not instantiated
+    * err      = Python Obit Error/message stack
+    * chkPos   = If true also check the coordinates on each axis
+      Check is if pixels are within 0.01 of a pixel
+    * factor1  = Scaling factor for in1Image
+    * factor2  = Scaling factor for in2Image
     """
     ################################################################
     # Checks
     if not Image.PIsA(in1Image):
-        raise TypeError,"in1Image MUST be a Python Obit Image"
+        raise TypeError("in1Image MUST be a Python Obit Image")
     if not Image.PIsA(in2Image):
-        raise TypeError,"in2Image MUST be a Python Obit Image"
+        raise TypeError("in2Image MUST be a Python Obit Image")
     if not Image.PIsA(outImage):
-        raise TypeError,"outImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     # Clone output from input 1
     in1Image.Clone (outImage, err)
@@ -418,7 +543,7 @@ def PImageAdd (in1Image, in2Image, outImage, err, \
 
     # list of planes to loop over (0-rel)
     if (ndim>0) and (inNaxis[2]>0):  
-        planes = range(inNaxis[2])
+        planes = list(range(inNaxis[2]))
     else:
         planes = [0]
     
@@ -479,17 +604,19 @@ def PImageAdd (in1Image, in2Image, outImage, err, \
 # end PImageAdd
 
 def FFTHeaderUpdate(inIm, naxis, err):
-    """ Fix Image header for an image being FFTed
-
+    """
+    Fix Image header for an image being FFTed
+    
     Update first two axes for the effect of FFT
-    inID  = image with descriptor to update
-    naxis = dimensionality of array being FFTed (not size in inID)
-    err   = Python Obit Error/message stack
+
+    * inID  = image with descriptor to update
+    * naxis = dimensionality of array being FFTed (not size in inID)
+    * err   = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Image.PIsA(inIm):
-        raise TypeError,"inIm MUST be a Python Obit Image"
+        raise TypeError("inIm MUST be a Python Obit Image")
     header = inIm.Desc.Dict
     # Image to uv plane
     if header["ctype"][0][0:8]=="RA---SIN":
@@ -511,27 +638,29 @@ def FFTHeaderUpdate(inIm, naxis, err):
 
 import FFT, CArray, FeatherUtil
 def PImageFFT (inImage, outAImage, outPImage, err):
-    """ FFTs an Image
-
+    """
+    FFTs an Image
+    
     FFT inImage and write as real and imaginary as full plane (hermetian) 
-    inImage   input Obit Python Image 1
-              Any BLC and/or TRC set will be honored
-    outAImage output Obit Python Amplitude image of FFT
-              must be defined but not instantiated
-    outPImage output Obit Python Phase (deg) image of FFT
-              must be defined but not instantiated
-    err       Python Obit Error/message stack
+
+    * inImage   = input Obit Python Image 1
+      Any BLC and/or TRC set will be honored
+    * outAImage = output Obit Python Amplitude image of FFT
+      must be defined but not instantiated
+    * outPImage = output Obit Python Phase (deg) image of FFT
+      must be defined but not instantiated
+    * err       = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not Image.PIsA(outAImage):
-        raise TypeError,"outAImage MUST be a Python Obit Image"
+        raise TypeError("outAImage MUST be a Python Obit Image")
     if not Image.PIsA(outPImage):
-        raise TypeError,"outPImage MUST be a Python Obit Image"
-    if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("outPImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
     #
     # Clone output images
     inImage.Clone(outAImage,err)
@@ -632,3 +761,150 @@ def PImageFFT (inImage, outAImage, outPImage, err):
         outHistory.Close(err)
 # end PImageFFT
 
+def PImageT2Spec (inImage, outImage, nTerm, 
+                  inCCVer, outCCVer, err,
+                  refFreq=1.0e9, terms=None, startCC=1, endCC=0, 
+                  dropNeg=True, dist=None):
+    """
+    Convert an ObitImage(MF) (TSpec CCs) to an ObitImageWB (Spec CCs)
+    
+    Output CC Table will have fitted spectra rather than tabulated spectra.
+    If an integrated spectrum is given, the sum of the input CC sprectra
+    are forced to this spectrum.
+    Copies spectral planes and converts specified CC table
+    Tabulated spectrum fitted with spectrum weighting by primary beam
+
+    * inImage  = input Obit Python Image 1
+      Must have freq axis type = "SPECLNMF"
+    * outImage = output Obit Python image
+      must be defined but not instantiated
+      On return will be replaced by image created
+    * nTerm    = Number of output Spectral terms, 2=SI, 3=also curve.
+    * inCCVer  = Input CCTable to convert, 0=> highest
+    * outCCVer = Output CCTable, 0=>1
+    * err      = Python Obit Error/message stack
+    * refFreq  = Reference frequency (Hz) for total spectrum
+    * terms    = if not None, parameters of total spectrum
+      [flux density at refFreq, spectral index at refFreq, ...]
+    * startCC  = First 1-rel component to convert
+    * endCC    = Last 1-rel component to convert, 0=> all
+    * dropNeg  = if True, drop components with negative flux.
+    * dist     = max distance in deg from pointing to accept CCs for the
+                 normalization to the specified spectrum, None=very large
+    """
+    ################################################################
+    # Checks
+    if not Image.PIsA(inImage):
+        raise TypeError("inImage MUST be a Python Obit Image")
+    if not Image.PIsA(outImage):
+        raise TypeError("outImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
+
+    # Limit on distance
+    if dist==None:
+        limit = 1.0e20
+    else:
+        limit = dist
+    inImage.List.set("Limit", limit)  # Save on info list
+    inImage.List.set("dropNeg", dropNeg) 
+
+    # Update output header
+    d = outImage.Desc.Dict
+    d['ctype'][2] = 'SPECLOGF'
+    d['crval'][2] = refFreq
+    outImage.Desc.Dict = d;
+    outImage.UpdateDesc(err)
+
+    # Merge CCs to temp cc table
+    tmpCCver = Image.PGetHighVer(inImage, "AIPS CC") + 1;
+    inTab    = inImage.NewTable(Image.READONLY, "AIPS CC", inCCVer, err)
+    noParms  = inTab.Desc.List.Dict["NO_PARMS"][2][0]
+    tmpTab   = inImage.NewTable(Image.WRITEONLY, "AIPS CC", tmpCCver, err, noParms=noParms)
+    TableUtil.PCCMerge(inTab, tmpTab, err)
+    # Fix spectrum if needed
+    if terms:
+        nterm = len(terms)
+        Obit.TableCCUtilFixTSpec(inImage.me, tmpCCver, \
+                                 refFreq, nterm, terms,
+                                 startCC, endCC, err.me)
+        if err.isErr:
+            OErr.printErrMsg(err, "Error Adjusting spectrum of CC Table")
+    # Convert
+    outImage.me = Obit.ImageUtilT2Spec(inImage.me, outImage.me, nTerm, tmpCCver, \
+                                       outCCVer, startCC, endCC, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error Converting image/CC Table")
+    # Delete temporary CC table
+    inImage.ZapTable("AIPS CC", tmpCCver, err)
+    # Do history for spectrum modification
+    pgmName = OSystem.PGetPgmName()
+    outHistory = History.History("history", outImage.List, err)
+    History.POpen(outHistory, History.READWRITE, err)
+    History.PTimeStamp(outHistory," Start Obit "+pgmName,err)
+    if terms:
+        History.PWriteRec(outHistory,-1,pgmName+"  nterm  = "+str(nterm),err)
+        History.PWriteRec(outHistory,-1,pgmName+"  refFreq = "+str(refFreq ),err)
+        History.PWriteRec(outHistory,-1,pgmName+"  terms   = "+str(terms),err)
+    History.PClose(outHistory, err)
+# end PImageT2Spec
+
+def PPolnUnwindCube (RMImage, inQImage, inUImage, outQImage, outUImage, err):
+    """
+    Unrotate the Faraday rotation in a set of Q, U cubes.
+    
+    If the input images are ObitImageMF like images then the first plane 
+    of the output images will be the average of the corrected images.
+    * RMImage   Image with rotation measures to be removed in the 
+                first plane
+    * inQImage  Q Image cube to be unwound
+    * inUImage  U Image cube to be unwound
+    * outQImage output derotated Q image
+    * outUImage output derotated U image
+    * err       Obit error stack object.
+    """
+    ################################################################
+    # Checks
+    if not Image.PIsA(RMImage):
+        raise TypeError("RMImage MUST be a Python Obit Image")
+    if not Image.PIsA(inQImage):
+        raise TypeError("inQImage MUST be a Python Obit Image")
+    if not Image.PIsA(inUImage):
+        raise TypeError("inUImage MUST be a Python Obit Image")
+    if not Image.PIsA(outQImage):
+        raise TypeError("outQImage MUST be a Python Obit Image")
+    if not Image.PIsA(outUImage):
+        raise TypeError("outUImage MUST be a Python Obit Image")
+    if not err.IsA():
+        raise TypeError("err MUST be an OErr")
+
+    Obit.PolnUnwindCube(RMImage.me, inQImage.me, inUImage.me, \
+                            outQImage.me, outUImage.me, err.me)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error Correcting Q, U images for Faraday rotation")
+
+    # Do histories
+    pgmName = OSystem.PGetPgmName()
+    if pgmName==None:
+        pgmName = "Obit"
+    inHistory  = History.History("history", inQImage.List, err)
+    outHistory = History.History("history", outQImage.List, err)
+    History.PCopy(inHistory, outHistory, err)
+    History.POpen(outHistory, History.READWRITE, err)
+    History.PTimeStamp(outHistory," Start Obit "+pgmName,err)
+    if inQImage.FileType=='FITS':
+        History.PWriteRec(outHistory,-1,pgmName+" /RM Image = "+RMImage.FileName, err)
+    elif inQImage.FileType=='AIPS':
+        History.PWriteRec(outHistory,-1,pgmName+" /RM Image = "+RMImage.Aname+"."+RMImage.Aname+"."+str(RMImage.Aseq), err)
+    History.PClose(outHistory, err)
+    inHistory  = History.History("history", inUImage.List, err)
+    outHistory = History.History("history", outUImage.List, err)
+    History.PCopy(inHistory, outHistory, err)
+    History.POpen(outHistory, History.READWRITE, err)
+    History.PTimeStamp(outHistory," Start Obit "+pgmName,err)
+    if inQImage.FileType=='FITS':
+        History.PWriteRec(outHistory,-1,pgmName+" /RM Image = "+RMImage.FileName, err)
+    elif inQImage.FileType=='AIPS':
+        History.PWriteRec(outHistory,-1,pgmName+" /RM Image = "+RMImage.Aname+"."+RMImage.Aname+"."+str(RMImage.Aseq), err)
+    History.PClose(outHistory, err)
+    # end PPolnUnwindCube

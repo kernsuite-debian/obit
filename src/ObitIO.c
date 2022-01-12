@@ -1,6 +1,6 @@
-/* $Id: ObitIO.c 123 2009-09-04 11:26:14Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -745,7 +745,7 @@ ObitIOCode ObitIOFlush (ObitIO *in, ObitErr *err)
  * \param info ObitInfoList with instructions
  * \param err ObitErr for reporting errors.
  */
-void ObitIOCreateBuffer (ofloat **data, olong *size, ObitIO *in, 
+void ObitIOCreateBuffer (ofloat **data, ollong *size, ObitIO *in, 
 			    ObitInfoList *info, ObitErr *err)
 {
   const ObitIOClassInfo *myClass;
@@ -860,6 +860,7 @@ ObitIOCode ObitIOUpdateTables (ObitIO *in, ObitInfoList *info, ObitErr *err)
 
   /* Need to open and close? */
   openClose = !((in->myStatus==OBIT_Active) || (in->myStatus==OBIT_Modified));
+  openClose = openClose && !(in->myStatus==OBIT_Inactive);
 
   /* Open if needed */
   if (openClose) {
@@ -1141,7 +1142,7 @@ void ObitIOClear (gpointer inn)
   if (in->myCal)  in->myCal  = ObitUVCalUnref((ObitUVCal*)in->myCal);
   if (in->myDesc) in->myDesc = ObitUVDescUnref(in->myDesc);
   if (in->mySel)  in->mySel  = ObitUVSelUnref(in->mySel);
-  if (in->tableList) in->tableList = ObitUnref(in->tableList);
+  /*if (in->tableList) in->tableList = ObitUnref(in->tableList); just a copy */
   
  /* unlink parent class members */
   ParentClass = (ObitClassInfo*)(myClassInfo.ParentClass);

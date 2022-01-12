@@ -1,6 +1,6 @@
-/* $Id: ObitUVCalCalibrate.c 144 2009-12-01 15:01:18Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2015                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,9 +26,9 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitUVDesc.h"
 #include "ObitUVCalCalibrate.h"
 #include "ObitUVCalCalibrateDef.h"
-#include "ObitUVDesc.h"
 #include "ObitUVSel.h"
 #include "ObitTableAN.h"
 #include "ObitTableCL.h"
@@ -87,7 +87,7 @@ void ObitUVCalCalibrateInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *desc,
 {
   ObitIOCode retCode;
   ObitUVCalCalibrateS *me;
-  olong size, i;
+  olong size, i, nant;
   gchar *colName="TIME    ";
   gchar *routine="ObitUVCalCalibrateInit";
 
@@ -119,15 +119,14 @@ void ObitUVCalCalibrateInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *desc,
   me->doSNTable   = (in->SNTable!=NULL);
   me->LastRowRead = 0;
   me->numSubA     = in->numSubA;
-  me->numIF       = desc->inaxes[desc->jlocif];
+  if (desc->jlocif>0) me->numIF = desc->inaxes[desc->jlocif];
+  else                me->numIF = 1;
   me->numChan     = desc->inaxes[desc->jlocf];
 
   /* Copy descriptor information */
   me->numAnt    = desc->maxAnt;
   me->numSubA   = desc->numSubA;
   me->DeltaTime = MAX (desc->DeltaTime, sel->InputAvgTime);
-  me->numIF     = desc->inaxes[desc->jlocif];
-  me->numChan   = desc->inaxes[desc->jlocf];
 
   /* Sort/Open calibration table, create row structure, get numPol  */
   if (me->doSNTable) { /* SN */
@@ -135,13 +134,20 @@ void ObitUVCalCalibrateInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *desc,
     retCode = ObitTableUtilSort((ObitTable*)(me->SNTable), colName, FALSE, err);
     if ((retCode!=OBIT_IO_OK) || (err->error)) /* add traceback,return */
       Obit_traceback_msg (err, routine, in->name);
+    nant = ((ObitTableSN*)me->SNTable)->numAnt;
     retCode = 
       ObitTableSNOpen ((ObitTableSN*)(me->SNTable), OBIT_IO_ReadOnly, err);
     if ((retCode!=OBIT_IO_OK) || (err->error)) /* add traceback,return */
       Obit_traceback_msg (err, routine, in->name);
+    ((ObitTableSN*)me->SNTable)->numAnt = 
+      MAX(((ObitTableSN*)me->SNTable)->numAnt, nant);  /* Don't let it get smaller */
     me->SNTableRow = (Obit*)newObitTableSNRow((ObitTableSN*)(me->SNTable));
     me->numPol = ((ObitTableSN*)me->SNTable)->numPol;
     me->numRow = ((ObitTableSN*)me->SNTable)->myDesc->nrow;
+    /* Check number of antennas */
+    Obit_return_if_fail((me->numAnt<=((ObitTableSN*)me->SNTable)->numAnt), err,
+			"%s: SN Table different number of antennas < data %d, %d",
+			routine, ((ObitTableSN*)me->SNTable)->numAnt, me->numAnt);
   } else {  /* CL */
     /* Sort to time order if needed */
     retCode = ObitTableUtilSort((ObitTable*)(me->CLTable), colName, FALSE, err);
@@ -154,6 +160,11 @@ void ObitUVCalCalibrateInit (ObitUVCal *in, ObitUVSel *sel, ObitUVDesc *desc,
     me->CLTableRow = (Obit*)newObitTableCLRow((ObitTableCL*)(me->CLTable));
     me->numPol = ((ObitTableCL*)me->CLTable)->numPol;
     me->numRow = ((ObitTableCL*)me->CLTable)->myDesc->nrow;
+    /* Check number of antennas */
+    Obit_return_if_fail((((ObitTableCL*)me->CLTable)->numAnt<=0) || 
+			(me->numAnt<=((ObitTableCL*)me->CLTable)->numAnt), err,
+			"%s: CL Table different number of antennas < data %d, %d",
+			routine, ((ObitTableCL*)me->CLTable)->numAnt, me->numAnt);
   }
 
   /* Allocate calibration arrays */
@@ -230,10 +241,10 @@ void ObitUVCalCalibrate (ObitUVCal *in, ofloat time, olong ant1, olong ant2,
 			 ofloat *RP, ofloat *visIn, ObitErr *err)
 {
   olong   indxa1, indxa2, asize, iif, ipol, ifreq, ioff, joff, index, 
-    jndxa1, jndxa2, maxpol, idndx, itfilt, corID, iSubA, itemp;
+    jndxa1, jndxa2, maxpol, idndx, itfilt, corID, iSubA, it1, it2;
   gboolean   sombad, somflg, allflg, smpflg, alpflg, allded, ccor;
   gboolean calBad, doDisp, badDsp;
-  ofloat tvr, tvi, tvr1, gr, gi, dgr, dgi, ddgr, ddgi, phase, grd, gid;
+  ofloat tvr, tvi, tvr1, gr, gi, dgr, dgi, ddgr=1.0, ddgi=0.0, phase, grd, gid;
   ofloat  cp, sp, gwt, dphas, rate, arg=0.0, rfact, dfact, fblank = ObitMagicF();
   odouble dbits, dsfact;
   ObitUVCalCalibrateS *me;
@@ -254,8 +265,7 @@ void ObitUVCalCalibrate (ObitUVCal *in, ofloat time, olong ant1, olong ant2,
     corID = 1;
 
   /* Subarray number in data */
-  itemp = (olong)RP[desc->ilocb];
-  iSubA = 1 + (olong)(100.0*(RP[desc->ilocb] -(ofloat)itemp) + 0.1);
+  ObitUVDescGetAnts(desc, RP, &it1, &it2, &iSubA);
 
   /* Integration time if in data and not already specified */
   if (me->DeltaTime<=0.0) {
@@ -943,6 +953,9 @@ static void ObitUVCalCalibrateNewTime (ObitUVCalCalibrateS *in, ofloat time,
       want = want &&
 	((SNTableRow->FreqID == in->FreqID) || (SNTableRow->FreqID <= 0) ||
 	 (in->FreqID <= 0));
+
+      /* Antenna number in range */
+      want = want && (SNTableRow->antNo<=in->numAnt);
       
       /* skip if not wanted */
       if (!want) continue;
@@ -1076,6 +1089,9 @@ static void ObitUVCalCalibrateNewTime (ObitUVCalCalibrateS *in, ofloat time,
       want = want &&
 	((CLTableRow->FreqID == in->FreqID) || (CLTableRow->FreqID <= 0) ||
 	 (in->FreqID <= 0));
+      
+      /* Antenna number in range */
+      want = want && (CLTableRow->antNo<=in->numAnt);
       
       /* skip if not wanted */
       if (!want) continue;
@@ -2603,7 +2619,7 @@ ObitUVCalCalibrateRateDecorr (olong filter, ofloat rate, ofloat TimeI, ObitErr *
     /* 32-tap; decimation factor 4 */
     if (arg  <=  0.5  &&  arg  >  0.01) {
       dp = c32d4[N32D4-1];
-      for (j= N32D4; j>= 0; j--) { /* loop 50 */
+      for (j= N32D4-2; j>= 0; j--) { /* loop 50 */
 	dp *=  arg + c32d4[j];
       } /* end loop L50:   */;
       rfact = 1.0 / dp;

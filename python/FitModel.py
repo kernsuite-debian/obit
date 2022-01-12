@@ -1,27 +1,33 @@
-""" Python Obit FitModel class
+""" 
+Python Obit FitModel class
 
 This class contains a parameterized image model component
 
 FitModel Members with python interfaces:
-name   An optional name for the object.
-type   Model type of the model component:
-   PointMod    Point
-   GaussMod    Eliptical Gaussian
-   USphereMod  Uniform optically thin sphere
-   Background  Background wedge
-Peak   Peak density
-DeltaX "X" (RA) offset (deg) of center from reference position
-DeltaY "Y" (Dec) offset (deg) of center from reference position
-nparm  Number of parameters
-parms  Model parameters, type dependent 
-ePeak   Error in Peak density
-eDeltaX Error in "X" (RA) offset (deg) of center from reference position
-eDeltaY Error in "Y" (Dec) offset (deg) of center from reference position
-eparms  Error in Model parameters, type dependent 
+
+=======  =================================================================
+name     An optional name for the object.
+type     Model type of the model component:
+
+         * PointMod   - Point
+         * GaussMod   - Eliptical Gaussian
+         * USphereMod - Uniform optically thin sphere
+         * Background - Background wedge
+
+Peak     Peak density
+DeltaX   "X" (RA) offset (deg) of center from reference position
+DeltaY   "Y" (Dec) offset (deg) of center from reference position
+nparm    Number of parameters
+parms    Model parameters, type dependent 
+ePeak    Error in Peak density
+eDeltaX  Error in "X" (RA) offset (deg) of center from reference position
+eDeltaY  Error in "Y" (Dec) offset (deg) of center from reference position
+eparms   Error in Model parameters, type dependent 
+=======  =================================================================
 """
-# $Id: FitModel.py 94 2009-04-21 17:09:14Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2007
+#  Copyright (C) 2007,2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -48,7 +54,9 @@ eparms  Error in Model parameters, type dependent
 #-----------------------------------------------------------------------
 
 # Obit FitModel
-import Obit, OErr, ImageMosaic, InfoList, UV, ImageDesc, SkyGeom
+from __future__ import absolute_import
+from __future__ import print_function
+import Obit, _Obit, OErr, ImageMosaic, InfoList, UV, ImageDesc, SkyGeom
 
 # Python shadow class to ObitFitModel class
 
@@ -61,15 +69,29 @@ GaussMod   = 1   # Eliptical Gaussian
 USphereMod = 2   # Uniform optically thin sphere
 Background = 3   # Background wedge
     
-class FitModelPtr :
-    def __init__(self,this):
-        self.this = this
+
+class FitModel(Obit.FitModel):
+    """
+    Python Obit FitModel class
+    
+    This class contains a parameterized image model
+    
+    FitModel Members with python interfaces:
+    """
+    def __init__(self, name="no_name", mtype=PointMod, Peak=0.0, DeltaX=0.0, DeltaY=0.0, parms=[]) :
+        super(FitModel, self).__init__()
+        Obit.CreateFitModel(self.this, name, mtype, Peak, DeltaX, DeltaY, len(parms), parms)
+        self.myClass = myClass
+    def __del__(self, DeleteFitModel=_Obit.DeleteFitModel):
+        if _Obit!=None:
+            DeleteFitModel(self.this)
     def __setattr__(self,name,value):
         if name == "me" :
             # Out with the old
-            Obit.FitModelUnref(Obit.FitModel_me_get(self.this))
+            if self.this!=None:
+                Obit.FitModelUnref(Obit.FitModel_Get_me(self.this))
             # In with the new
-            Obit.FitModel_me_set(self.this,value)
+            Obit.FitModel_Set_me(self.this,value)
             return
         # members
         if name=="type":
@@ -105,10 +127,10 @@ class FitModelPtr :
             return
         self.__dict__[name] = value
     def __getattr__(self,name):
-        if self.__class__ != FitModel:
-            return
+        if not isinstance(self, FitModel):
+            return "Bogus Dudette "+str(self.__class__)
         if name == "me" : 
-            return Obit.FitModel_me_get(self.this)
+            return Obit.FitModel_Get_me(self.this)
         # members
         if name=="type":
             return Obit.FitModelGetType(self.me)
@@ -131,28 +153,15 @@ class FitModelPtr :
         if name=="eparms":
             return Obit.FitModelGeteParms(self.me)
     def __repr__(self):
-        if self.__class__ != FitModel:
-            return
+        if not isinstance(self, FitModel):
+            return "Bogus Dude "+str(self.__class__)
         return "<C FitModel instance> " + Obit.FitModelGetName(self.me)
-#
-class FitModel(FitModelPtr):
-    """ Python Obit FitModel class
-    
-    This class contains a parameterized image model
-    
-    FitModel Members with python interfaces:
-    """
-    def __init__(self, name="no_name", type=PointMod, Peak=0.0, DeltaX=0.0, DeltaY=0.0, parms=[]) :
-        self.this = Obit.new_FitModel(name, type, Peak, DeltaX, DeltaY, len(parms), parms)
-        self.myClass = myClass
-    def __del__(self):
-        if Obit!=None:
-            Obit.delete_FitModel(self.this)
     def cast(self, toClass):
         """ Casts object pointer to specified class
-        
-        self     = object whose cast pointer is desired
-        toClass  = Class string to cast to
+
+        Not sure if this is actually used it will not actually work as is
+        * self     = object whose cast pointer is desired
+        * toClass  = Class string to cast to
         """
         ################################################################
         # Get pointer with type of this class
@@ -162,11 +171,13 @@ class FitModel(FitModelPtr):
     # end cast
     
     def DeconGau (self, ImDesc):
-        """ Deconvolves Beam on an image descriptor from a Gaussian model component
+        """
+        Deconvolves Beam on an image descriptor from a Gaussian model component
         
         Returns a FitModel with the deconvolved values
-        self     = object with Gaussian to be desired
-        ImDesc   = Image Descriptor with Beam
+
+        * self     = object with Gaussian to be desired
+        * ImDesc   = Image Descriptor with Beam
         """
         ################################################################
         try:
@@ -185,12 +196,14 @@ class FitModel(FitModelPtr):
     # end DeconGau
     
     def Print (self, ImDesc, corner, file=None):
-        """ Prepare human readable contents
-
+        """
+        Prepare human readable contents
+        
         Returns string with description of model
-        self     = object with Model to display
-        ImDesc   = Image Descriptor with Beam, etc.
-        corner   = bottom left corner in selected region of image (0-rel)
+
+        * self     = object with Model to display
+        * ImDesc   = Image Descriptor with Beam, etc.
+        * corner   = bottom left corner in selected region of image (0-rel)
         """
         ################################################################
         # Start output string
@@ -261,15 +274,16 @@ class FitModel(FitModelPtr):
     # end class FitModel
     
 def PIsA (inFitModel):
-    """ Tells if input really a Python Obit FitModel
-
-    return True, False (1,0)
-    inFitModel   = Python FitModel object
+    """
+    Tells if input really a Python Obit FitModel
+    
+    return True, False
+    * inFitModel   = Python FitModel object
     """
     ################################################################
-    if inFitModel.__class__ != FitModel:
-        print "Actually",inFitModel.__class__
-        return 0
+    if not isinstance(inFitModel, FitModel):
+        print("Actually",inFitModel.__class__)
+        return False
     # Checks - allow inheritence
-    return Obit.FitModelIsA(inFitModel.me)
+    return Obit.FitModelIsA(inFitModel.me)!=0
     # end PIsA

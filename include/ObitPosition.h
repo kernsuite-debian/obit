@@ -1,4 +1,4 @@
-/* $Id: ObitPosition.h 2 2008-06-10 15:32:27Z bill.cotton $    */
+/* $Id$    */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 1996,1997-2008                                     */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

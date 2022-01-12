@@ -1,4 +1,4 @@
-C     $Id: OBTST.FOR 2 2008-06-10 15:32:27Z bill.cotton $
+C     $Id$
 LOCAL INCLUDE 'INPUT.INC'
 C                                       Declarations for inputs
       INCLUDE 'INCS:PAOOF.INC'

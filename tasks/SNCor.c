@@ -1,8 +1,8 @@
-/* $Id: SNCor.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit Radio interferometry calibration software                     */
 /* applies user-selected corrections to the calibration SN table      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -101,6 +101,7 @@ void doPCOP (ControlInfo *control, ObitTableSNRow *row, ObitErr *err);
 void doPNEG (ControlInfo *control, ObitTableSNRow *row, ObitErr *err);
 void doNORM (ControlInfo *control, ObitTableSNRow *row, ObitErr *err);
 void doRSET (ControlInfo *control, ObitTableSNRow *row, ObitErr *err);
+void doUNBK (ControlInfo *control, ObitTableSNRow *row, ObitErr *err);
 
 
 /* Program globals */
@@ -201,6 +202,7 @@ ObitInfoList* SNCorIn (int argc, char **argv, ObitErr *err)
 
   /* Make default inputs InfoList */
   list = defaultInputs(err);
+  myOutput = defaultOutputs(err);
 
   /* command line arguments */
   /* fprintf (stderr,"DEBUG arg %d %s\n",argc,argv[0]); DEBUG */
@@ -305,7 +307,6 @@ ObitInfoList* SNCorIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -512,7 +513,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
     "Sources", "Stokes", "timeRange", "BIF", "EIF", "subA",
-    "doCalSelect", "Antennas",
+    "doCalSelect", "Antennas", "FreqID", "souCode", "Qual", 
      NULL};
   gchar *routine = "getInputData";
 
@@ -610,7 +611,7 @@ void SNCorHistory (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq", 
-    "Sources", "souCode",  "EditStokes", "BIF", "EIF", 
+    "Sources", "souCode", "Qual", "EditStokes", "BIF", "EIF", 
     "FreqID", "timeRange",  "subA", "Antennas", 
     "solnVer", "corMode", "SNCParm", "PhasParm",
     NULL};
@@ -853,6 +854,8 @@ void SNCorDoCor (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
       doNORM (&control, inRow, err);
     } else if (!strncmp (corMode, "RSET", 4)) {
       doRSET (&control, inRow, err);
+    } else if (!strncmp (corMode, "UNBK", 4)) {
+      doUNBK (&control, inRow, err);
     } else {  /* Unknown */
       Obit_log_error(err, OBIT_Error,
 		     "%s: Unknown corMode: %s", routine, corMode);
@@ -1450,11 +1453,11 @@ void doREFP (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
   if (err->error) return;
 
   fblank = control->fblank;
-  kif = control->SNCorParm[0]-0.5;
+  kif = control->SNCorParm[0]+0.5;
 
   /* Phase rotations */
   if (control->bStoke==1) {
-    bad1 = (row->Real1[kif]!=fblank) || (row->Imag1[kif]!=fblank) || 
+    bad1 = (row->Real1[kif]==fblank) || (row->Imag1[kif]==fblank) || 
       (row->Weight1[kif]<=0.0);
     if (!bad1) {
       rotR1 =  row->Real1[kif];
@@ -1467,7 +1470,7 @@ void doREFP (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
     }
   }
   if ((control->eStoke==2) || (control->bStoke==2)) {
-    bad2 = (row->Real2[kif]!=fblank) || (row->Imag2[kif]!=fblank) || 
+    bad2 = (row->Real2[kif]==fblank) || (row->Imag2[kif]==fblank) || 
       (row->Weight2[kif]<=0.0);
     if (!bad2) {
       rotR2 =  row->Real2[kif];
@@ -1532,14 +1535,14 @@ void doCPRT (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
   if (err->error) return;
 
   fblank = control->fblank;
-  kif = control->SNCorParm[0]-0.5;
+  kif = control->SNCorParm[0]+0.5;
   if (control->bStoke==1) {
-    bad1 = (row->Real1[kif]!=fblank) || (row->Imag1[kif]!=fblank) || 
+    bad1 = (row->Real1[kif]==fblank) || (row->Imag1[kif]==fblank) || 
       (row->Weight1[kif]<=0.0);
   }
   
   if ((control->eStoke==2) || (control->bStoke==2)) {
-    bad2 = (row->Real2[kif]!=fblank) || (row->Imag2[kif]!=fblank) || 
+    bad2 = (row->Real2[kif]==fblank) || (row->Imag2[kif]==fblank) || 
       (row->Weight2[kif]<=0.0);
   }
 
@@ -1548,7 +1551,7 @@ void doCPRT (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
     for (istoke=control->bStoke; istoke<=control->eStoke; istoke++) {
       jif = iif - 1;
       if (istoke==1) {  /* First pol */
-	if ((row->Rate1[jif]!=fblank) && (row->Real1[jif]!=fblank) && (!bad1)) {
+	if ((row->Rate1[kif]!=fblank) && (row->Real1[kif]!=fblank) && (!bad1)) {
 	  row->Rate1[jif]   = row->Rate1[kif];
 	  /* end not blanked */
 	} else {
@@ -1556,7 +1559,7 @@ void doCPRT (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
 	  row->Weight1[jif] = 0.0;
 	}
       } else {       /* second pol */
-	if ((row->Rate2[jif]!=fblank) && (row->Real2[jif]!=fblank) && (!bad2)) {
+	if ((row->Rate2[kif]!=fblank) && (row->Real2[kif]!=fblank) && (!bad2)) {
 	  row->Rate2[jif]   = row->Rate2[kif];
 	  /* end not blanked */
 	} else {
@@ -1586,15 +1589,14 @@ void doCPSN (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
   if (err->error) return;
 
   fblank = control->fblank;
-  kif = control->SNCorParm[0]-0.5;
+  kif = control->SNCorParm[0]+0.5;
   
   /* Loop over IF */
   for (iif=control->BIF; iif<=control->EIF; iif++) {
     for (istoke=control->bStoke; istoke<=control->eStoke; istoke++) {
       jif = iif - 1;
       if (istoke==1) {  /* First pol */
-	if ((row->Real1[jif]!=fblank) && (row->Imag1[jif]!=fblank) &&
-	    (row->Real1[kif]!=fblank) && (row->Imag1[kif]!=fblank)) {
+	if ((row->Real1[kif]!=fblank) && (row->Imag1[kif]!=fblank)) {
 	  row->Real1[jif]   = row->Real1[kif];
 	  row->Imag1[jif]   = row->Imag1[kif];
 	  row->Delay1[jif]  = row->Delay1[kif];
@@ -1608,8 +1610,7 @@ void doCPSN (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
 	  row->Weight1[jif] = 0.0;
 	}
       } else {       /* second pol */
-	if ((row->Real2[jif]!=fblank) && (row->Imag2[jif]!=fblank) &&
-	   (row->Real2[kif]!=fblank) && (row->Imag2[kif]!=fblank)) {
+	if ((row->Real2[kif]!=fblank) && (row->Imag2[kif]!=fblank)) {
 	  row->Real2[jif]   = row->Real2[kif];
 	  row->Imag2[jif]   = row->Imag2[kif];
 	  row->Delay2[jif]  = row->Delay2[kif];
@@ -1793,4 +1794,50 @@ void doRSET (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
   } /* end loop over IF */
  
 } /* end doRSET */
+
+/*----------------------------------------------------------------------- */
+/*  ApplyUNBK corrections to SN table                                    */
+/*  Resets blanked gains to (1,0) zero delay, rate and weight = 1.0;     */
+/*   Input:                                                               */
+/*      control   Contol information                                      */
+/*      row       SN table row to modify                                  */
+/*   Output:                                                              */
+/*      err    Obit Error stack                                           */
+/*----------------------------------------------------------------------- */
+void doUNBK (ControlInfo *control, ObitTableSNRow *row, ObitErr *err)
+{
+  olong iif, istoke, jif;
+  ofloat fblank = control->fblank;
+  if (err->error) return;
+
+  /* Loop over IF */
+  for (iif=control->BIF; iif<=control->EIF; iif++) {
+    jif = iif - 1;
+    for (istoke=control->bStoke; istoke<=control->eStoke; istoke++) {
+	if (istoke==1) {  /* First pol */
+	  if ((row->Real1[jif]==fblank) || (row->Imag1[jif]==fblank) || (row->Weight1[jif]<0.0)) {
+	    row->IFR = 0.0;
+	    row->MBDelay1     = 0.0;
+	    row->Real1[jif]   = 1.0;
+	    row->Imag1[jif]   = 0.0;
+	    row->Delay1[jif]  = 0.0;
+	    row->Rate1[jif]   = 0.0;
+	    row->Weight1[jif] = 1.0;
+	    row->RefAnt1[jif] = 1;
+	  }
+	} else {       /* second pol */
+	  if ((row->Real2[jif]==fblank) || (row->Imag2[jif]==fblank) || (row->Weight2[jif]<0.0)) {
+	    row->MBDelay2     = 0.0;
+	    row->Real2[jif]   = 1.0;
+	    row->Imag2[jif]   = 0.0;
+	    row->Delay2[jif]  = 0.0;
+	    row->Rate2[jif]   = 0.0;
+	    row->Weight2[jif] = 1.0;
+	    row->RefAnt2[jif] = 1;
+	  }
+	}
+    } /* end loop over Stokes */
+  } /* end loop over IF */
+ 
+} /* end doUNBK */
 

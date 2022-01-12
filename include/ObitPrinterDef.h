@@ -1,6 +1,6 @@
-/* $Id:  $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2009                                               */
+/*;  Copyright (C) 2009,2012                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -51,6 +51,8 @@ FILE *outStream;
 olong LinesPerPage;
 /** Number of pages */
 olong nPages;
+/** Maximum number of pages */
+olong pageLimit;
 /** Number of lines on current page */
 olong nLines;
 /* First title line */

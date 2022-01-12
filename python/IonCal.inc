@@ -1,8 +1,8 @@
-/* $Id: IonCal.inc 2 2008-06-10 15:32:27Z bill.cotton $  */  
+/* $Id$  */  
 /*--------------------------------------------------------------------*/
 /* Swig module description for Ionospheric calibration utilities      */
 /*                                                                    */
-/*;  Copyright (C) 2007-2008                                          */
+/*;  Copyright (C) 2007-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */

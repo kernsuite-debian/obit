@@ -1,6 +1,6 @@
-/* $Id: ObitAIPSCat.c 194 2010-05-27 14:23:22Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -33,6 +33,7 @@
 #include "ObitAIPSCat.h"
 #include "ObitTableDesc.h"
 #include "ObitFile.h"
+#include "ObitSystem.h"
 
 /*-------- ObitIO: Merx mollis mortibus nuper ------------------*/
 /**
@@ -1005,13 +1006,15 @@ void ObitAIPSCatGetTable (ObitTableList *tableList, gchar *buffer,
   g_assert(ObitErrIsA(err)); 
   if (err->error) return;  /* existing error condition */
   g_assert(buffer!=NULL); 
-
+  ObitErrLog(err); /* print pending messages */
   /* loop over AIPS header */
   for (j = 0; j<myDHDR.KIEXTN; j++) {
     /* table name */
     g_memmove (&name[5], (gchar*)&header[myDHDR.KHEXT+j], 2);
 
     if (header[myDHDR.KIVER+j] > 0) { /* occupied? */
+      /* Crazy value? */
+      if (header[myDHDR.KIVER+j]>4096) header[myDHDR.KIVER+j] = 1;
       /* Loop over possibilities */
       for (k = 1; k<=header[myDHDR.KIVER+j]; k++) {
 	/* not all things in AIPS header are tables 
@@ -1027,7 +1030,8 @@ void ObitAIPSCatGetTable (ObitTableList *tableList, gchar *buffer,
 	if (exist ) {
 	  ver = k;
 	  ObitTableListPut (tableList, name, &ver, NULL, err);
-	  if (err->error) Obit_traceback_msg (err, routine, tableList->name);
+	  /* There's nothing to go wrong here (but seems to anyway) */
+	  ObitErrClear(err);
 	}
       } /* end loop over possibilities */
     }
@@ -1090,7 +1094,7 @@ void ObitAIPSCatSetTable (ObitTableList *tableList, gchar *buffer,
 	Obit_log_error(err, OBIT_Error, 
 		       "Table name %s not in AIPSish for %s", 
 		       name, tableList->name);
-	if (name) g_free(name); name = NULL;   /* clean up */
+	if (name) {g_free(name);} name = NULL;   /* clean up */
 	return;
     }
     
@@ -1112,7 +1116,7 @@ void ObitAIPSCatSetTable (ObitTableList *tableList, gchar *buffer,
 	Obit_log_error(err, OBIT_Error, 
 		       "No space for more Tables in AIPS header for %s", 
 		       tableList->name);
-	if (name) g_free(name); name = NULL;  /* clean up */
+	if (name) {g_free(name);} name = NULL;  /* clean up */
 	return;
       }
 
@@ -1121,7 +1125,7 @@ void ObitAIPSCatSetTable (ObitTableList *tableList, gchar *buffer,
       CopyDeeNull ((gchar*)&header[myDHDR.KHEXT+freeOne], &name[5], 2);
     }
 
-    if (name) g_free(name); name = NULL;   /* clean up */
+    if (name) {g_free(name);} name = NULL;   /* clean up */
   } /* end loop over ObitTableList */
 
 } /* end ObitAIPSCatSetTable */
@@ -1144,7 +1148,7 @@ ObitAIPSCatTableGetDesc (ObitTableDesc *desc,
 			 AIPSint controlBlock[256],
 			 AIPSint record[256], ObitErr *err)
 {
-  olong i, j, itemp, atype, alen, physical, off;
+  olong i, j, itemp, atype, alen, off; /* physical, */
   ObitInfoType otype;
 
   /* error tests */
@@ -1235,7 +1239,7 @@ ObitAIPSCatTableGetDesc (ObitTableDesc *desc,
   /* sanity check to be sure AIPS notion of structure is the same as Obit's */
   /* Check correspondance between logical and physical */
   for (i=0; i<desc->nfield; i++) {
-    physical = controlBlock[128+i];
+    /* physical = controlBlock[128+i];*/
     /* test Obit Offset against AIPS */
     if (desc->order[i] != controlBlock[128+i]) {
       Obit_log_error(err, OBIT_Error, 
@@ -1283,10 +1287,10 @@ void ObitAIPSCatTableSetDesc (ObitTableDesc *desc, gboolean init,
 			      AIPSint controlBlock[256],
 			      AIPSint record[256], ObitErr *err)
 {
-  olong i, len, more, itemp;
+  olong i, len, more, itemp, ll;
   olong nrps, nspr=0, ns, nr, off;
   olong AIPStype;
-  gchar  tt[4];
+  gchar  tt[4], *pgmName;
   gchar   *blank = "                                                  ";
   gchar *routine = " ObitAIPSCatTableSetDesc";
 
@@ -1321,7 +1325,12 @@ void ObitAIPSCatTableSetDesc (ObitTableDesc *desc, gboolean init,
 
     /* Creator info */
     ObitAIPSCatUpdateAccess(&controlBlock[10]); /* date/time */
-    g_memmove ((gchar*)&controlBlock[28], "Obit  ", 6); /* Creator */
+    pgmName = ObitSystemGetPgmName ();
+    ll = MIN (12, strlen(pgmName));
+    g_memmove ((gchar*)&controlBlock[28], pgmName, ll); /* Creator */
+
+    /* Number of logical records for expansion */
+    controlBlock[41] = 100;
 
     /* "Record" for column types and data pointers */
     controlBlock[44] = 2;
@@ -1426,7 +1435,7 @@ void ObitAIPSCatTableSetDesc (ObitTableDesc *desc, gboolean init,
   controlBlock[7] = desc->lrowIO / sizeof(AIPSint);
 
   /* Rows per sector or sectors per row */
-  if (desc->lrow<AIPS_NBPS) 
+  if (desc->lrow<=AIPS_NBPS) 
     controlBlock[8] = nrps;
   else /* sectors per row */
     controlBlock[8] = -nspr;
@@ -1436,7 +1445,9 @@ void ObitAIPSCatTableSetDesc (ObitTableDesc *desc, gboolean init,
 
   /* Last access */
   ObitAIPSCatUpdateAccess(&controlBlock[32]);
-  g_memmove ((gchar*)&controlBlock[38], "Obit  ", 6); 
+  pgmName = ObitSystemGetPgmName ();
+  ll = MIN (12, strlen(pgmName));
+  g_memmove ((gchar*)&controlBlock[38], pgmName, ll); /* Creator */
 
   /* sort order (logical column numbers */
   itemp = abs (desc->sort[0]) % 256;

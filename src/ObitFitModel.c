@@ -1,6 +1,6 @@
-/* $Id: ObitFitModel.c 2 2008-06-10 15:32:27Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006                                               */
+/*;  Copyright (C) 2006,2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -221,6 +221,7 @@ ObitFitModel* ObitFitModelCreate (gchar* name, ObitFitModelCompType type,
   out->Peak   = Peak;
   out->DeltaX = DeltaX;
   out->DeltaY = DeltaY;
+  out->maxSize = -1.0;
 
   /* initialize errors to -1.0 */
   for (i=0; i<nparm; i++) out->eparms[i] =-1.0;

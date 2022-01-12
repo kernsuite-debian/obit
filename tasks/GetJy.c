@@ -1,7 +1,7 @@
-/* $Id: GetJy.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit Radio interferometry calibration software                     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -38,6 +38,7 @@
 #include "ObitTableSN.h"
 #include "ObitTableSU.h"
 #include "ObitTableSUUtil.h"
+#include "ObitSpectrumFit.h"
 
 /* internal prototypes */
 /* Get inputs */
@@ -70,10 +71,22 @@ void  ReadSN (ObitTableSN* SNTab, ObitUV *inData, olong CalSrc,
 void DetFlux (olong maxIF, olong maxAnt, olong maxSou, ofloat *offCnt, ofloat *offCnt2, 
 	      ofloat *offSum, ofloat *offSum2, olong *offCalSou, ofloat *oldFlux, 
 	      ofloat *souFlux, ofloat *souErr, ObitErr* err);
+/* Fit calibrator spectra */
+void FitSpec (ObitUV* inData, gchar **source, olong maxIF, olong maxSou, olong nterm, 
+	      ofloat *souFlux, ofloat *souErr, 
+	      ofloat *newFlux, ObitErr* err);
 /* Update SN table */
 void UpdateSN (ObitTableSN* SNTab, olong maxIF, olong maxAnt, olong maxSou, 
 	       olong BIF, olong EIF,
 	       olong *offCalSou, ofloat *oldFlux, ofloat *souFlux,ObitErr* err);
+/* Determine alpha median average  */
+static ofloat MedianAvg (ollong n, ofloat *value, ofloat alpha);
+/* Determine straight average  */
+static ofloat StraightAvg (ollong n, ofloat *value);
+
+/* Determine sigma for Median */
+static ofloat MedianSigma (ollong n, ofloat *value, ofloat mean, ofloat alpha);
+
 
  
 /* Program globals */
@@ -587,7 +600,7 @@ void GetJyHistory (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq", 
     "Sources", "souCode", "Qual", "calSour", "calCode", "BIF", "EIF",
-    "FreqID", "timeRange",  "subA", "Antennas",  "solnVer",
+    "FreqID", "timeRange",  "subA", "Antennas",  "solnVer", "nTerm",
     NULL};
   gchar *routine = "GetJyHistory";
 
@@ -629,11 +642,10 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
   ObitTableSU *SUTab=NULL;
   ObitTableSN *SNTab=NULL;
   ObitTableSURow *row=NULL;
-  ObitUVDesc *desc;
   ofloat *offCnt=NULL, *offCnt2=NULL, *offSum=NULL, *offSum2=NULL;
-  ofloat *oldFlux=NULL, *souFlux=NULL, *souErr=NULL;
+  ofloat *oldFlux=NULL, *souFlux=NULL, *newFlux=NULL, *souErr=NULL;
   olong *offCalSou=NULL;
-  olong ver, offset;
+  olong ver, offset, nterm=2;
   oint numIF=1, numPol=1;
   ObitIOCode retCode = OBIT_IO_SpecErr;
   olong i, j, isou, irow, lsou, nsou, lcal, ncal,iif,  bif, eif;
@@ -642,9 +654,9 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
   gchar *Sources=NULL, *souCode=NULL, *calSour=NULL, *calCode=NULL;
   olong *Antennas=NULL;
   ofloat timeRange[2];
-  olong Qual, maxAnt, maxSou, maxIF, nant, FreqID=0, BIF=1, EIF=0, subA=0, solnVer=0;
+  olong Qual, maxAnt, maxSou=0, maxIF, nant, FreqID=0, BIF=1, EIF=0, subA=0, solnVer=0;
   gchar tempName[101]; /* should always be big enough */
-  gchar *blank = "        ";
+  gchar *blank = "        ", **source=NULL;
   gchar *routine = "GetJyUpdate";
 
   /* error checks */
@@ -653,7 +665,6 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
   g_assert (ObitUVIsA(inData));
 
   /* Get control parameters */
-  desc = inData->myDesc;
   ObitInfoListGetP(inData->info, "Sources",  &type, dim, (gpointer)&Sources);
   /* Count number of actual sources */
   lsou = dim[0];
@@ -682,6 +693,7 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
   ObitInfoListGetTest(inData->info, "subA",       &type, dim, &subA);
   ObitInfoListGetTest(inData->info, "FreqID",     &type, dim, &FreqID);
   ObitInfoListGetTest(inData->info, "solnVer",    &type, dim, &solnVer);
+  ObitInfoListGetTest(inData->info, "nTerm",      &type, dim, &nterm);
   if (calCode==NULL) calCode = blank;
   if (souCode==NULL) souCode = blank;
 
@@ -736,10 +748,12 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
   offSum2 = g_malloc0(maxAnt*maxIF*maxSou*sizeof(ofloat));
   oldFlux = g_malloc0(maxIF*maxSou*sizeof(ofloat));
   souFlux = g_malloc0(maxIF*maxSou*sizeof(ofloat));
+  newFlux = g_malloc0(maxIF*maxSou*sizeof(ofloat));
   souErr  = g_malloc0(maxIF*maxSou*sizeof(ofloat));
   offCalSou= g_malloc0(maxSou*sizeof(olong));
+  source   = g_malloc0(maxSou*sizeof(gchar*));
 
-  /* Get previous fluxes */
+  /* Get previous fluxes, source names */
   irow = 0;
   retCode = OBIT_IO_OK;
   while (retCode==OBIT_IO_OK) {
@@ -754,6 +768,9 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
       if (row->IFlux[iif]==0.0)  oldFlux[offset+iif] = 1.0;
       else oldFlux[offset+iif] = row->IFlux[iif];
     }
+    offset = MAX (0, row->SourID-1);
+    source[offset] = g_strdup(row->Source);
+    source[offset][15] = 0;  /* Terminate */
   } /* end loop looking up max source ID */
 
   /* Close SU table - avoid conflict in ReadSN */
@@ -781,6 +798,10 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
 	   offCalSou, oldFlux, souFlux, souErr, err);
   if (err->error) goto cleanup;
 
+  /* Fit calibrator spectra */
+  FitSpec (inData, source, maxIF, maxSou, nterm, souFlux, souErr, newFlux, err);
+  if (err->error) goto cleanup;
+
   /* Open SU table */
   retCode = ObitTableSUOpen (SUTab, OBIT_IO_ReadWrite, err);
   if ((retCode != OBIT_IO_OK) || (err->error)) goto cleanup;
@@ -799,7 +820,7 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
     /* Update flux density  */
     for (iif=bif-1; iif<eif; iif++) {
       offset = MAX (0, row->SourID-1) * maxIF;
-      row->IFlux[iif] = souFlux[offset+iif];
+      row->IFlux[iif] = newFlux[offset+iif];
 
       /* Message */
       /* Get source name */
@@ -811,11 +832,13 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
       }
       if (souFlux[offset+iif]>0.0) {
 	Obit_log_error(err, OBIT_InfoErr,
-		       "%s IF %d Flux %8.3f +/- %8.3f Jy",
-		       tempName, iif+1, souFlux[offset+iif], souErr[offset+iif]);
+		       "%s IF %d Flux %8.3f +/- %8.3f Jy, Smoothed %8.3f Jy",
+		       tempName, iif+1, souFlux[offset+iif], souErr[offset+iif], 
+		       newFlux[offset+iif]);
       } else { /* No solution */
 	Obit_log_error(err, OBIT_InfoWarn,
-		       "%s IF %d No Flux density measured", tempName, iif+1);
+		       "%s IF %d No Flux density measured, Smoothed %8.3f Jy", 
+		       tempName, iif+1, newFlux[offset+iif]);
       }
     } /* end IF loop */
 
@@ -827,7 +850,7 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
 
   /* Update SN table */
   UpdateSN (SNTab, maxIF, maxAnt, maxSou, bif, eif, offCalSou, 
-	    oldFlux, souFlux, err);
+	    oldFlux, newFlux, err);
   if (err->error) goto cleanup;
 
   /* Cleanup */
@@ -836,20 +859,28 @@ ObitTableSN* GetJyUpdate (ObitUV* inData, ObitErr* err)
   retCode = ObitTableSUClose (SUTab, err);
   row = ObitTableSURowUnref (row);
   SUTab = ObitTableSUUnref (SUTab);
-  if (offCnt)  g_free(offCnt);
-  if (offCnt2) g_free(offCnt2);
-  if (offSum)  g_free(offSum);
-  if (offSum2) g_free(offSum2);
+  if (offCnt)    g_free(offCnt);
+  if (offCnt2)   g_free(offCnt2);
+  if (offSum)    g_free(offSum);
+  if (offSum2)   g_free(offSum2);
   if (oldFlux)   g_free(oldFlux);
   if (souFlux)   g_free(souFlux);
+  if (newFlux)   g_free(newFlux);
   if (souErr)    g_free(souErr);
   if (offCalSou) g_free(offCalSou);
+  if (source) {
+    for (isou=0; isou<maxSou; isou++) {
+      if (source[isou]) g_free (source[isou]);
+    }
+    g_free (source);
+  }
   if (err->error) Obit_traceback_val (err, routine, inData->name, SNTab);
   return SNTab;
 } /* end GetJyUpdate  */
 
 /*----------------------------------------------------------------------- */
 /*  Accumulate selected amplitude entries in SN table                     */
+/*  Uses MedianAvg w/ alpha=0.5 for robust averaging                      */
 /*   Input:                                                               */
 /*     SNTab     SNTable to process                                       */
 /*     inData    UV data with which SNTab associated, will modify selector*/
@@ -897,8 +928,12 @@ void  ReadSN (ObitTableSN* SNTab, ObitUV *inData, olong CalSou,
   ObitIOCode retCode;
   ObitTableSNRow *SNrow=NULL;
   ObitUVSel *sel;
-  olong iif, irow, offset, offset2, numPol;
-  gboolean want;
+  olong iif, irow, offset, offset2, numPol, ii, jj, isou, iant;
+  ollong nmedn, i, size;
+  ofloat **store1=NULL, **store2=NULL;
+  ofloat alpha=0.5; /* median alpha */
+  olong maxCells = 1000;  /* Maximum number of time cells */
+  gboolean want, exceeded=FALSE;
   ofloat amp, fblank = ObitMagicF();
   gchar *routine = "ReadSN";
  
@@ -919,6 +954,15 @@ void  ReadSN (ObitTableSN* SNTab, ObitUV *inData, olong CalSou,
   SNrow = newObitTableSNRow (SNTab);
   ObitTableSNSetRow (SNTab, SNrow, err);
   numPol  = SNTab->numPol;  /* Number of polarizations */
+
+  /* Create working storage arrays, maxCells cells of maxSou*maxIF*maxAnt */
+  size = maxSou*maxIF*maxAnt;
+  store1 = g_malloc0(size*sizeof(ofloat*)); 
+  if (numPol>1) store2 = g_malloc0(size*sizeof(ofloat*));
+  for (i=0; i<size; i++) {
+    store1[i] = g_malloc0(maxCells*sizeof(ofloat));
+    if (numPol>1) store2[i] = g_malloc0(maxCells*sizeof(ofloat));
+  }
 
   /* Loop over table */
   for (irow=1; irow<=SNTab->myDesc->nrow; irow++) {
@@ -955,31 +999,83 @@ void  ReadSN (ObitTableSN* SNTab, ObitUV *inData, olong CalSou,
     offset2 = MAX (0, SNrow->SourID-1) * maxIF;
     for (iif=BIF-1; iif<EIF; iif++) {
       if ((SNrow->Weight1[iif]>0.0) && (SNrow->Real1[iif]!=fblank)) {
-	amp = 1.0 / (SNrow->Real1[iif]*SNrow->Real1[iif] + SNrow->Imag1[iif]*SNrow->Imag1[iif]);
-	if (oldFlux[offset2+iif]>0.0) amp *= oldFlux[offset2+iif];
-	offCnt[offset+iif]++;
-	offSum[offset+iif] += amp;
+	if (offCnt[offset+iif]<maxCells) { /* Is there room? */
+	  amp = 1.0 / (SNrow->Real1[iif]*SNrow->Real1[iif] + SNrow->Imag1[iif]*SNrow->Imag1[iif]);
+	  if (oldFlux[offset2+iif]>0.0) amp *= oldFlux[offset2+iif];
+	  ii = offset+iif;         /* source, IF, ant index */
+	  jj = offCnt[offset+iif]; /* time cell index */
+	  offCnt[offset+iif]++;
+	  store1[ii][jj] = amp;
+	} else exceeded = TRUE;  /* exceeded arrays */
       }
       /* Second poln? */
       if ((numPol>1) && (SNrow->Weight2[iif]>0.0) && (SNrow->Real2[iif]!=fblank)) {
-	amp = 1.0 / (SNrow->Real2[iif]*SNrow->Real2[iif] + SNrow->Imag2[iif]*SNrow->Imag2[iif]);
-	if (oldFlux[offset2+iif]>0.0) amp *= oldFlux[offset2+iif];
-	offCnt2[offset+iif]++;
-	offSum2[offset+iif] += amp;
+	if (offCnt2[offset+iif]<maxCells) { /* Is there room? */
+	  amp = 1.0 / (SNrow->Real2[iif]*SNrow->Real2[iif] + SNrow->Imag2[iif]*SNrow->Imag2[iif]);
+	  if (oldFlux[offset2+iif]>0.0) amp *= oldFlux[offset2+iif];
+	  ii = offset+iif;          /* source, IF, ant index */
+	  jj = offCnt2[offset+iif]; /* time cell index */
+	  offCnt2[offset+iif]++;
+	  store2[ii][jj] = amp;
+	} else exceeded = TRUE;  /* exceeded arrays */
       }
     } /* end IF loop */
    
   } /* end loop over table */
 
+  /* Median alpha averaging */
+  for (isou=0; isou<maxSou; isou++) {
+    if (!ObitUVSelWantSour (sel, isou+1)) continue;    
+    for (iant=0; iant<maxAnt; iant++) {
+      for (iif=BIF-1; iif<EIF; iif++) {
+	offset = isou*maxAnt*maxIF + iant*maxIF;
+	if (offCnt[offset+iif]>3) {
+	  nmedn = offCnt[offset+iif];
+	  offSum[offset+iif] = MedianAvg(nmedn, store1[offset+iif], alpha);
+	  offCnt[offset+iif] = 1;
+	} else {
+	  nmedn = offCnt[offset+iif];
+	  offSum[offset+iif] = StraightAvg(nmedn, store1[offset+iif]);
+	  offCnt[offset+iif] = MIN(1,offCnt[offset+iif]);
+	}
+	if ((numPol>1) && (offCnt2[offset+iif]>3)) {
+	  nmedn = offCnt2[offset+iif];
+	  offSum2[offset+iif] = MedianAvg(nmedn, store2[offset+iif], alpha);
+	  offCnt2[offset+iif] = 1;
+	} else {
+	  nmedn = offCnt2[offset+iif];
+	  offSum2[offset+iif] = StraightAvg(nmedn, store2[offset+iif]);
+	  offCnt2[offset+iif] =  MIN(1,offCnt2[offset+iif]);
+	}
+      } /* end IF loop */
+    } /* end antenna loop */
+  } /* end source loop */
+
+  /* Did I blow core? */
+  if (exceeded) {
+	Obit_log_error(err, OBIT_InfoErr,
+		       "%s Exceeded maximum number of time samples", routine);
+  }
+
  cleanup:
   SNrow = ObitTableSNRowUnref(SNrow);
   retCode = ObitTableSNClose (SNTab, err);
   if (err->error) Obit_traceback_msg (err, routine, SNTab->name);
+  /* Free working storage arrays*/
+  size = maxSou*maxIF*maxAnt;
+  for (i=0; i<size; i++) {
+    if (store1[i]) g_free(store1[i]);
+    if (store2 && store2[i]) g_free(store2[i]);
+  }
+  if (store1) g_free(store1);
+  if (store2) g_free(store2);
+
 } /* end ReadSN */
 
 /*----------------------------------------------------------------------- */
 /*  Determine flux densities and errors                                   */
 /* Adapted from AIPSish GetJY.FOR/GJYFLX                                  */
+/*  Uses MedianAvg w/ alpha=0.5 for robust averaging                      */
 /*   Input:                                                               */
 /*     maxIF     Maximum IF number in accumulators                        */
 /*     maxAnt    Maximum antenna number in accumulators                   */
@@ -993,16 +1089,19 @@ void  ReadSN (ObitTableSN* SNTab, ObitUV *inData, olong CalSou,
 /*   Output:                                                              */
 /*     souFlux   Derived flux density  (source, IF)                       */
 /*     souErr    Error in derived flux density  (source, IF)              */
-/*      err     Obit Error stack                                          */
+/*      err      Obit Error stack                                         */
 /*----------------------------------------------------------------------- */
 void DetFlux (olong maxIF, olong maxAnt, olong maxSou, ofloat *offCnt, ofloat *offCnt2, 
 	      ofloat *offSum, ofloat *offSum2, olong *offCalSou, ofloat *oldFlux, 
 	      ofloat *souFlux, ofloat *souErr, ObitErr* err)
 {
   olong isou, iant, iif;
-  olong offset, offset2, offset3, count;
+  olong offset, offset2, offset3;
   ofloat *rcal1=NULL, *rcal2=NULL, *ical1=NULL, *ical2=NULL;
-  ofloat sum, sum2, fluxd, rms;
+  ofloat fluxd, rms;
+  ollong count, size;
+  ofloat *store=NULL;
+  ofloat alpha=0.5; /* median alpha */
   gchar *routine = "DetFlux";
 
   /* error checks */
@@ -1045,47 +1144,49 @@ void DetFlux (olong maxIF, olong maxAnt, olong maxSou, ofloat *offCnt, ofloat *o
     goto cleanup;
   }
 
-  /* Average receiver calibration factors */
-    for (iif=0; iif<maxIF; iif++) {
-      for (iant=0; iant<maxAnt; iant++) {
-	offset2 = iant*maxIF;
-	if (ical1[offset2+iif]>0.0) rcal1[offset2+iif] /= ical1[offset2+iif];
-	if (ical2[offset2+iif]>0.0) rcal2[offset2+iif] /= ical2[offset2+iif];
-      } /* end loop over antenna */
-    } /* end loop over IF */
+  /* Average receiver calibration factors - 
+     ical should be 0 or 1 here so not really necessary any more */
+  for (iif=0; iif<maxIF; iif++) {
+    for (iant=0; iant<maxAnt; iant++) {
+      offset2 = iant*maxIF;
+      if (ical1[offset2+iif]>0.0) rcal1[offset2+iif] /= ical1[offset2+iif];
+      if (ical2[offset2+iif]>0.0) rcal2[offset2+iif] /= ical2[offset2+iif];
+    } /* end loop over antenna */
+  } /* end loop over IF */
  
+  /* Storage arrays for robust average/RMS */
+  size = maxAnt*2;
+  store = g_malloc0(size*sizeof(ofloat)); 
 
   /* Loop over sources - compute source fluxes and RMSes */
   for (isou=0; isou<maxSou; isou++) {
     if (offCalSou[isou]!=1) continue;
     for (iif=0; iif<maxIF; iif++) {
       count = 0;
-      sum = sum2 = 0.0;
       offset2 = isou*maxIF;
       for (iant=0; iant<maxAnt; iant++) {
 	offset  = isou*maxAnt*maxIF + iant*maxIF;
 	offset3 = iant*maxIF;
 	/* First poln */
 	if ((offCnt[offset+iif]>0) && (ical1[offset3+iif]>0.0)) {
-	  count++;
 	  fluxd = rcal1[offset3+iif] * (offSum[offset+iif] / offCnt[offset+iif]);
-	  sum  += fluxd;
-	  sum2 += fluxd*fluxd;
+	  store[count] = fluxd;
+	  count++;
 	}
 	/* Second poln */
 	if ((offCnt2[offset+iif]>0) && (ical2[offset3+iif]>0.0)) {
-	  count++;
 	  fluxd = rcal2[offset3+iif] * (offSum2[offset+iif] / offCnt2[offset+iif]);
-	  sum  += fluxd;
-	  sum2 += fluxd*fluxd;
+	  store[count] = fluxd;
+	  count++;
 	}
       } /* end loop over antenna */
 
       /* Compute  source average, RMS */
       fluxd = 0.0;
       rms   = -1.0;
-      if (count>1) fluxd = sum/count;
-      if (count>3) rms = sqrt (((sum2/count) - fluxd*fluxd) / (count-1));
+      if (count>3) fluxd = MedianAvg(count, store, alpha);
+      else fluxd = StraightAvg(count, store);
+      if (count>5) rms   = MedianSigma(count, store, fluxd, alpha);
       /* Save values */
       souFlux[offset2+iif] = fluxd;
       souErr[offset2+iif]  = rms;
@@ -1094,6 +1195,7 @@ void DetFlux (olong maxIF, olong maxAnt, olong maxSou, ofloat *offCnt, ofloat *o
 
   /* Cleanup */
  cleanup:
+  if (store) g_free(store);
   if (rcal1) g_free(rcal1);
   if (ical1) g_free(ical1);
   if (rcal2) g_free(rcal2);
@@ -1101,6 +1203,107 @@ void DetFlux (olong maxIF, olong maxAnt, olong maxSou, ofloat *offCnt, ofloat *o
   if (err->error) Obit_traceback_msg (err, routine, routine);
 } /* end DetFlux */
 
+/*----------------------------------------------------------------------- */
+/*  Least Squares fit to calibrator spectra                               */
+/*  Spectra are fitted to each calibrator and the IF values in newFlux    */
+/*  are those determined from the fit.                                    */
+/*  If nterm<1 then no fitting is done and souFlux values are copied      */
+/*  to newFlux                                                            */
+/*   Input:                                                               */
+/*     inData    ObitUV with SU/SN tables to update                       */
+/*     source    Array of source names                                    */
+/*     maxIF     Maximum IF number in accumulators                        */
+/*     maxSou    Maximum source ID in accumulators                        */
+/*     ntern     Number of terms in the spectral fit                      */
+/*     souFlux   Derived flux density  (source, IF)                       */
+/*     souErr    Error in derived flux density  (source, IF)              */
+/*   Output:                                                              */
+/*     newFlux   Derived flux density  (source, IF)                       */
+/*      err      Obit Error stack                                         */
+/*----------------------------------------------------------------------- */
+void FitSpec (ObitUV* inData, gchar **source, 
+	      olong maxIF, olong maxSou, olong nterm, 
+	      ofloat *souFlux, ofloat *souErr, float *newFlux, 
+	      ObitErr* err)
+{
+  olong isou, iif, iterm, offset2, count;
+  ofloat *flux=NULL, *sigma=NULL, *fitVal=NULL;
+  odouble *freq=NULL, lnu, lll, arg;
+
+  /* error checks */
+  if (err->error) return;
+  if (maxIF<=0) return;
+  if (maxSou<=0) return;
+  /* Copy souFlux to newFlux in case */
+  for (isou=0; isou<maxSou; isou++) {
+    for (iif=0; iif<maxIF; iif++) {
+      offset2 = isou*maxIF;
+      newFlux[offset2+iif] = souFlux[offset2+iif];
+    }
+  }
+  /* Anything to do? */
+  if (nterm<=0) return;
+
+  /* Work arrays */
+  flux  = g_malloc0(maxIF*sizeof(ofloat));
+  sigma = g_malloc0(maxIF*sizeof(ofloat));
+  freq  = g_malloc0(maxIF*sizeof(odouble));
+
+  /* Loop over sources */
+  for (isou=0; isou<maxSou; isou++) {
+    /* Collect data to fit */
+    count = 0;
+    for (iif=0; iif<maxIF; iif++) {
+      offset2 = isou*maxIF;
+      if (souFlux[offset2+iif]>0.0) {
+	freq[count]  = inData->myDesc->freqIF[iif];
+	flux[count]  = souFlux[offset2+iif];
+	sigma[count] = souErr[offset2+iif];
+	count++;
+      }
+    }
+
+    /* Anything? */
+    if (count<1) continue;
+
+    nterm = MIN (nterm, count);
+    Obit_log_error(err, OBIT_InfoErr, "Smoothing by fitting %d term spectrum", nterm);
+
+    /* Fit */
+    fitVal = ObitSpectrumFitSingle(count, nterm, freq[0], freq, flux, sigma, FALSE, err);
+
+    /* Tell results */
+    if (nterm==1) {
+      Obit_log_error(err, OBIT_InfoErr,
+		     "Source %s Flux density=%8.3f(%8.3f) Jy Chi^2= %8.3f", 
+		     source[isou], fitVal[0], fitVal[nterm], fitVal[nterm*2]);
+    }
+
+    if (nterm>=2) {
+      Obit_log_error(err, OBIT_InfoErr,
+		     "Source %s Flux density=%8.3f(%5.3f) Jy, SI=%5.3f(%5.3f) Jy Chi^2=%5.1f", 
+		     source[isou], fitVal[0], fitVal[nterm], fitVal[1], 
+		     fitVal[nterm+1], fitVal[nterm*2]);
+    }
+
+    /* Calculate new */
+    for (iif=0; iif<maxIF; iif++) {
+      offset2 = isou*maxIF;
+      lnu = log (inData->myDesc->freqIF[iif]/inData->myDesc->freqIF[0]);
+      lll = lnu; arg = 0.0;
+      for (iterm=1; iterm<nterm; iterm++) {
+	arg += fitVal[iterm] * lll;
+	lll *= lnu;
+      }
+      newFlux[offset2+iif] =  exp(arg) * fitVal[0];
+    } /* end IF loop */
+   if (fitVal) g_free(fitVal);
+  } /* end of source loop */
+  /* Cleanup */
+  if (flux)  g_free(flux);
+  if (sigma) g_free(sigma);
+  if (freq)  g_free(freq);
+} /* end FitSpec  */
 /*----------------------------------------------------------------------- */
 /*  Update SN table for new fluxes                                        */
 /*   Input:                                                               */
@@ -1174,4 +1377,133 @@ void UpdateSN (ObitTableSN* SNTab, olong maxIF, olong maxAnt, olong maxSou,
   retCode = ObitTableSNClose (SNTab, err);
   if (err->error) Obit_traceback_msg (err, routine, SNTab->name);
 } /* end UpdateSN */
+/**
+ * ofloat comparison of two arguments
+ * \param arg1 first value to compare
+ * \param arg2 second value to compare
+ * \return negative if arg1 is less than arg2, zero if equal
+ *  and positive if arg1 is greater than arg2.
+ */
+static int compare_ofloat  (const void* arg1,  const void* arg2)
+{
+  int out = 0;
+  ofloat larg1, larg2;
+
+  larg1 = *(ofloat*)arg1;
+  larg2 = *(ofloat*)arg2;
+  if (larg1<larg2)      out = -1;
+  else if (larg1>larg2) out = 1;
+  return out;
+} /* end compare_ofloat */
+
+/**
+ * Determine alpha median/average of an ofloat array
+ * Use center 1-alpha of points, excluding at least one point from each end
+ * \param n       Number of points
+ * \param value   Array of values, sorted on return
+ * \param alpha   0 -> 1 = central fraction of ordered list to use
+ *                0.5 is generally a good compromise 
+ * \return alpha median average, fblank if cannot determine
+ */
+static ofloat MedianAvg (ollong n, ofloat *value, ofloat alpha)
+{
+  ofloat out=0.0;
+  ofloat fblank = ObitMagicF();
+  ofloat beta, sum;
+  olong i, i1, i2, count;
+
+  if (n<=0) return out;
+
+  /* Sort to ascending order */
+  qsort ((void*)value, n, sizeof(ofloat), compare_ofloat);
+
+  out = value[n/2];
+
+  beta = MAX (0.05, MIN (0.95, 1.0-alpha)) / 2.0; /*  Average around median factor */
+
+  /* Average around the center */
+  i1 = MAX (0, (n/2)-(olong)(beta*n+0.5));
+  i2 = MIN (n, (n/2)+(olong)(beta*n+0.5));
+
+  if (i2>i1) {
+    sum = 0.0;
+    count = 0;
+    for (i=i1; i<i2; i++) {
+      if (value[i]!=fblank) {
+	sum += value[i];
+	count++;
+      }
+    }
+    if (count>0) out = sum / count;
+  }
+   
+  return out;
+} /* end MedianAvg */
+
+/**
+ * Determine arithmetic average of an ofloat array
+ * \param n       Number of points
+ * \param value   Array of values, sorted on return
+ * \return alpha median average, fblank if cannot determine
+ */
+static ofloat StraightAvg (ollong n, ofloat *value)
+{
+  ofloat out=0.0;
+  ofloat fblank = ObitMagicF();
+  ofloat sum;
+  olong i, count;
+
+  if (n<=0) return out;
+
+  sum = 0.0; count = 0;
+  for (i=0; i<n; i++) {
+    sum += value[i]; count++;
+  }
+
+  if (count>0) out = sum / count;
+   
+  return out;
+} /* end StraightAvg */
+
+/**
+ * Determine robust RMS value of a ofloat array about mean
+ * Use center 1-alpha of points, excluding at least one point from each end
+ * \param n       Number of points, needs at least 4
+ * \param value   Array of values assumed sorted
+ * \param mean    Mean value of value
+ * \param alpha   0 -> 1 = central fraction of ordered list to use
+ *                0.5 is generally a good compromise 
+ * \return RMS value, fblank if cannot determine
+ */
+static ofloat MedianSigma (ollong n, ofloat *value, ofloat mean, ofloat alpha)
+{
+  ofloat fblank = ObitMagicF();
+  ofloat out;
+  ofloat sum, beta;
+  olong i, i1, i2, count;
+
+  out = fblank;
+  if (n<=4) return out;
+  if (mean==fblank) return out;
+
+  beta = MAX (0.05, MIN (0.95, 1.0-alpha)) / 2.0; /*  Average around median factor */
+
+  /* Get RMS around the center 1-alpha */
+  i1 = MAX (1,   (n/2)-(olong)(beta*n+0.5));
+  i2 = MIN (n-1, (n/2)+(olong)(beta*n+0.5));
+
+  if (i2>i1) {
+    sum = 0.0;
+    count = 0;
+    for (i=i1; i<i2; i++) {
+      if (value[i]!=fblank) {
+	sum += (value[i]-mean)*(value[i]-mean);
+	count++;
+      }
+    }
+    if (count>1) out = sqrt(sum / (count-1));
+  }
+   
+  return out;
+} /* end MedianSigma */
 

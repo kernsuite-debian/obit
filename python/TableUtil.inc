@@ -1,8 +1,8 @@
-/* $Id: TableUtil.inc 2 2008-06-10 15:32:27Z bill.cotton $    */  
+/* $Id$    */  
 /*--------------------------------------------------------------------*/
 /* Swig module description for Obit Table Utilities                   */
 /*                                                                    */
-/*;  Copyright (C) 2006                                               */
+/*;  Copyright (C) 2006-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -34,7 +34,7 @@
 %}
 
 %inline %{
-olong TableCCUtilMerge (ObitTable *in, ObitTable *out, ObitErr *err)
+long TableCCUtilMerge (ObitTable *in, ObitTable *out, ObitErr *err)
 {
   ObitIOCode ret=1;
   gchar *routine="TableCCUtilMerge";
@@ -49,6 +49,50 @@ olong TableCCUtilMerge (ObitTable *in, ObitTable *out, ObitErr *err)
   if (ret==OBIT_IO_OK) return 0;
   else return 1;
 } // end TableCCUtilMerge
+
+void 
+TableCCUtilT2Spec (ObitImage *inImage, ObitImage *outImage, 
+	          long nTerm, long inCCVer, long outCCVer,
+	          long startComp, long endComp, ObitErr *err) 
+{
+  olong linCCVer=(olong)inCCVer, loutCCVer=(olong)outCCVer;
+  ObitTableCCUtilT2Spec (inImage, (ObitImageWB*)outImage, 
+	          (olong)nTerm, &linCCVer, &loutCCVer,
+	          (olong)startComp, (olong)endComp, err);
+} // end TableCCUtilT2Spec
+
+void 
+TableCCUtilFixTSpec (ObitImage *inImage,  long inCCVer, 
+                     float refFreq, long nterm, float *terms,
+	             long startComp, long endComp, ObitErr *err) 
+{
+  ofloat lterms[20];
+  olong i, linCCVer=(olong)inCCVer;
+  for (i=0; i<nterm; i++) lterms[i] = (ofloat)terms[i];
+  ObitTableCCUtilFixTSpec (inImage,  &linCCVer,
+	          (odouble)refFreq, (olong)nterm, lterms,
+	          (olong)startComp, (olong)endComp, err);
+} // end TableCCUtilFixTSpec
+void 
+TableCCUtilAppendShift (ObitImage *inImage,  long inCCVer, 
+		        ObitImage *outImage, long outCCVer,
+			ObitUV *uvdata,
+			long startComp, long endComp, ObitErr *err) 
+{
+  olong linCCVer=(olong)inCCVer, loutCCVer=(olong)outCCVer;
+  oint noParms=0;
+  ObitTableCC *inCC=NULL, *outCC=NULL;
+  inCC  =  newObitTableCCValue ("inCC", (ObitData*)inImage, &linCCVer, 
+                               OBIT_IO_ReadOnly, noParms, err);
+  ObitTableCCOpen(inCC, OBIT_IO_ReadOnly, err);
+  if (inCC->parmsOff>=0) noParms = inCC->myDesc->dim[inCC->parmsOff][0];
+  ObitTableCCClose(inCC, err);
+  outCC =  newObitTableCCValue ("outCC", (ObitData*)outImage, &loutCCVer, 
+                               OBIT_IO_ReadWrite, noParms, err);
+  ObitTableCCUtilAppendShift (inCC,  outCC, uvdata->myDesc, inImage->myDesc,
+                             (olong)startComp, (olong)endComp, err);
+  ObitTableCCUnref(inCC); ObitTableCCUnref(outCC);
+} // end TableCCUtilAppendShift
 %}
 
 

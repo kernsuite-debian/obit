@@ -1,6 +1,6 @@
-/* $Id: $        */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2009                                               */
+/*;  Copyright (C) 2009,2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -193,7 +193,7 @@ void ObitImageInterpClone  (ObitImageInterp *in, ObitImageInterp *out, ObitErr *
   out->ImgPixels = ObitFArrayUnref(out->ImgPixels);
   ObitFArrayClone (in->ImgPixels, out->ImgPixels, err);
   out->myInterp  = ObitFArrayUnref(out->myInterp);
-  out->myInterp  = ObitFInterpolateClone (in->myInterp, out->myInterp);
+  out->myInterp  = ObitFInterpolateClone2 (in->myInterp, out->myInterp, err);
   out->freqs     = in->freqs;
   out->nplanes   = in->nplanes;
 } /* end ObitImageInterpClone */
@@ -210,6 +210,8 @@ ObitImageInterp* ObitImageInterpCreate (gchar* name, ObitImage *image,
 					olong hwidth, ObitErr *err)
 {
   ObitImageInterp* out=NULL;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  olong blc[7] = {1,1,1,1,1,1,1}, trc[7] = {0,0,0,0,0,0,0};
   olong nImgFreq, nImgIF, nChIF, naxis[5], nx, ny;
   olong iplane, iFreq, iIF;
   gchar *tname;
@@ -254,8 +256,11 @@ ObitImageInterp* ObitImageInterpCreate (gchar* name, ObitImage *image,
 
   /* Create interpolator */
   out->myInterp = newObitFInterpolateCreate ("Interpolator", 
-					     out->ImgPixels, out->ImgDesc, 
+					     out->ImgPixels, NULL, 
 					     hwidth);
+  /* Copy descriptor */
+  out->myInterp->myDesc = ObitImageDescCopy(out->ImgDesc, out->myInterp->myDesc, err);
+  if (err->error) Obit_traceback_val (err, routine, image->name, out);
 
   /* Loop over planes in order they appear in the UV data */
   iplane = 0;
@@ -266,6 +271,13 @@ ObitImageInterp* ObitImageInterpCreate (gchar* name, ObitImage *image,
     } /* end loop over channel */
   } /* end loop over IF */
 
+  /* Reset image */
+  dim[0] = 7;
+  ObitInfoListAlwaysPut (image->info, "BLC", OBIT_long, dim, blc); 
+  ObitInfoListAlwaysPut (image->info, "TRC", OBIT_long, dim, trc);
+  ObitImageOpen(image, OBIT_IO_ReadOnly, err);
+  ObitImageClose(image, err);
+  if (err->error) Obit_traceback_val (err, routine, image->name, out);
  return out;
 } /* end ObitImageInterpCreate */
 
@@ -387,7 +399,6 @@ olong ObitImageInterpFindPlane (ObitImageInterp* in, odouble freq)
   for (i=1; i<in->nplanes; i++) {
     d = fabs (freq-in->freqs[i]);
     if (d<diff) { close=i; diff=d;}
-    if (d>diff) break;  /* Getting further away? */
   }
 
   return close;
@@ -404,11 +415,7 @@ ObitFInterpolate*  ObitImageInterpCloneInterp (ObitImageInterp* in, ObitErr *err
 {
   ObitFInterpolate* out=NULL;
 
-  out = ObitFInterpolateClone (in->myInterp, out);
-
-  /* Full copy of descriptor */
-  out->myDesc = ObitImageDescUnref(out->myDesc);
-  out->myDesc = ObitImageDescCopy(in->myInterp->myDesc, out->myDesc, err);
+  out = ObitFInterpolateClone2 (in->myInterp, out, err);
 
   return out;
 } /* end ObitImageInterpCloneInterp */
@@ -514,11 +521,11 @@ void ObitImageInterpClear (gpointer inn)
   g_assert (ObitIsA(in, &myClassInfo));
 
   /* delete this class members */
-  in->info       = ObitInfoListUnref(in->info);
-  in->thread     = ObitThreadUnref(in->thread);
+  in->info      = ObitInfoListUnref(in->info);
+  in->thread    = ObitThreadUnref(in->thread);
   in->ImgDesc   = ObitImageDescUnref(in->ImgDesc);
   in->ImgPixels = ObitFArrayUnref(in->ImgPixels);
-  in->myInterp   = ObitFInterpolateUnref(in->myInterp);
+  in->myInterp  = ObitFInterpolateUnref(in->myInterp);
   if (in->freqs) g_free(in->freqs);
  
   /* unlink parent class members */
@@ -570,8 +577,9 @@ static void  ReadImage  (ObitImageInterp *in, ObitImage *image,
   ObitImageClose (image,err);
   if (err->error) Obit_traceback_msg (err, routine, image->name);
 
-  /* Set plane frequency */
-  in->freqs[iplane] = image->myDesc->crval[image->myDesc->jlocf];
+  /* Set plane frequency - values are kinda screwy - may change*/
+  in->freqs[iplane] = image->myDesc->crval[image->myDesc->jlocf]
+    + iFreq*image->myDesc->cdelt[image->myDesc->jlocf];
 
   /* Copy to in->ImgPixels */
   ipos[0] = ipos[1] = ipos[2] = 0;

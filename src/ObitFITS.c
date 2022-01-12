@@ -1,4 +1,4 @@
-/* $Id: ObitFITS.c 61 2008-12-19 18:14:49Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2003-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -127,6 +127,18 @@ void ObitFITSShutdown (void)
   myFITSInfo->initialized = FALSE;
 
 } /*  end ObitFITSShutdown */
+
+/**
+ * Returns number of defined FITS disks
+ * \param err  Error stack for any error messages.
+ * \return number of disks
+ */
+olong ObitFITSGetNumDisk (ObitErr *err)
+{
+  /* error checks */
+  if (err->error) return 0;
+  return myFITSInfo->NumberDisks;
+} /* ObitFITSGetNumDisk  */
 
 /**
  * Add a directory to the list of directories for FITS files

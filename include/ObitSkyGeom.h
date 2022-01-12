@@ -1,4 +1,4 @@
-/* $Id: ObitSkyGeom.h 127 2009-09-14 12:08:23Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2004-2009                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

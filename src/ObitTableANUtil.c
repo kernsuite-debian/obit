@@ -1,6 +1,6 @@
-/* $Id: ObitTableANUtil.c 144 2009-12-01 15:01:18Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -28,6 +28,7 @@
 
 #include <math.h>
 #include "ObitTableANUtil.h"
+#include "ObitPrecess.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -54,6 +55,7 @@ ObitIOCode ObitTableANGetInfo (ObitTableAN *in, oint *numAnt, odouble *refFreq,
   ObitIOCode retCode = OBIT_IO_SpecErr;
   ObitTableANRow *row;
   oint maxAnt = 0;
+  olong countAnt;
   gchar *routine = "ObitTableANGetInfo";
 
   /* error checks */
@@ -75,6 +77,7 @@ ObitIOCode ObitTableANGetInfo (ObitTableAN *in, oint *numAnt, odouble *refFreq,
 
     /* Create table row */
     row = newObitTableANRow (in);
+    countAnt = 0;
 
     /* loop over table */
     while (retCode==OBIT_IO_OK) {
@@ -82,6 +85,8 @@ ObitIOCode ObitTableANGetInfo (ObitTableAN *in, oint *numAnt, odouble *refFreq,
       if (retCode == OBIT_IO_EOF) break;
       
       /* Get maximum antenna number */
+      countAnt++;    /* data from a MS may be defective */
+      if (row->noSta<=0) row->noSta = countAnt;  /* Make sure non zero */
       maxAnt = MAX (maxAnt, row->noSta);
     }
     
@@ -117,10 +122,10 @@ ObitAntennaList* ObitTableANGetList (ObitTableAN *in, ObitErr *err) {
   ObitIOCode retCode = OBIT_IO_SpecErr;
   ObitTableANRow *row;
   olong irow;
-  olong maxANid, i, iant;
+  olong maxANid, i, iant, numPCal, countAnt;
   ObitInfoType type;
-  gboolean doVLA, doVLBI, doATCA;
-  odouble x, y, z, ArrLong, rho, dtemp;
+  gboolean doVLA, doVLBI, doATCA, doEVLA, doALMA, doKAT, doMeerKAT;
+  odouble x, y, z, ArrLong, rho, dtemp, GSTUTC0, Rate;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar tempName[101]; /* should always be big enough */
   gchar *routine = "ObitTableANGetList";
@@ -156,9 +161,21 @@ ObitAntennaList* ObitTableANGetList (ObitTableAN *in, ObitErr *err) {
   if ((retCode > OBIT_IO_EOF) || (err->error))
     Obit_traceback_val (err, routine, in->name, out);
 
+  /* Trap old tables */
+  if ((in->numIF==1) && (in->numPCal>2)) {
+    /* Some assumprions here */
+    in->numIF   = in->numPCal/2;
+    in->numPCal = 2;
+  }
+  /* Look out for AIPS bug
+  in->numPCal = MAX(in->numPCal, in->myDesc->repeat[in->PolCalACol]); */
+
+   /* Look out for AIPS change */
+  numPCal = MAX(in->numPCal*in->numIF, in->myDesc->repeat[in->PolCalACol]);
+
   /* Create output */
   g_snprintf (tempName, 100, "Antenna List for %s",in->name);
-  out = ObitAntennaListCreate (tempName, maxANid, in->numPCal);
+  out = ObitAntennaListCreate (tempName, maxANid, numPCal);
   
   /* Get table header information */
   /* Have to see of polarization type is in the header ('POLTYPE') */
@@ -172,22 +189,31 @@ ObitAntennaList* ObitTableANGetList (ObitTableAN *in, ObitErr *err) {
   out->ArrayXYZ[0] = in->ArrayX;
   out->ArrayXYZ[1] = in->ArrayY;
   out->ArrayXYZ[2] = in->ArrayZ;
-  out->GSTIAT0     = in->GSTiat0*DG2RAD;   /* Convert to radians */
-  out->RotRate     = in->DegDay*DG2RAD;    /* Convert to radians/day */
+  /* Check GSTiat0 - calculate and if within 0.01 deg use value from AN table */
+  ObitPrecessGST0 (out->JD, &GSTUTC0, &Rate);
+  GSTUTC0 *= 15.;    /* to degrees */
+  if (abs(GSTUTC0-in->GSTiat0)>0.01) {
+    out->GSTIAT0     = GSTUTC0*DG2RAD;      /* Convert to radians */
+    out->RotRate     = Rate*360.0*DG2RAD;   /* Convert to radians/day */
+ } else {
+    out->GSTIAT0     = in->GSTiat0*DG2RAD;   /* Convert to radians */
+    out->RotRate     = in->DegDay*DG2RAD;    /* Convert to radians/day */
+  }
   out->PolarXY[0]  = in->PolarX;
   out->PolarXY[1]  = in->PolarY;
   out->ut1Utc      = in->ut1Utc*DG2RAD*15./3600.0;  /* Convert to radians */
   out->dataUtc     = in->dataUtc*DG2RAD*15./3600.0; /* Convert to radians */
   if (!strncmp (in->TimeSys, "IAT", 3))
-    out->dataIat = 0.0;
+    out->dataIat   = 0.0;
   else
-    out->dataIat  = in->iatUtc*DG2RAD*15./3600.0; /* Convert to radians */
+    out->dataIat   = in->iatUtc*DG2RAD*15./3600.0; /* Convert to radians */
   out->numPoln     = in->numPCal;
   for (i=0; i<12; i++) out->TimSys[i]  = in->TimeSys[i];
   for (i=0; i<12; i++) out->ArrName[i] = in->ArrName[i];
   out->FreqID      = in->FreqID;
-  out->numPCal = in->numPCal;
-  out->numIF   = in->numPCal/2; /* look out */
+  /* Look out for AIPS change */
+  out->numPCal = MAX(in->numPCal*in->numIF, in->myDesc->repeat[in->PolCalACol]);
+  out->numIF   = in->numIF;
 
   /* Polarization reference antenna */
   out->polRefAnt = 1;
@@ -205,25 +231,38 @@ ObitAntennaList* ObitTableANGetList (ObitTableAN *in, ObitErr *err) {
   /* Some array dependent information */
   /* Is this the VLA? */
   doVLA  = !strncmp(in->ArrName, "VLA     ", 8);
-  out->isVLA = doVLA;
+  doEVLA = !strncmp(in->ArrName, "EVLA    ", 8);
+  out->isVLA = doVLA || doEVLA;
+
+  /* ALMA? Earth centered */
+  doALMA  = !strncmp(in->ArrName, "ALMA    ", 8);
+
+  /* KAT7? Earth centered, no flip */
+  doKAT  = !strncmp(in->ArrName, "KAT-7   ", 8);
+
+  /* MeerKAT Earth centered, no flip */
+  doMeerKAT  = !strncmp(in->ArrName, "MeerKAT ", 8);
 
   /* Is this the ATCA? It uses earth center but without Y flip like VLBI */
   doATCA = !strncmp(in->ArrName, "ATCA    ", 8);
 
   /* Otherwise VLBI Uses earth center, but with Y with sign flip */
-  doVLBI = (!doATCA ) && 
+  doVLBI = (!doATCA && !doEVLA && !doALMA && !doKAT) &&
     (fabs(in->ArrayX)<1000.0) && (fabs(in->ArrayY)<1000.0) && (fabs(in->ArrayZ)<1000.0);
 
   /* loop over table saving information */
   retCode = OBIT_IO_OK;
   irow = 0;
+  countAnt = 0;
   while (retCode==OBIT_IO_OK) {
     irow++;
+    countAnt++;    /* data from a MS may be defective */
     retCode = ObitTableANReadRow (in, irow, row, err);
     if (retCode == OBIT_IO_EOF) break;
     if ((retCode != OBIT_IO_OK) || (err->error)) 
       Obit_traceback_val (err, routine, in->name, out);
 
+    if (row->noSta<=0) row->noSta = countAnt;  /* Make sure non zero */
     iant = row->noSta-1;
     /* Check antenna number */
     Obit_retval_if_fail((iant>=0), err, out,
@@ -239,8 +278,10 @@ ObitAntennaList* ObitTableANGetList (ObitTableAN *in, ObitErr *err) {
     out->ANlist[iant]->FeedBType  = row->polTypeB[0];
     for (i=0; i<8; i++) out->ANlist[iant]->AntName[i]  = row->AntName[i];
     for (i=0; i<3; i++) out->ANlist[iant]->AntXYZ[i]  = row->StaXYZ[i];
-    for (i=0; i<out->numPoln; i++) out->ANlist[iant]->FeedAPCal[i]  = row->PolCalA[i];
-    for (i=0; i<out->numPoln; i++) out->ANlist[iant]->FeedBPCal[i]  = row->PolCalB[i];
+    if (out->numPCal>0) {
+      for (i=0; i<out->numPCal; i++) out->ANlist[iant]->FeedAPCal[i]  = row->PolCalA[i];
+      for (i=0; i<out->numPCal; i++) out->ANlist[iant]->FeedBPCal[i]  = row->PolCalB[i];
+    }
 
     /* Lat, (E) long in radians
        X => (lat 0, long 0)
@@ -262,7 +303,11 @@ ObitAntennaList* ObitTableANGetList (ObitTableAN *in, ObitErr *err) {
       x = x + row->StaXYZ[0];
       y = -(y + row->StaXYZ[1]);  /* Flip handedness of VLBI data */
       z = z + row->StaXYZ[2];
-    } else if (doATCA) {
+    } else if (doATCA||doEVLA||doALMA) {  /* More or less normal aarrays */
+      x = x + row->StaXYZ[0];
+      y = y + row->StaXYZ[1];
+      z = z + row->StaXYZ[2];
+    } else  {  /* just in case */
       x = x + row->StaXYZ[0];
       y = y + row->StaXYZ[1];
       z = z + row->StaXYZ[2];
@@ -275,6 +320,9 @@ ObitAntennaList* ObitTableANGetList (ObitTableAN *in, ObitErr *err) {
     if(rho!=0.0) out->ANlist[iant]->AntLat  = asin(z/rho);
     else out->ANlist[iant]->AntLat  = 0.0;
     out->ANlist[iant]->AntRad  = rho;
+
+    /* Flip Long for MeerKAT */
+    if (doMeerKAT)  out->ANlist[iant]->AntLong = - out->ANlist[iant]->AntLong;
 
     /* Make sure first antenna filled in (used for polarization cal ) */
     if ((iant>0) && (out->ANlist[0]<=0)) {
@@ -357,9 +405,10 @@ ObitIOCode ObitTableANSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
     /* Get input table */
     numOrb  = 0;
     numPCal = 0;
+    numIF   = 0;
     inTab = 
       newObitTableANValue (inUV->name, (ObitData*)inUV, &iANver, OBIT_IO_ReadOnly, 
-			   numOrb, numPCal, err);
+			   numIF, numOrb, numPCal, err);
     if (err->error) Obit_traceback_val (err, routine, inTab->name, retCode);
     /* Find it */
     if (inTab==NULL) continue;  /* No keep looping */
@@ -377,11 +426,11 @@ ObitIOCode ObitTableANSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
     /* Create output table */
     numOrb  = inTab->numOrb;
     numIF   = inUV->mySel->numberIF;
-    if (inTab->numPCal>0) numPCal = 2 * numIF;
+    if (inTab->numPCal>0) numPCal = 2;
     else numPCal = 0;
     outTab = 
       newObitTableANValue (outUV->name, (ObitData*)outUV, &iANver, OBIT_IO_WriteOnly, 
-			    numOrb, numPCal, err);
+			    numIF, numOrb, numPCal, err);
     if (err->error) Obit_traceback_val (err, routine, outUV->name, retCode);
     /* Create it? */
     Obit_retval_if_fail((outTab!=NULL), err, retCode,

@@ -1,6 +1,6 @@
-/* $Id: ObitIOUVFITS.c 195 2010-06-01 11:39:41Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2010                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -305,7 +305,7 @@ void ObitIOUVFITSZap (ObitIOUVFITS *in, ObitErr *err)
   }
 
   /* FITS tables are in the same file - delete table list */
-  in->tableList = ObitTableListUnref(in->tableList);
+  /*in->tableList = ObitTableListUnref(in->tableList); Now just a copy */
 
   return;
 } /* end ObitIOUVFITSZap */
@@ -2157,10 +2157,11 @@ ObitIOCode ObitIOUVFITSFlush (ObitIOUVFITS *in, ObitErr *err)
  * \param err ObitErr for reporting errors.
  */
 void 
-ObitIOUVFITSCreateBuffer (ofloat **data, olong *size, 
-			     ObitIOUVFITS *in, ObitInfoList *info, 
-			     ObitErr *err)
+ObitIOUVFITSCreateBuffer (ofloat **data, ollong *size, 
+			  ObitIOUVFITS *in, ObitInfoList *info, 
+			  ObitErr *err)
 {
+  olong tsize1, tsize2;
   /* error checks */
   if (err->error) return;
   g_assert (ObitIsA(in, &myClassInfo));
@@ -2172,7 +2173,9 @@ ObitIOUVFITSCreateBuffer (ofloat **data, olong *size,
 		      "Cannot define buffer, I/O not currently active");
 
   /* get size */
-  *size = ObitUVSelBufferSize(in->myDesc, in->mySel);
+  tsize1 = ObitUVSelBufferSize(in->myDesc, in->mySel);
+  tsize2 = ((ObitUVDesc*)in->myDesc)->lrec * ((ObitUVSel*)in->mySel)->nVisPIO;
+  *size = MAX (tsize1, tsize2);
 
   /* (re)allocate */
   if (*data) *data = ObitMemRealloc (*data, (*size)*sizeof(ofloat));
@@ -3074,8 +3077,8 @@ void  ObitIOUVKeysOtherRead(ObitIOUVFITS *in, olong *lstatus,
 	  ivalue = strtol(value, NULL, 10);
 	  /* add to InfoList */
 	  dim[0] = 1;
-	  ObitInfoListPut(desc->info, keywrd, OBIT_long, dim, 
-			  (gconstpointer)&ivalue, err);
+	  ObitInfoListAlwaysPut(desc->info, keywrd, OBIT_long, dim, 
+			  (gconstpointer)&ivalue);
 	  break;
 	case 'F':  /* Float - use double */
 	  /* AIPS uses 'D' for double exponent */
@@ -3083,8 +3086,8 @@ void  ObitIOUVKeysOtherRead(ObitIOUVFITS *in, olong *lstatus,
 	  dvalue = strtod(value, &last);
 	  /* add to InfoList */
 	  dim[0] = 1;
-	  ObitInfoListPut(desc->info, keywrd, OBIT_double, dim, 
-			  (gconstpointer)&dvalue, err);
+	  ObitInfoListAlwaysPut(desc->info, keywrd, OBIT_double, dim, 
+			  (gconstpointer)&dvalue);
 	  break;
 	case 'X':  /* Complex - can't handle */
 	default:

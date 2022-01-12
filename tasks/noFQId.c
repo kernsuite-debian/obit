@@ -1,4 +1,4 @@
-/* $Id: noFQId.c 199 2010-06-15 11:39:58Z bill.cotton $ */
+/* $Id$ */
 /* Obit Task to set all Fq Ids to 1.                 .                */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2007,2010                                          */
@@ -893,7 +893,7 @@ void unFQid(ObitInfoList *myInput, ObitUV* inData, ObitUV* outData,
   numPCal = 0;
   for (iver=1; iver<=hiVer; iver++) {  /* Loop over tables */
     ANtab = newObitTableANValue ("ANTab", (ObitData*)outData,  &iver, OBIT_IO_ReadWrite, 
-				 numOrb, numPCal, err);
+				 numIF, numOrb, numPCal, err);
     ObitTableANOpen (ANtab, OBIT_IO_ReadWrite, err);
     if (err->error) Obit_traceback_msg (err, routine, outData->name);
     ANtab->FreqID = 1;

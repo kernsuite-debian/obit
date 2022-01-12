@@ -1,6 +1,6 @@
-/* $Id: ObitDConCleanVis.h 155 2010-02-04 13:17:17Z bill.cotton $   */
+/* $Id$   */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005-2010                                          */
+/*;  Copyright (C) 2005-2013                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -177,12 +177,6 @@ typedef void (*ObitDConCleanVisDefWindowFP) (ObitDConClean *in, ObitErr *err);
 /** Public: Subtract components from UV data */
 void ObitDConCleanVisSub(ObitDConCleanVis *in, ObitErr *err);
 
-/** Public: Determine quality measure for field */
-ofloat ObitDConCleanVisQuality(ObitDConCleanVis *in, olong field, 
-			       ObitErr *err);
-typedef ofloat (*ObitDConCleanVisQualityFP) (ObitDConCleanVis *in, olong field,
-					     ObitErr *err);
-
 /** Public: Reimaging needed to center strong source on pixel? */
 gboolean ObitDConCleanVisReimage (ObitDConCleanVis *in, ObitUV* uvdata, 
 				  ObitErr* err);
@@ -215,6 +209,18 @@ gboolean ObitDConCleanVisAutoWindow(ObitDConClean *in, olong *fields,
 gboolean ObitDConCleanVisPixelStats(ObitDConClean *in, ObitFArray **pixarray,
 				    ObitErr *err);
 
+/** Public: Get Cleanable flux density */
+ofloat ObitDConCleanVisCleanable (ObitDConCleanVis *in, olong field,
+				  ObitFArray *pixarray, ObitErr* err);
+typedef ofloat (*ObitDConCleanVisCleanableFP) (ObitDConCleanVis *in,  olong field,
+					      ObitFArray *pixarray, ObitErr* err);
+
+/** Public: Get Get image quality  */
+ofloat ObitDConCleanVisQuality (ObitDConCleanVis *in, olong field,
+				ObitErr* err);
+typedef ofloat (*ObitDConCleanVisQualityFP) (ObitDConCleanVis *in,  olong field,
+					     ObitErr* err);
+
 /* Private functions definitions for derived classes */
 /** Private: (re)make residuals. */
 typedef void  (*MakeResidualsFP) (ObitDConCleanVis *in, olong *fields, 
@@ -239,6 +245,38 @@ typedef ObitFArray** (*KillPxArrayFP) (ObitDConCleanVis *in,
 				       ObitFArray **pixarray);
 /** Private: Delete BeamPatches. */
 typedef void (*KillBeamPatchesFP) (ObitDConCleanVis *in);
+
+/** Private: Pick next field(s) and get Residual image(s) */
+typedef gboolean (*PickNext2DFP) (ObitDConCleanVis *in,  ObitErr *err);
+typedef gboolean (*PickNext3DFP) (ObitDConCleanVis *in, ObitErr *err);
+
+/** Private: Find best 3D residual image. */
+typedef void (*WhosBestFP) (ObitDConCleanVis *in, olong *best, olong *second);
+
+/** Private: Find best 2D residual image. */
+typedef void  (*WhosBest2DFP) (ObitDConCleanVis *in, ofloat autoCenFlux, 
+			       olong *best);
+
+/** Private: Priority order for making residual images. */
+typedef void (*OrderImageFP) (ObitDConCleanVis *in, gboolean *fresh, 
+			      ofloat autoCenFlux, olong *fldList);
+
+/** Private: Priority order for CLEANing */
+typedef void (*OrderCleanFP) (ObitDConCleanVis *in, gboolean *fresh, 
+			      ofloat autoCenFlux, olong *fldList);
+
+/** Private: Select tapering for next CLEAN */
+typedef gboolean (*SelectTaperFP) (ObitDConCleanVis *in, gboolean *fresh, ObitErr *err);
+
+/** Private: Reset Sky Model */
+typedef gboolean (*ResetSkyModelFP)(ObitDConCleanVis *in, ObitErr *err);
+
+/** Private: Reset Pixel List */
+typedef void (*ResetPixelListFP)(ObitDConCleanVis *in, ObitErr *err);
+
+/** Private: Reset Pixel List */
+typedef void (*FindPeakFP)(ObitDConCleanVis *in, ObitErr *err);
+
 /*----------- ClassInfo Structure -----------------------------------*/
 /**
  * ClassInfo Structure.

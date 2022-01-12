@@ -1,7 +1,7 @@
-/* $Id: IonImage.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit task to image/CLEAN a uv data set with field-based cal        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -195,6 +195,7 @@ ObitInfoList* IonImageIn (int argc, char **argv, ObitErr *err)
 
   /* Make default inputs InfoList */
   list = defaultInputs(err);
+  myOutput = defaultOutputs(err);
 
   /* command line arguments */
   /* fprintf (stderr,"DEBUG arg %d %s\n",argc,argv[0]); DEBUG */
@@ -354,7 +355,6 @@ ObitInfoList* IonImageIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -891,7 +891,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
 {
   ObitUV       *inData = NULL;
   ObitInfoType type;
-  olong         Aseq, disk, cno, nvis, nThreads;
+  olong         Aseq, disk, cno, nvis;
   gchar        *Type, *strTemp, inFile[129];
   oint         doCalib;
   gchar        Aname[13], Aclass[7], *Atype = "UV";
@@ -942,10 +942,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
     /* define object */
-    nvis = 1000;
-    nThreads = 1;
-    ObitInfoListGetTest(myInput, "nThreads", &type, dim, &nThreads);
-    nvis *= nThreads;
+    nvis = 1;
     ObitUVSetAIPS (inData, nvis, disk, cno, AIPSuser, err);
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
@@ -961,10 +958,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
 
     /* define object */
-    nvis = 1000;
-    nThreads = 1;
-    ObitInfoListGetTest(myInput, "nThreads", &type, dim, &nThreads);
-    nvis *= nThreads;
+    nvis = 1;
     ObitUVSetFITS (inData, nvis, disk, inFile,  err); 
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
@@ -985,6 +979,12 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   /* Ensure inData fully instantiated and OK */
   ObitUVFullInstantiate (inData, TRUE, err);
   if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
+
+  /* Set number of vis per IO */
+  nvis = 1000;  /* How many vis per I/O? */
+  nvis =  ObitUVDescSetNVis (inData->myDesc, myInput, nvis);
+  dim[0] = dim[1] = dim[2] = dim[3] = 1;
+  ObitInfoListAlwaysPut (inData->info, "nVisPIO", OBIT_long, dim,  &nvis);
 
   return inData;
 } /* end getInputData */
@@ -1322,7 +1322,8 @@ void doSources  (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
       failed++;
       isBad = TRUE;
       if (((failed>=10) && (good<=0)) || 
-	  (((failed>=10)&&(failed>0.1*nsource)))) {
+	  (((failed>=10)&&(failed>0.1*nsource))) ||
+	  (nsource<=1)) {  /* Only one? */
 	/* This isn't working - Give up */
 	Obit_log_error(err, OBIT_Error, "%s: Too many failures, giving up", 
 		       routine);
@@ -1341,7 +1342,19 @@ void doSources  (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
       ObitInfoListAlwaysPut (myInput, "Status", OBIT_string, dim, Done);
     ObitTablePSSummary (inData, myInput, err);
     if (err->error) Obit_traceback_msg (err, routine, inData->name);
-  } /* end source loop */
+ 
+    /* ReGet input uvdata */
+    if (isource<(nsource-1)) {
+      inData = ObitUnref(inData);
+      inData = getInputData (myInput, err);
+      if (err->error) Obit_traceback_msg (err, routine, inData->name);
+      
+      /* Make sure selector set on inData */
+      ObitUVOpen (inData, OBIT_IO_ReadCal, err);
+      ObitUVClose (inData, err);
+      
+    } /* end reinit uvdata */
+ } /* end source loop */
 
 }  /* end doSources */
 
@@ -1373,14 +1386,14 @@ void doChanPoln (gchar *Source, ObitInfoList* myInput, ObitUV* inData,
   gchar        Stokes[5], *chStokes=" IQUV", *CCType = "AIPS CC";
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
     "UVRange", "timeRange", "UVTape",
-    "BIF", "EIF", "BChan", "EChan", "subA",
-    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", "doPol",
-    "Mode",
+    "BIF", "EIF", "BChan", "EChan", "subA", "FreqID", "souCode", "Qual",
+    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", 
+    "doPol", "PDVer", "Mode",
     NULL
   };
   gchar        *tmpParms[] = {  /* Imaging, weighting parameters */
     "doFull", "do3D", "FOV", "PBCor", "antSize", 
-    "Catalog", "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
+    "Catalog", "CatDisk", "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
     "Robust", "nuGrid", "nvGrid", "WtBox", "WtFunc", "UVTaper", "WtPower",
     "MaxBaseline", "MinBaseline", "rotate", "Beam",
     "NField", "xCells", "yCells", "nx", "ny", "RAShift", "DecShift",
@@ -1625,7 +1638,7 @@ void doChanPoln (gchar *Source, ObitInfoList* myInput, ObitUV* inData,
 
       /* If 2D imaging concatenate CC tables */
       if ((myClean->nfield>1) && (!myClean->mosaic->images[0]->myDesc->do3D) && doFlat)
-	ObitImageMosaicCopyCC (myClean->mosaic, err);
+	ObitImageMosaicCopyCC (myClean->mosaic, outData,  err);
       
       /* Copy result to output */
       plane[0] = ochan;
@@ -1714,7 +1727,7 @@ void doFieldCal (gchar *Source, ObitInfoList* myInput, ObitUV* inUV,
   olong         NField, itemp, Niter, Aseq=1, disk, ver;
   ofloat Gain, minFlux, seeing;
   gchar        *FCParms[] = {  /* Field based calibration parameters */
-    "Catalog",  "OutlierDist",  "OutlierFlux",  "OutlierSI", "OutlierSize",  
+    "Catalog", "CatDisk", "OutlierDist",  "OutlierFlux",  "OutlierSI", "OutlierSize",  
     "solInt", "nZern", "FitDist", "MaxDist", "MinPeak", 
     "MaxWt", "MaxQual", "MaxRMS", "MinRat", "FCStrong", "prtLv", 
     NULL
@@ -2021,6 +2034,10 @@ void subIPolModel (ObitUV* outData,  ObitSkyModel *skyModel, olong *selFGver,
   dim[0] = 1; jtemp = -1;
   ObitInfoListAlwaysPut (outData->info, "doCalib", OBIT_long, dim, &jtemp);
   
+  /* Open and close uvdata to set descriptor for scratch file */
+  ObitUVOpen (outData, OBIT_IO_ReadCal, err);
+  ObitUVClose (outData, err);
+
   /* Copy to scratch with calibration */
   scrUV = newObitUVScratch (outData, err);
   scrUV = ObitUVCopy (outData, scrUV, err);
@@ -2085,11 +2102,13 @@ void IonImageHistory (gchar *Source, gchar Stoke, ObitInfoList* myInput,
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq",
+    "FreqID", "souCode", "Qual", 
     "outFile",  "outDisk", "outName", "outClass", "outSeq",
     "UVRange",  "timeRange",  "Robust",  "UVTaper",  "WtBox", "WtFunc", 
     "BIF", "EIF", "BChan", "EChan",  "chInc", "chAvg", "BLFact", "BLFOV",  "BLchAvg",
     "doCalSelect",  "doCalib",  "gainUse", "doBand ",  "BPVer",  "flagVer", 
-    "doPol",  "doFull", "do3D", "Catalog",  "OutlierDist",  "OutlierFlux",  "OutlierSI",
+    "doPol",  "PDVer", "doFull", "do3D", "Catalog", "CatDisk", 
+    "OutlierDist",  "OutlierFlux",  "OutlierSI",
     "OutlierSize",  "CLEANBox",  "Gain",  "minFlux",  "Niter",  "minPatch",
     "FOV", "xCells", "yCells", "nx", "ny", "RAShift", "DecShift", "doRestore",
     "Beam",  "CCFilter",  "maxPixel", "autoWindow", "subA",

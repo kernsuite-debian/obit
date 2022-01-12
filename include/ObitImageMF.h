@@ -1,6 +1,6 @@
-/* $Id: ObitImageMF.h 128 2009-09-23 14:48:29Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010,2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -103,6 +103,9 @@ void ObitImageMFClassInit (void);
 /** Public: Constructor. */
 ObitImageMF* newObitImageMF (gchar* name);
 
+/** Public: Copy Constructor for scratch file. */
+ObitImage* newObitImageMFScratch (ObitImage *in, ObitErr *err);
+
 /** Public: Create ImageMF object from description in an ObitInfoList */
 ObitImageMF* ObitImageMFFromInfo (gchar *prefix, ObitInfoList *inList, 
 				  ObitErr *err);
@@ -110,7 +113,8 @@ ObitImageMF* ObitImageMFFromInfo (gchar *prefix, ObitInfoList *inList,
 /** Public: Create ObitImageMF object from ObitImage */
 ObitImageMF* ObitImageMFFromImage (ObitImage* in, ObitUV *inData,
 				   olong norder, ofloat maxFBW, 
-				   ofloat alpha, ObitErr *err);
+				   ofloat alpha, odouble alphaRefF,
+				   ObitErr *err);
 
 /** Public: ClassInfo pointer */
 gconstpointer ObitImageMFGetClass (void);
@@ -125,7 +129,10 @@ ObitImage* ObitImageMFZap  (ObitImage *in, ObitErr *err);
 
 /** Public: Set Coarse spectral channels */
 void ObitImageMFSetSpec (ObitImageMF *image, ObitUV *inData, ofloat maxFBW,
-			 ofloat alpha, ObitErr *err);
+			 ofloat alpha, odouble alphaRefF, ObitErr *err);
+
+/** Public: Get Coarse spectral channel info */
+void ObitImageMFGetSpec (ObitImageMF *image, ObitErr *err);
 
 /** Public: Set order of SW spectral imaging */
 void ObitImageMFSetOrder (ObitImageMF *image, olong order, ObitErr *err);
@@ -139,12 +146,19 @@ void ObitImageMFBlank (ObitImageMF *in, ObitErr *err);
 /** Public: Fit coarse spectrum planes and write spectral  */
 void ObitImageMFFitSpec (ObitImageMF *in, ofloat antSize, ObitErr *err);
 
+/** Public: Fit coarse spectrum planes and write spectral  */
+void ObitImageMFFitSpec2 (ObitImageMF *in, ObitImageMF *out, ObitErr *err);
+
 /** Public: Return image Beam. */
 ObitImage* ObitImageMFGetBeam (ObitImage *in, olong beamNo, olong plane[5], 
 			       ObitErr *err);
 
 /** Public: Return image Beam order. */
 olong ObitImageMFGetBeamOrder (ObitImage *in);
+
+/** Public: Return Frequency of current plane */
+odouble ObitImageMFGetPlaneFreq (ObitImage *in);
+
 
 /*----------- ClassInfo Structure -----------------------------------*/
 /**

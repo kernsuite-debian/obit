@@ -3,7 +3,7 @@
 ;!  Task to copy tables
 ;# Obit Task 
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2006,2010
+;;  Copyright (C) 2006-2017
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -33,7 +33,7 @@ TabCopy   LLLLLLLLLLLLUUUUUUUUUUUU CCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 TabCopy   Task to copy tables
 **PARAM** str 4
 DataType                           "FITS" or "AIPS" type of input
-**PARAM** str 48
+**PARAM** str 128
 inFile                             FITS input data if Type=='FITS'
 **PARAM** str 12
 inName                             Input AIPS file name (name)
@@ -49,7 +49,9 @@ inTab                              Input Table Type (e.g. "AIPS CC")
 inVer            0.0               Input Table version
 **PARAM** int 1  **DEF** 1
 nCopy                              Number of tables to copy
-**PARAM** str 48
+**PARAM** str 4
+outDType                           "FITS" or "AIPS" type of output
+**PARAM** str 128
 outFile                            Output FITS file
 **PARAM** str 12
 outName                            Output AIPS name
@@ -90,6 +92,8 @@ Adverbs:
              AIPS PL and SL extensions are NOT tables.
   inVer......First version number to copy
   nCopy......Number of tables of type inTab to copy
+  outDType....'FITS' or 'AIPS'  type of output
+              Defaults to DataType.
   outFile....Name of output FITS file
   outName....Output AIPS Name, 
   outClass...Output AIPS class.

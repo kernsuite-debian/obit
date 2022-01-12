@@ -1,6 +1,6 @@
-/* $Id: ObitUVEdit.c 187 2010-04-16 08:31:11Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005-2009                                          */
+/*;  Copyright (C) 2005-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -28,9 +28,17 @@
 
 #include <sys/types.h>
 #include <time.h>
-#include "ObitUVUtil.h"
+#include "ObitUVDesc.h"
+#include "ObitUVEdit.h"
 #include "ObitTableFG.h"
-
+#include "ObitTableNX.h"
+#include "ObitTableANUtil.h"
+#include "ObitTableSUUtil.h"
+#include "ObitPrecess.h"
+#include "ObitUVWCalc.h"
+#ifndef VELIGHT
+#define VELIGHT 2.997924562e8
+#endif
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
  * \file ObitUVEdit.c
@@ -47,9 +55,9 @@ typedef struct {
   /* thread number, <0 -> no threading   */
   olong        ithread;
   /* First (1-rel) baseline to process this thread */
-  olong        first;
+  ollong       first;
   /* Highest (1-rel) baseline to process this thread  */
-  olong        last;
+  ollong       last;
   /* Circular amplitude storage (baseline,correlator,time) */
   ofloat *amps;
   /*  time slice of interest */
@@ -57,7 +65,7 @@ typedef struct {
   /* times of data samples, <-1000 => ignore */
   ofloat* times;   
   /*  Number of baselines */
-  olong numBL;
+  ollong numBL;
   /* Number of correlations */
   olong numCorr; 
   /* Number of allocated time slices in amps */
@@ -74,8 +82,67 @@ typedef struct {
   /* Work array at least the size of ntime */
   ofloat* work;
   /* [out] number of baselines/correlations with valid data */
-  olong number; 
+  ollong number; 
 } UVMednEditFuncArg;
+
+/* FD Median calculations threaded function argument */
+typedef struct {
+  /* ObitThread with restart queue */
+  ObitThread *thread;
+  /* thread number, <0 -> no threading   */
+  olong        ithread;
+  /*  Number of baselines */
+  ollong numBL;
+  /* First (1-rel) baseline to process this thread */
+  ollong       first;
+  /* Highest (1-rel) baseline to process this thread  */
+  ollong       last;
+  /* Number of polarizations */
+  olong numPol; 
+  /* Number of Channels */
+  olong numChan; 
+  /* Number of IFs */
+  olong numIF; 
+  /*  Count of entries in each cell of avg, RMS */
+  ollong *count;
+  /* Average (freq, IF, poln, baseline) */
+  ofloat *avg;
+  /* Amp^2 in RMS out (freq, IF, poln, baseline) */
+  ofloat *RMS;
+  /* [out] median alpha sigma for values in avg (MW only) */
+  ofloat *sigma;
+  /* If > 0 the width of the median window in channels.
+     If <= 0 use linear baseline and chanMask */
+  olong widMW;  
+  /* Mask, True if channel is to be used in baseline fit  */
+  gboolean *chanMask;
+  /*   Entry per element of sumA which if >0 is the 0-rel index of the 
+       corresponding Stokes RR for a Stokes LL measurement, used with maxV */
+  olong *corV;
+  /* Maximum allowable average amplitude */
+  ofloat maxAmp;
+  /* Maximum allowable VPol, >1.0e10=> no VPol clipping */
+  ofloat maxV;
+  /* Flag all channels having RMS values > maxRMS[0] of the 
+     channel median sigma.[default 6.0] plus maxRMS[1] (default 0.1) 
+     of the channel average in quadrature
+     if maxRMS[0] > 100.0 no RMS flagging */
+  ofloat *maxRMS;
+  /* Max. residual flux in sigma allowed for channels outside 
+     the baseline fitting regions. */
+  ofloat maxRes;
+  /* Max. residual flux in sigma allowed for channels within 
+     the baseline fitting regions */
+  ofloat maxResBL;
+  /* Min. fraction of good times */
+  ofloat minGood;
+ /* TRUE if using median window baselines. */
+  gboolean doMW;   
+  /* Error stack, returns if error. */
+  ObitErr* err;   
+  /* Work arrays at least the size of numChan */
+  ofloat *work, *work2;
+} UVMednFuncArg;
 
 /*---------------Private function prototypes----------------*/
 /** 
@@ -87,12 +154,12 @@ static void editHist (olong ncorr, olong numCell, ofloat hisinc, olong *hissig,
 
 /** Digest correlator information for TD */
 static void digestCorr (ObitUVDesc *inDesc, ofloat *maxRMS, ofloat *maxRMS2, 
-			olong *crossBL1, olong *crossBL2, 
+			ollong *crossBL1, ollong *crossBL2, 
 			olong *corChan, olong *corIF, olong *corStok);
 
 /** Digest correlator information for TDRMSAvg */
 static void digestCorrTDRMSAvg (ObitUVDesc *inDesc, ofloat maxRMSAvg, ofloat *maxRMS2, 
-				olong *crossBL1, olong *crossBL2, 
+				ollong *crossBL1, ollong *crossBL2, 
 				olong *corChan, olong *corIF, olong *corStok);
 
 /**Private:  Digest  some correlator information for FD */
@@ -103,21 +170,8 @@ static void digestCorrFD (ObitUVDesc *inDesc, olong *corChan, olong *corIF,
 static void EditFDChanMask(olong numChan, olong numIF, olong numPol, olong *chanSel, 
 			   gboolean *chanMask);
 
-/** Private: Average for FD, get RMSes  */
-static void EditFDAvg(olong numChan, olong numIF, olong numPol, olong numBL, olong *count, 
-		      ofloat *sumA, ofloat *sumA2, ofloat maxAmp, 
-		      ofloat maxV, olong *corV);
-
-/** Private: Fit baselines  for FD to averages, subtract */
-static void EditFDBaseline(olong numChan, olong numIF, olong numPol, olong numBL, 
-			   olong *count, ofloat *avg, ofloat *RMS, 
-			   olong widMW, gboolean *chanMask, ObitErr* err);
-	    
-/** Private: Do editing for FD */
-static void EditFDEdit(olong numChan, olong numIF, olong numPol, olong numBL, 
-		       olong *count, ofloat *avg, ofloat *RMS, 
-		       ofloat *maxRMS, ofloat maxRes, ofloat maxResBL, 
-		       gboolean *chanMask);
+/** Private: Process for FD */
+static void EditFDProcess(olong nThread, UVMednFuncArg** args, ObitErr *err);
 
 /** Private: Get median value of an array */
 static ofloat medianVal (ofloat *array, olong incs, olong n);
@@ -130,11 +184,11 @@ static void EditFDBLFit (ofloat* x, ofloat* y, gboolean *m, olong ndata,
 			 ofloat *a, ofloat *b);
 
 /** Private: Determine deviations from Median */
-static olong MedianDev (ofloat *amps, olong itime, ofloat *times,
-			olong numBL, olong ncorr, olong numTime, olong ntime,
-			ofloat alpha, ofloat *devs, 
-			ofloat *work, olong nThread, UVMednEditFuncArg** args,
-			ObitErr *err);
+static ollong MedianDev (ofloat *amps, olong itime, ofloat *times,
+			 ollong numBL, olong ncorr, olong numTime, olong ntime,
+			 ofloat alpha, ofloat *devs, 
+			 ofloat *work, olong nThread, UVMednEditFuncArg** args,
+			 ObitErr *err);
 
 /** Private: Return single uv vis with buffered read */
 static ObitIOCode ReadOne (ObitUV *inUV, gboolean doCalSelect, ofloat** Buffer, 
@@ -146,16 +200,17 @@ static ofloat MedianUVInt (ObitUV *inUV, ObitErr *err);
 static ofloat MedianLevel (olong n, ofloat *value, ofloat alpha);
 
 /** Private: Determine sigma for Median */
-static ofloat MedianSigma (olong n, ofloat *value, ofloat mean, ofloat alpha);
+static ofloat MedianSigma (ollong n, ofloat *value, ofloat mean, ofloat alpha);
 
 /** Private: Median flagging */
-static olong MedianFlag (ofloat *devs, ofloat flagSig, 
-			olong numBL, olong numCorr, gboolean allFlag,
-			ofloat time, ofloat timeInt,
-			olong *BLAnt1, olong *BLAnt2, 
-			olong *Chan, olong *IFs, olong *Stoke,
-			ObitTableFG *FGtab, ObitTableFGRow *FGRow, 
-			ObitErr *err);
+static ollong MedianFlag (ofloat *devs, ofloat flagSig, 
+			  ollong numBL, olong numCorr, 
+			  gboolean allFlag, gboolean killAll,
+			  ofloat time, ofloat timeInt,
+			  olong *BLAnt1, olong *BLAnt2, 
+			  olong *Chan, olong *IFs, olong *Stoke,
+			  ObitTableFG *FGtab, ObitTableFGRow *FGRow, 
+			  ObitErr *err);
 
 /** Private: Get array of channel ranges for median flagging */
 static olong* medianChan (ObitUVDesc *inDesc, ObitUVDesc *outDesc, olong begChan);
@@ -169,7 +224,8 @@ static olong* medianPoln (ObitUVDesc *inDesc, ObitUVDesc *outDesc);
 static void T2String (ofloat time, gchar *msgBuf);
 /** Private: Threaded MedianDev */
 static gpointer ThreadMedianDev (gpointer arg);
-
+/** Private: Threaded FD median/linear editing */
+static gpointer ThreadEditFDProcess(gpointer arg);
 
 /*----------------------Public functions---------------------------*/
 /**
@@ -202,6 +258,8 @@ static gpointer ThreadMedianDev (gpointer arg);
  *               [default 0.25]
  * \li "doHiEdit" OBIT_boolean (1,1,1) If present and TRUE, flag based 
  *                on statistics [def FALSE]
+ * \li "killAll" OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ * all Stokes correlations are flagged [def. FALSE]
  * Routine adapted from the AIPSish TDEDIT.FOR/TDEDIT
  * \param inUV     Input uv data to edit. 
  * \param outUV    UV data onto which the FG table is to be attached.
@@ -213,20 +271,22 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   ObitIOCode iretCode, oretCode;
   ObitTableFG *outFlag=NULL;
   ObitTableFGRow *row=NULL;
-  gboolean doCalSelect, doHiEdit;
-  olong i, j, k, jj, kk, firstVis, startVis, suba, iFGRow, ver;
-  olong countAll, countBad;
+  gboolean doCalSelect, doHiEdit, killAll;
+  olong iFGRow, ver;
+  ollong countAll, countBad;
   olong lastSourceID, curSourceID, lastSubA, lastFQID=-1;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   ObitIOAccess access;
   ObitUVDesc *inDesc;
-  ofloat timeAvg, lastTime=-1.0, maxRMS[2], *maxRMS2=NULL, maxBad, cbase, hisicc;
-  olong *hissig=NULL, *blLookup=NULL, *crossBL1=NULL, *crossBL2=NULL;
+  ofloat timeAvg, lastTime=-1.0, maxRMS[2], *maxRMS2=NULL, maxBad, hisicc;
+  olong *hissig=NULL;
+  ollong *crossBL1=NULL, *crossBL2=NULL, *blLookup=NULL;
   olong *corChan=NULL, *corIF=NULL, *corStok=NULL;
   olong *BLAnt1=NULL, *BLAnt2=NULL, BIF, BChan;
-  olong flagTab, indx, jndx, kndx, nVisPIO, itemp, ant1, ant2;
-  olong numCell, ncorr, numAnt, numBL, blindx, hicell;
+  olong flagTab, nVisPIO, itemp, ant1, ant2;
+  olong numCell, ncorr, numAnt, hicell;
+  ollong numBL, indx, jndx, kndx, lltmp, i, j, k, jj, kk, blindx;
   gboolean gotOne, done, isbad, *badCor=NULL;
   ofloat *acc=NULL, *corCnt=NULL, *corBad=NULL, *hiClip=NULL, *Buffer;
   ofloat startTime, endTime, curTime, sigma, hisinc, rms2, rms3, ampl2;
@@ -265,6 +325,9 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   /* Edit by histogram? */
   doHiEdit = FALSE;
   ObitInfoListGetTest(inUV->info, "doHiEdit", &type, dim,  &doHiEdit);  
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
 
    /* Data Selection */
   BIF = 1;
@@ -303,14 +366,16 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
  
   /* Allocate arrays */
   numCell = 800;  /* number of cells in histogram */
-  suba    = 1;
-  numAnt  = inUV->myDesc->numAnt[suba-1];/* actually highest antenna number */
-  numBL   = (numAnt*(numAnt-1))/2;
+  if (inUV->myDesc->maxAnt<=0) ObitUVGetSubA (inUV,err);
+  numAnt  = inUV->myDesc->maxAnt;/* actually highest antenna number */
+  numBL   = (((ollong)numAnt)*(numAnt-1))/2;
   ncorr   = inUV->myDesc->ncorr;
   /* acc index = type + corr * (6) + BL * (6*ncorr)  where BL = 0-rel baseline index */
-  acc    = g_malloc0 (ncorr * 6 * numBL * sizeof(ofloat));
+  lltmp = ncorr * 6 * numBL * sizeof(ofloat);
+  acc    = g_malloc0 (lltmp);
   /* hissig index  = cell + numCell*corr */
-  hissig = g_malloc0 (ncorr * numCell * sizeof(olong));
+  lltmp = ncorr * numCell * sizeof(olong);
+  hissig = g_malloc0 (lltmp);
   hisicc = 0.005;  /* Histogram resolution ??? This seems critical */
   hisinc = hisicc*maxRMS[0]; /* Histogram increment */
   hiClip = g_malloc0 (ncorr * sizeof(ofloat));
@@ -318,16 +383,17 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   corBad = g_malloc0 (ncorr * sizeof(ofloat));
   badCor = g_malloc0 (ncorr * sizeof(gboolean));
   maxRMS2  = g_malloc0 (ncorr * sizeof(ofloat)); /* Maximum variance per correlator */
-  crossBL1 = g_malloc0 (ncorr * sizeof(olong));   /* associated cross baseline 1 */
-  crossBL2 = g_malloc0 (ncorr * sizeof(olong));   /* associated cross baseline 2 */
+  crossBL1 = g_malloc0 (ncorr * sizeof(ollong));  /* associated cross baseline 1 */
+  crossBL2 = g_malloc0 (ncorr * sizeof(ollong));  /* associated cross baseline 2 */
   corChan  = g_malloc0 (ncorr * sizeof(olong));   /* Correlator Channel */
   corIF    = g_malloc0 (ncorr * sizeof(olong));   /* Correlator IF */
   corStok  = g_malloc0 (ncorr * sizeof(olong));   /* Correlator Stokes */
 
   /* Baseline tables */
-  blLookup = g_malloc0(numAnt*sizeof(olong));
-  BLAnt1   = g_malloc0 (numBL * sizeof(olong));    /* First antenna of baseline */
-  BLAnt2   = g_malloc0 (numBL * sizeof(olong));    /* Second antenna of baseline */
+  blLookup = g_malloc0(numAnt*sizeof(ollong));
+  lltmp = numBL * sizeof(olong);
+  BLAnt1   = g_malloc0 (lltmp);    /* First antenna of baseline */
+  BLAnt2   = g_malloc0 (lltmp);    /* Second antenna of baseline */
   blLookup[0] = 0;
   k = 0;
   for (j=2; j<=numAnt; j++) {BLAnt1[k]=1; BLAnt2[k]=j; k++;}
@@ -346,7 +412,7 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   lastSubA     = 0;
   countAll     = 0;
   countBad     = 0;
-  for (i=0; i<6*ncorr*numBL; i++) acc[i] = 0.0;
+  for (lltmp=0; lltmp<6*ncorr*numBL; lltmp++) acc[lltmp] = 0.0;
 
   Buffer = inUV->buffer;
 
@@ -410,7 +476,6 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	else iretCode = ObitUVRead (inUV, inUV->buffer, err);
 	if (err->error) goto cleanup;
 	/*if (iretCode!=OBIT_IO_OK) break;*/
-	firstVis = inDesc->firstVis;
       }
       
       /* Are we there yet??? */
@@ -430,7 +495,6 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	startTime = curTime;
 	lastTime = curTime;
 	endTime   = startTime +  timeAvg;
-	startVis  = firstVis;
 	lastSourceID = curSourceID;
       }
 
@@ -438,10 +502,10 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
       if ((curTime<endTime) && (curSourceID == lastSourceID) && 
 	  (inDesc->firstVis<=inDesc->nvis) && (iretCode==OBIT_IO_OK)) {
 	/* accumulate statistics */
-	cbase = Buffer[inUV->myDesc->ilocb]; /* Baseline */
-	ant1 = (cbase / 256.0) + 0.001;
-	ant2 = (cbase - ant1 * 256) + 0.001;
-	lastSubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
+	ObitUVDescGetAnts(inUV->myDesc, Buffer, &ant1, &ant2, &lastSubA);
+	/* Check antenna number */
+	Obit_return_if_fail ((ant2<=numAnt), err, 
+			     "%s Antenna 2=%d > max %d", routine, ant2, numAnt);  
 	/* Baseline index this assumes a1<a2 always - ignore auto correlations */
 	if (ant1!=ant2) {
 	  blindx =  blLookup[ant1-1] + ant2-ant1-1;
@@ -594,8 +658,10 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	    row->chans[1] = BChan + corChan[i] - 1; 
 	    row->pFlags[0]=row->pFlags[1]=row->pFlags[2]=row->pFlags[3]=0; 
 	    k = abs (corStok[i]);
+	    /* Flag all related Stokes? */
+	    if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
 	    /* bit flag implementation kinda screwy */
-	    row->pFlags[0] |= 1<<(k-1);
+	    else row->pFlags[0] |= 1<<(k-1);
 	    
 	    /* Write */
 	    iFGRow = -1;
@@ -638,8 +704,10 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 		row->chans[1]  = BChan + corChan[jj] - 1; 
 		row->pFlags[0]=row->pFlags[1]=row->pFlags[2]=row->pFlags[3]=0; 
 		k = abs (corStok[j]);
+		/* Flag all related Stokes? */
+		if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
 		/* bit flag implementation kinda screwy */
-		row->pFlags[0] |= 1<<(k-1);
+		else row->pFlags[0] |= 1<<(k-1);
 		
 		/* Write */
 		iFGRow = -1;
@@ -702,8 +770,8 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if (err->error)  Obit_traceback_msg (err, routine, inUV->name);
 
   /* Give report */
-  Obit_log_error(err, OBIT_InfoErr, "EditTD: flag %d of %d vis/interval= %5.1f percent",
-		 countBad, countAll, 100.0*(ofloat)countBad/((ofloat)countAll));
+  Obit_log_error(err, OBIT_InfoErr, "EditTD: flag %8.1lf of %8.1lf vis/interval= %5.1lf percent",
+		 (odouble)countBad, (odouble)countAll, 100.0*(odouble)countBad/((odouble)countAll));
 
   return;
 } /* end  ObitUVEditTD */
@@ -730,6 +798,8 @@ void ObitUVEditTD (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
  * \li "maxBad"    OBIT_float (1,1,1) Fraction of allowed flagged baselines 
  *               to a poln/channel/IF above which all baselines are flagged.
  *               [default 0.25]
+ * \li "killAll" OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ *               all Stokes correlations are flagged [def. FALSE]
  *
  * \param inUV     Input uv data to edit. 
  * \param outUV    UV data onto which the FG table is to be attached.
@@ -742,20 +812,21 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   ObitTableFG *outFlag=NULL;
   ObitTableFGRow *row=NULL;
   gboolean doCalSelect;
-  olong i, j, k, jj, kk, firstVis, startVis, suba, iFGRow, ver;
-  olong countAll, countBad;
+  olong  iFGRow, ver;
+  ollong lltmp, i, j, k, jj, kk, countAll, countBad;
+  ollong indx, jndx, kndx, numBL, blindx;
   olong lastSourceID, curSourceID, lastSubA, lastFQID=-1;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   ObitIOAccess access;
   ObitUVDesc *inDesc;
-  ofloat timeAvg, lastTime=-1.0, maxRMSAvg, *maxRMS2=NULL, maxBad, cbase;
-  olong *blLookup=NULL, *crossBL1=NULL, *crossBL2=NULL;
+  ofloat timeAvg, lastTime=-1.0, maxRMSAvg, *maxRMS2=NULL, maxBad;
+  ollong *crossBL1=NULL, *crossBL2=NULL, *blLookup=NULL;
   olong *corChan=NULL, *corIF=NULL, *corStok=NULL;
   olong *BLAnt1=NULL, *BLAnt2=NULL, BIF, BChan;
-  olong flagTab, indx, jndx, kndx, nVisPIO, itemp, ant1, ant2;
-  olong ncorr, numAnt, numBL, blindx;
-  gboolean gotOne, done, isbad, *badCor=NULL;
+  olong flagTab, nVisPIO, itemp, ant1, ant2;
+  olong ncorr, numAnt;
+  gboolean gotOne, done, isbad, killAll, *badCor=NULL;
   ofloat *acc=NULL, *corCnt=NULL, *corBad=NULL, *Buffer;
   ofloat startTime, endTime, curTime, rms2, ampl2;
   ofloat sec;
@@ -791,6 +862,9 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   maxBad = 0.25;           /* default 0.25 */
   ObitInfoListGetTest(inUV->info, "maxBad", &type, dim,  &maxBad);  
   if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
 
    /* Data Selection */
   BIF = 1;
@@ -828,26 +902,28 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if (err->error) Obit_traceback_msg (err, routine, inUV->name);
  
   /* Allocate arrays */
-  suba    = 1;
-  numAnt  = inUV->myDesc->numAnt[suba-1];/* actually highest antenna number */
-  numBL   = (numAnt*(numAnt-1))/2;
+  if (inUV->myDesc->maxAnt<=0) ObitUVGetSubA (inUV,err);
+  numAnt  = inUV->myDesc->maxAnt;/* actually highest antenna number */
+  numBL   = (((ollong)numAnt)*(numAnt-1))/2;
   ncorr   = inUV->myDesc->ncorr;
   /* acc index = type + corr * (6) + BL * (3*ncorr)  where BL = 0-rel baseline index */
-  acc    = g_malloc0 (ncorr * 3 * numBL * sizeof(ofloat));
+  lltmp = ncorr * 3 * numBL * sizeof(ofloat);
+  acc    = g_malloc0 (lltmp);
   corCnt = g_malloc0 (ncorr * sizeof(ofloat));
   corBad = g_malloc0 (ncorr * sizeof(ofloat));
   badCor = g_malloc0 (ncorr * sizeof(gboolean));
-  maxRMS2  = g_malloc0 (ncorr * sizeof(ofloat)); /* Maximum variance per correlator */
-  crossBL1 = g_malloc0 (ncorr * sizeof(olong));   /* associated cross baseline 1 */
-  crossBL2 = g_malloc0 (ncorr * sizeof(olong));   /* associated cross baseline 2 */
+  maxRMS2  = g_malloc0 (ncorr * sizeof(ofloat));  /* Maximum variance per correlator */
+  crossBL1 = g_malloc0 (ncorr * sizeof(ollong));  /* associated cross baseline 1 */
+  crossBL2 = g_malloc0 (ncorr * sizeof(ollong));  /* associated cross baseline 2 */
   corChan  = g_malloc0 (ncorr * sizeof(olong));   /* Correlator Channel */
   corIF    = g_malloc0 (ncorr * sizeof(olong));   /* Correlator IF */
   corStok  = g_malloc0 (ncorr * sizeof(olong));   /* Correlator Stokes */
 
   /* Baseline tables */
-  blLookup = g_malloc0(numAnt*sizeof(olong));
-  BLAnt1   = g_malloc0 (numBL * sizeof(olong));    /* First antenna of baseline */
-  BLAnt2   = g_malloc0 (numBL * sizeof(olong));    /* Second antenna of baseline */
+  blLookup = g_malloc0(numAnt*sizeof(ollong));
+  lltmp = numBL * sizeof(olong);
+  BLAnt1   = g_malloc0 (lltmp);    /* First antenna of baseline */
+  BLAnt2   = g_malloc0 (lltmp);    /* Second antenna of baseline */
   blLookup[0] = 0;
   k = 0;
   for (j=2; j<=numAnt; j++) {BLAnt1[k]=1; BLAnt2[k]=j; k++;}
@@ -930,7 +1006,6 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	else iretCode = ObitUVRead (inUV, inUV->buffer, err);
 	if (err->error) goto cleanup;
 	/*if (iretCode!=OBIT_IO_OK) break;*/
-	firstVis = inDesc->firstVis;
       }
       
       /* Are we there yet??? */
@@ -950,7 +1025,6 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	startTime = curTime;
 	lastTime = curTime;
 	endTime   = startTime +  timeAvg;
-	startVis  = firstVis;
 	lastSourceID = curSourceID;
       }
 
@@ -958,10 +1032,10 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
       if ((curTime<endTime) && (curSourceID == lastSourceID) && 
 	  (inDesc->firstVis<=inDesc->nvis) && (iretCode==OBIT_IO_OK)) {
 	/* accumulate statistics */
-	cbase = Buffer[inUV->myDesc->ilocb]; /* Baseline */
-	ant1 = (cbase / 256.0) + 0.001;
-	ant2 = (cbase - ant1 * 256) + 0.001;
-	lastSubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
+	ObitUVDescGetAnts(inUV->myDesc, Buffer, &ant1, &ant2, &lastSubA);
+	/* Check antenna number */
+	Obit_return_if_fail ((ant2<=numAnt), err, 
+			     "%s Antenna 2=%d > max %d", routine, ant2, numAnt);  
 	/* Baseline index this assumes a1<a2 always - ignore auto correlations */
 	if (ant1!=ant2) {
 	  blindx =  blLookup[ant1-1] + ant2-ant1-1;
@@ -1015,9 +1089,10 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	  for (j=0; j<ncorr; j++) { /* loop 190 */
  	    jndx = j*3 + i*3*ncorr;
             if (acc[jndx] > 1.1) {
+
 	      /* Get rms**2 */
 	      rms2 = acc[jndx+2];
-	      /* Average amppl**2 */
+	      /* Average ampl**2 */
 	      ampl2 = acc[jndx+1]*acc[jndx+1];
 	      acc[jndx+1] = maxRMS2[j];
 	      acc[jndx+2] = rms2 / MAX(ampl2, 1.0e-20);
@@ -1087,8 +1162,10 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	    row->chans[1] = BChan + corChan[i] - 1; 
 	    row->pFlags[0]= row->pFlags[1] = row->pFlags[2] = row->pFlags[3] = 0; 
 	    k = abs (corStok[i]);
+	    /* Flag all related Stokes? */
+	    if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
 	    /* bit flag implementation kinda screwy */
-	    row->pFlags[0] |= 1<<(k-1);
+	    else row->pFlags[0] |= 1<<(k-1);
 	    
 	    /* Write */
 	    iFGRow = -1;
@@ -1131,8 +1208,10 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 		row->chans[1]  = BChan + corChan[jj] - 1; 
 		row->pFlags[0]=row->pFlags[1]=row->pFlags[2]=row->pFlags[3]=0; 
 		k = abs (corStok[j]);
+		/* Flag all related Stokes? */
+		if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
 		/* bit flag implementation kinda screwy */
-		row->pFlags[0] |= 1<<(k-1);
+		else row->pFlags[0] |= 1<<(k-1);
 		
 		/* Write */
 		iFGRow = -1;
@@ -1193,8 +1272,9 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if (err->error)  Obit_traceback_msg (err, routine, inUV->name);
 
   /* Give report */
-  Obit_log_error(err, OBIT_InfoErr, "%s: flag %d of %d vis/interval= %5.1f percent",
-		 routine, countBad, countAll, 100.0*(ofloat)countBad/((ofloat)countAll));
+  Obit_log_error(err, OBIT_InfoErr, "%s: flag %8.1lf of %8.1lf vis/interval= %5.1lf percent",
+		 routine, (odouble)countBad, (odouble)countAll, 
+		 100.0*(odouble)countBad/((odouble)countAll));
 
   return;
 } /* end  ObitUVEditTDRMSAvg */
@@ -1221,6 +1301,8 @@ void ObitUVEditTDRMSAvg (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
  * \li "maxBad"    OBIT_float (1,1,1) Fraction of allowed flagged baselines 
  *               to a poln/channel/IF above which all baselines are flagged.
  *               [default 0.25]
+ * \li "killAll" OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ *               all Stokes correlations are flagged [def. FALSE]
  *
  * \param inUV     Input uv data to edit. 
  * \param outUV    UV data onto which the FG table is to be attached.
@@ -1233,20 +1315,20 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   ObitTableFG *outFlag=NULL;
   ObitTableFGRow *row=NULL;
   gboolean doCalSelect;
-  olong i, j, k, jj, kk, firstVis, startVis, suba, iFGRow, ver;
-  olong countAll, countBad;
+  olong iFGRow, ver;
+  ollong i, j, k, jj, kk, countAll, countBad;
+  ollong lltmp, indx, jndx, kndx, numBL, blindx;
   olong lastSourceID, curSourceID, lastSubA, lastFQID=-1;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   ObitIOAccess access;
   ObitUVDesc *inDesc;
-  ofloat timeAvg, lastTime=-1.0, maxRMSAvg, *maxRMS2=NULL, maxBad, cbase;
-  olong *blLookup=NULL, *crossBL1=NULL, *crossBL2=NULL;
+  ofloat timeAvg, lastTime=-1.0, maxRMSAvg, *maxRMS2=NULL, maxBad;
+  ollong *crossBL1=NULL, *crossBL2=NULL, *blLookup=NULL;
   olong *corChan=NULL, *corIF=NULL, *corStok=NULL;
   olong *BLAnt1=NULL, *BLAnt2=NULL, BIF, BChan;
-  olong flagTab, indx, jndx, kndx, nVisPIO, itemp, ant1, ant2;
-  olong ncorr, numAnt, numBL, blindx;
-  gboolean gotOne, done, isbad, *badCor=NULL;
+  olong flagTab, nVisPIO, itemp, ant1, ant2, ncorr, numAnt;
+  gboolean gotOne, done, isbad, killAll, *badCor=NULL;
   ofloat *acc=NULL, *corCnt=NULL, *corBad=NULL, *Buffer;
   ofloat startTime, endTime, curTime, rms2, rms3, ampl2;
   ofloat sec;
@@ -1282,6 +1364,9 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   maxBad = 0.25;           /* default 0.25 */
   ObitInfoListGetTest(inUV->info, "maxBad", &type, dim,  &maxBad);  
   if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
 
    /* Data Selection */
   BIF = 1;
@@ -1319,26 +1404,28 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if (err->error) Obit_traceback_msg (err, routine, inUV->name);
  
   /* Allocate arrays */
-  suba    = 1;
-  numAnt  = inUV->myDesc->numAnt[suba-1];/* actually highest antenna number */
-  numBL   = (numAnt*(numAnt-1))/2;
+  if (inUV->myDesc->maxAnt<=0) ObitUVGetSubA (inUV,err);
+  numAnt  = inUV->myDesc->maxAnt;/* actually highest antenna number */
+  numBL   = (((olong)numAnt)*(numAnt-1))/2;
   ncorr   = inUV->myDesc->ncorr;
   /* acc index = type + corr * (6) + BL * (5*ncorr)  where BL = 0-rel baseline index */
-  acc    = g_malloc0 (ncorr * 5 * numBL * sizeof(ofloat));
+  lltmp = ncorr * 5 * numBL * sizeof(ofloat);
+  acc    = g_malloc0 (lltmp);
   corCnt = g_malloc0 (ncorr * sizeof(ofloat));
   corBad = g_malloc0 (ncorr * sizeof(ofloat));
   badCor = g_malloc0 (ncorr * sizeof(gboolean));
-  maxRMS2  = g_malloc0 (ncorr * sizeof(ofloat)); /* Maximum variance per correlator */
-  crossBL1 = g_malloc0 (ncorr * sizeof(olong));   /* associated cross baseline 1 */
-  crossBL2 = g_malloc0 (ncorr * sizeof(olong));   /* associated cross baseline 2 */
+  maxRMS2  = g_malloc0 (ncorr * sizeof(ofloat));  /* Maximum variance per correlator */
+  crossBL1 = g_malloc0 (ncorr * sizeof(ollong));  /* associated cross baseline 1 */
+  crossBL2 = g_malloc0 (ncorr * sizeof(ollong));  /* associated cross baseline 2 */
   corChan  = g_malloc0 (ncorr * sizeof(olong));   /* Correlator Channel */
   corIF    = g_malloc0 (ncorr * sizeof(olong));   /* Correlator IF */
   corStok  = g_malloc0 (ncorr * sizeof(olong));   /* Correlator Stokes */
 
   /* Baseline tables */
-  blLookup = g_malloc0(numAnt*sizeof(olong));
-  BLAnt1   = g_malloc0 (numBL * sizeof(olong));    /* First antenna of baseline */
-  BLAnt2   = g_malloc0 (numBL * sizeof(olong));    /* Second antenna of baseline */
+  blLookup = g_malloc0(numAnt*sizeof(ollong));
+  lltmp = numBL * sizeof(olong);
+  BLAnt1   = g_malloc0 (lltmp);    /* First antenna of baseline */
+  BLAnt2   = g_malloc0 (lltmp);    /* Second antenna of baseline */
   blLookup[0] = 0;
   k = 0;
   for (j=2; j<=numAnt; j++) {BLAnt1[k]=1; BLAnt2[k]=j; k++;}
@@ -1421,7 +1508,6 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	else iretCode = ObitUVRead (inUV, inUV->buffer, err);
 	if (err->error) goto cleanup;
 	/*if (iretCode!=OBIT_IO_OK) break;*/
-	firstVis = inDesc->firstVis;
       }
       
       /* Are we there yet??? */
@@ -1441,7 +1527,6 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	startTime = curTime;
 	lastTime = curTime;
 	endTime   = startTime +  timeAvg;
-	startVis  = firstVis;
 	lastSourceID = curSourceID;
       }
 
@@ -1449,10 +1534,10 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
       if ((curTime<endTime) && (curSourceID == lastSourceID) && 
 	  (inDesc->firstVis<=inDesc->nvis) && (iretCode==OBIT_IO_OK)) {
 	/* accumulate statistics */
-	cbase = Buffer[inUV->myDesc->ilocb]; /* Baseline */
-	ant1 = (cbase / 256.0) + 0.001;
-	ant2 = (cbase - ant1 * 256) + 0.001;
-	lastSubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
+	ObitUVDescGetAnts(inUV->myDesc, Buffer, &ant1, &ant2, &lastSubA);
+	/* Check antenna number */
+	Obit_return_if_fail ((ant2<=numAnt), err, 
+			     "%s Antenna 2=%d > max %d", routine, ant2, numAnt);  
 	/* Baseline index this assumes a1<a2 always - ignore auto correlations */
 	if (ant1!=ant2) {
 	  blindx =  blLookup[ant1-1] + ant2-ant1-1;
@@ -1583,8 +1668,10 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	    row->chans[1] = BChan + corChan[i] - 1; 
 	    row->pFlags[0]=row->pFlags[1]=row->pFlags[2]=row->pFlags[3]=0; 
 	    k = abs (corStok[i]);
+	    /* Flag all related Stokes? */
+	    if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
 	    /* bit flag implementation kinda screwy */
-	    row->pFlags[0] |= 1<<(k-1);
+	    else row->pFlags[0] |= 1<<(k-1);
 	    
 	    /* Write */
 	    iFGRow = -1;
@@ -1627,8 +1714,10 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 		row->chans[1]  = BChan + corChan[jj] - 1; 
 		row->pFlags[0]=row->pFlags[1]=row->pFlags[2]=row->pFlags[3]=0; 
 		k = abs (corStok[j]);
+		/* Flag all related Stokes? */
+		if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
 		/* bit flag implementation kinda screwy */
-		row->pFlags[0] |= 1<<(k-1);
+		else row->pFlags[0] |= 1<<(k-1);
 		
 		/* Write */
 		iFGRow = -1;
@@ -1689,14 +1778,15 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if (err->error)  Obit_traceback_msg (err, routine, inUV->name);
 
   /* Give report */
-  Obit_log_error(err, OBIT_InfoErr, "%s: flag %d of %d vis/interval= %5.1f percent",
-		 routine, countBad, countAll, 100.0*(ofloat)countBad/((ofloat)countAll));
+  Obit_log_error(err, OBIT_InfoErr, "%s: flag %8.1lf of %8.1lf vis/interval= %5.1lf percent",
+		 routine, (odouble)countBad, (odouble)countAll, 
+		 100.0*(odouble)countBad/((odouble)countAll));
 
   return;
 } /* end  ObitUVEditTDRMSAvgVec */
 
 /**
- * Frequency domain editing of visibility data.  
+ * Frequency domain editing of visibility data.  possible threaded.
  * Editing is done independently for each visibility measure.  
  * First clipping is done on correlator and Vpol amplitudes.  
  * Following this, an average and RMS is determined for each channel 
@@ -1743,6 +1833,11 @@ void ObitUVEditTDRMSAvgVec (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
  *             Channel increments defaults to 1
  *             If the IF==0 then the group applies to all IF.
  *             Default is channels 2 => nchan-1 all IFs
+ * \li "maxBad" OBIT_float (1,1,1) maximum fraction of time samples 
+ *             at and below which a channel/interval will be flagged.  
+ *             [default 0.25, -1 ->no flagging by fraction of samples.]
+ * \li "killAll" OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ *             all Stokes correlations are flagged [def. FALSE]
  * \param outUV    UV data onto which the FG table is to be attached.
  *                 May be the same as inUV.
  * \param err      Error stack, returns if not empty.
@@ -1757,20 +1852,25 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
   gint32 dim[MAXINFOELEMDIM];
   ObitIOAccess access;
   ObitUVDesc *inDesc;
-  olong flagTab, iFGRow;
-  ofloat timeAvg, maxAmp, maxV, maxResBL, maxRes, maxRMS[2];
-  olong  ncorr, numChan, numPol, numIF, numAnt, numBL, widMW, *chanSel;
-  olong js, jf, jif, jbl, jndx, indx, kndx, jj,BIF, BChan;
-  olong i, j, k, kk, itemp, lastSourceID, curSourceID, lastSubA;
+  UVMednFuncArg** args=NULL;
+  ObitThread *myThread=NULL;
+  olong flagTab, iFGRow, nThread, nBLpTh;
+  ofloat timeAvg, maxAmp, maxV, maxResBL, maxRes, maxRMS[2], minGood;
+  olong  ncorr, numChan, numPol, numIF, numAnt, widMW, *chanSel;
+  olong BIF, BChan;
+  olong lastSourceID, curSourceID, lastSubA;
   olong ant1, ant2, blindx, lastFQID=-1;
-  olong  countAll, countBad, nVisPIO, ver, firstVis, startVis, suba;
+  ollong numBL, countAll, countBad, *count=NULL;
+  ollong lltmp, i, j, k, kk, js, jf, jif, jbl, jndx, indx, kndx, jj;
+  olong nVisPIO, ver, kstoke0, itemp;
   ofloat startTime, endTime, curTime, amp2, *Buffer;
-  ofloat lastTime=-1.0, cbase;
+  ofloat lastTime=-1.0;
   olong *corChan=NULL, *corIF=NULL, *corStok=NULL, *corV=NULL;
-  gboolean *chanMask=NULL, done, gotOne;
+  gboolean *chanMask=NULL, done, gotOne, killAll;
   /* Accumulators per spectral channel/IF/poln/baseline */
-  ofloat *sumA=NULL, *sumA2=NULL;
-  olong *count=NULL, *blLookup=NULL, *BLAnt1=NULL, *BLAnt2=NULL;
+  ofloat *sumA=NULL, *sumA2=NULL, *sigma=NULL;
+  olong *BLAnt1=NULL, *BLAnt2=NULL;
+  ollong *blLookup=NULL;
   olong defSel[] = {2,-10,1,0, 0,0,0,0};
   ofloat sec;
   gchar *tname, reason[25];
@@ -1831,6 +1931,12 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
   if ((chanSel[0]<=0) && (chanSel[1]<=0) && (chanSel[2]<=0) && (chanSel[3]<=0)) {
     chanSel = defSel;  /* Use default = channels 2 => n-1 */
   }
+  /* Min. fraction of good times */
+  minGood = 0.25;           /* default 0.25 */
+  ObitInfoListGetTest(inUV->info, "maxBad", &type, dim,  &minGood);  
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
 
    /* Data Selection */
   BIF = 1;
@@ -1868,16 +1974,24 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
   if (err->error) Obit_traceback_msg (err, routine, inUV->name);
  
   /* Allocate arrays */
-  suba    = 1;
   ncorr   = inUV->myDesc->ncorr;
-  numAnt  = inUV->myDesc->numAnt[suba-1];/* actually highest antenna number */
-  numBL   = (numAnt*(numAnt-1))/2;
+  if (inUV->myDesc->maxAnt<=0) ObitUVGetSubA (inUV,err);
+  numAnt  = inUV->myDesc->maxAnt;/* actually highest antenna number */
+  numBL   = (((ollong)numAnt)*(numAnt-1))/2;
   if (inUV->myDesc->jlocs>=0) numPol  = inUV->myDesc->inaxes[inUV->myDesc->jlocs];
   else numPol = 1;
   if (inUV->myDesc->jlocif>=0) numIF  = inUV->myDesc->inaxes[inUV->myDesc->jlocif];
   else numIF = 1;
   if (inUV->myDesc->jlocf>=0) numChan = inUV->myDesc->inaxes[inUV->myDesc->jlocf];
   else numChan = 1;
+  /* Get first stokes index */
+  if (inUV->myDesc->crval[inUV->myDesc->jlocs]> 0.0) {
+    kstoke0 = inUV->myDesc->crval[inUV->myDesc->jlocs] + 
+      (1.0-inUV->myDesc->crpix[inUV->myDesc->jlocs]) * inUV->myDesc->cdelt[inUV->myDesc->jlocs] + 0.5;
+  } else {
+    kstoke0 = inUV->myDesc->crval[inUV->myDesc->jlocs] + 
+      (1.0-inDesc->crpix[inUV->myDesc->jlocs]) * inUV->myDesc->cdelt[inUV->myDesc->jlocs] - 0.5;
+  } 
 
   /* Make sure it all adds up */
   Obit_return_if_fail ((ncorr==numPol*numIF*numChan), err, 
@@ -1887,9 +2001,12 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
   if (chanSel == defSel) defSel[1] = numChan-1;
  
   /* index in order */
-  sumA     = g_malloc0 (numChan*numPol*numIF*numBL*sizeof(ofloat));
-  sumA2    = g_malloc0 (numChan*numPol*numIF*numBL*sizeof(ofloat));
-  count    = g_malloc0 (numChan*numPol*numIF*numBL*sizeof(olong));
+  lltmp    = numChan*numPol*numIF*numBL*sizeof(ofloat);
+  sumA     = g_malloc0 (lltmp);
+  sumA2    = g_malloc0 (lltmp);
+  sigma    = g_malloc0 (lltmp);
+  lltmp    = numChan*numPol*numIF*numBL*sizeof(ollong);
+  count    = g_malloc0 (lltmp);
   corChan  = g_malloc0 (ncorr * sizeof(olong));     /* Correlator Channel */
   corIF    = g_malloc0 (ncorr * sizeof(olong));     /* Correlator IF */
   corStok  = g_malloc0 (ncorr * sizeof(olong));     /* Correlator Stokes */
@@ -1897,15 +2014,55 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
   chanMask = g_malloc0 (ncorr * sizeof(gboolean)); /* True if channel in baseline region */
 
   /* Baseline tables */
-  blLookup = g_malloc0 (numAnt*sizeof(olong));     /* baseline lookup table */
-  BLAnt1   = g_malloc0 (numBL * sizeof(olong));    /* First antenna of baseline */
-  BLAnt2   = g_malloc0 (numBL * sizeof(olong));    /* Second antenna of baseline */
+  blLookup = g_malloc0 (numAnt*sizeof(ollong));     /* baseline lookup table */
+  lltmp = (numBL * sizeof(olong));
+  BLAnt1   = g_malloc0 (lltmp);    /* First antenna of baseline */
+  BLAnt2   = g_malloc0 (lltmp);    /* Second antenna of baseline */
   blLookup[0] = 0;
   k = 0;
   for (j=2; j<=numAnt; j++) {BLAnt1[k]=1; BLAnt2[k]=j; k++;}
   for (i=1; i<numAnt; i++) {
     blLookup[i] = blLookup[i-1] + numAnt-i;
     for (j=i+2; j<=numAnt; j++) {BLAnt1[k]=i+1; BLAnt2[k]=j; k++;}
+  }
+
+  /* How many Threads? */
+  myThread = newObitThread();
+  nThread = MAX (1, ObitThreadNumProc(myThread));
+  nThread = MIN (nThread, numBL);
+  nBLpTh  = MAX (1, (olong)(0.999+(ofloat)numBL/nThread));  /* Baselines per thread */
+  nBLpTh  = MIN (nBLpTh, numBL);
+
+  /* Create Thread object arrays */
+  args = g_malloc0(nThread*sizeof(UVMednFuncArg*));
+  for (i=0; i<nThread; i++) {
+    args[i] = g_malloc0(sizeof(UVMednFuncArg));
+    args[i]->thread = myThread;
+    if (nThread>1) args[i]->ithread = i;
+    else           args[i]->ithread = -1;
+    args[i]->first    = 1 + i*nBLpTh;
+    args[i]->last     = MIN(numBL, args[i]->first + nBLpTh - 1);
+    args[i]->numBL    = numBL;
+    args[i]->numPol   = numPol;
+    args[i]->numChan  = numChan;
+    args[i]->numIF    = numIF;
+    args[i]->count    = count;
+    args[i]->avg      = sumA;
+    args[i]->RMS      = sumA2;
+    args[i]->sigma    = sigma;
+    args[i]->corV     = corV;
+    args[i]->widMW    = widMW;
+    args[i]->chanMask = chanMask;
+    args[i]->maxAmp   = maxAmp;
+    args[i]->maxV     = maxV;
+    args[i]->maxRMS   = maxRMS;
+    args[i]->maxRes   = maxRes;
+    args[i]->maxResBL = maxResBL;
+    args[i]->minGood  = minGood;
+    args[i]->doMW     = widMW>0;
+    args[i]->err      = err;
+    args[i]->work     = g_malloc(numChan*sizeof(ofloat));   /* Deallocate when done */
+    args[i]->work2    = g_malloc(numChan*sizeof(ofloat));   /* Deallocate when done */
   }
 
   /* Initialize things */
@@ -1983,7 +2140,6 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
 	else iretCode = ObitUVRead (inUV, inUV->buffer, err);
 	if (err->error) goto cleanup;
 	/*if (iretCode!=OBIT_IO_OK) break;*/
-	firstVis = inDesc->firstVis;
       }
       
       /* Are we there yet??? */
@@ -2002,7 +2158,6 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
 	startTime = curTime;
 	lastTime = curTime;
 	endTime   = startTime +  timeAvg;
-	startVis  = firstVis;
 	lastSourceID = curSourceID;
       }
 
@@ -2010,10 +2165,10 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
       if ((curTime<endTime) && (curSourceID == lastSourceID) && 
 	  (inDesc->firstVis<=inDesc->nvis) && (iretCode==OBIT_IO_OK)) {
 	/* accumulate statistics */
-	cbase = Buffer[inUV->myDesc->ilocb]; /* Baseline */
-	ant1 = (cbase / 256.0) + 0.001;
-	ant2 = (cbase - ant1 * 256) + 0.001;
-	lastSubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
+	ObitUVDescGetAnts(inUV->myDesc, Buffer, &ant1, &ant2, &lastSubA);
+	/* Check antenna number */
+	Obit_return_if_fail ((ant2<=numAnt), err, 
+			     "%s Antenna 2=%d > max %d", routine, ant2, numAnt);  
 	/* Baseline index this assumes a1<a2 always - ignore auto correlations */
 	if (ant1!=ant2) {
 	  blindx =  blLookup[ant1-1] + ant2-ant1-1;
@@ -2024,12 +2179,12 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
 	  /* Accumulate
 	     count =  count per correlation, baseline
 	     sumA  = sum of amplitudes for correlation, baseline, then residual
-	     sumA  = sum of amplitudes**2 for correlation, baseline, then RMS */
+	     sumA2 = sum of amplitudes**2 for correlation, baseline, then RMS */
 	  indx = inDesc->nrparm; /* offset of start of vis data */
 	  for (i=0; i<ncorr; i++) { /* loop 120 */
 	    if (Buffer[indx+2] > 0.0) {
 	      /* What kind of data is this? */
-	      js  = abs(corStok[i])-1;
+	      js  = abs(corStok[i])-abs(kstoke0);
 	      jf  = corChan[i]-1;
 	      jif = corIF[i]-1;
 	      /* Reorder to freq, IF, poln, baseline */
@@ -2048,19 +2203,10 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
 	/* Now have the next record in the IO Buffer */
 	if (iretCode==OBIT_IO_OK) gotOne = TRUE;
 
-	/* Average, get RMSes  */
-	EditFDAvg(numChan, numIF, numPol, numBL, count, sumA, sumA2, 
-		  maxAmp, maxV, corV);
-	    
-	/* Fit baselines to averages, subtract */
-	EditFDBaseline(numChan, numIF, numPol, numBL, count, sumA, sumA2, 
-		       widMW, chanMask, err);
+	/* Process  */
+	EditFDProcess(nThread, args, err); 
 	if (err->error) goto cleanup;
 	    
-	/* Do editing on residuals, RMSes */
-	EditFDEdit(numChan, numIF, numPol, numBL, count, sumA, sumA2, 
-		   maxRMS, maxRes, maxResBL, chanMask);
-
 	/* Init Flagging table entry */
 	row->SourID  = lastSourceID; 
 	row->SubA    = lastSubA; 
@@ -2102,7 +2248,10 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
 		  row->chans[1]  = BChan + jj; 
 		  row->pFlags[0]=row->pFlags[1]=row->pFlags[2]=row->pFlags[3]=0; 
 		  /* bit flag implementation kinda screwy */
-		  row->pFlags[0] |= 1<<(js);
+		  /* Flag all related Stokes? */
+		  if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
+		  /* bit flag implementation kinda screwy */
+		  else row->pFlags[0] |= 1<<(js);
 		  
 		  /* Write */
 		  iFGRow = -1;
@@ -2156,6 +2305,7 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
   outFlag = ObitTableFGUnref(outFlag);
   if (sumA)     g_free(sumA);
   if (sumA2)    g_free(sumA2);
+  if (sigma)    g_free(sigma);
   if (count)    g_free(count);
   if (blLookup) g_free(blLookup);
   if (BLAnt1)   g_free(BLAnt1);
@@ -2165,14 +2315,28 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
   if (corStok)  g_free(corStok);
   if (corV)     g_free(corV);
   if (chanMask) g_free(chanMask);
+  /* Shut down any threading */
+  ObitThreadPoolFree (myThread);
+  /* Delete Thread object arrays */
+  if (args) {
+    for (i=0; i<nThread; i++) {
+      if (args[i]) {
+	if (args[i]->work)  g_free(args[i]->work);
+	if (args[i]->work2) g_free(args[i]->work2);
+	g_free(args[i]); args[i] = NULL;
+      }
+    }
+    g_free(args); args = NULL;
+  }
   if (err->error) Obit_traceback_msg (err, routine, inUV->name);
 
   /* Give report */
-  Obit_log_error(err, OBIT_InfoErr, "EditFD: flag %d of %d vis/interval= %5.1f percent",
-		 countBad, countAll, 100.0*(ofloat)countBad/((ofloat)countAll));
+  Obit_log_error(err, OBIT_InfoErr, "EditFD: flag %8.1lf of %8.1lf vis/interval= %5.1lf percent",
+		 (odouble)countBad, (odouble)countAll, 
+		 100.0*(odouble)countBad/((odouble)countAll));
 
   return;
-} /* end  ObitUVEditTD */
+} /* end  ObitUVEditFD */
 
 /**
  * Stokes editing of UV data, FG table out
@@ -2187,16 +2351,19 @@ void ObitUVEditFD (ObitUV* inUV, ObitUV* outUV, ObitErr* err)
  * Results are unpredictable for uncalibrated data.
  * Control parameters on info member of inUV:
  * \li "flagStok" OBIT_string (1,1,1) Stokes value to clip (I, Q, U, V, R, L)
- *                default = "V"
+ *                default = "V" or correlator based, i.e. RR, LR, XY, YY...
  * \li "flagTab" OBIT_int    (1,1,1) FG table version number [ def. 1]
  *               NB: this should not also being used to flag the input data!
  * \li "timeAvg" OBIT_float  (1,1,1) Time interval over which to determine
- *               data to be flagged (min) [def = 1 min.]
+ *               data to be flagged (min) [def = 1 min., min = 0.1 sec]
  * \li "maxAmp"  OBIT_float (2,1,1) Maximum value allowed
  *               [0] = clipping level, [1]==0.0 use statistical level
+ * \li "minAmp"    OBIT_float (1,1,1) Minimum amplitude allowed
  * \li "maxBad"  OBIT_float (1,1,1) Fraction of allowed flagged baselines 
  *               to an antenna above which all baselines are flagged.
  *               [default 0.25]
+ * \li "killAll" OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ *               all Stokes correlations are flagged [def. FALSE]
  *
  * \param inUV     Input uv data to edit. 
  * \param outUV    UV data onto which the FG table is to be attached.
@@ -2208,24 +2375,26 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   ObitIOCode iretCode, oretCode;
   ObitTableFG *outFlag=NULL;
   ObitTableFGRow *row=NULL;
-  olong i, j, k, jj, kk, firstVis, startVis, suba, iFGRow, ver;
-  olong countAll, countBad;
+  olong iFGRow, ver;
+  ollong countAll, countBad;
   olong lastSourceID, curSourceID, lastSubA, lastFQID=-1;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
-  gboolean gotOne;
+  gboolean gotOne, killAll;
   ObitIOAccess access;
   ObitUVDesc *inDesc;
-  ofloat timeAvg, lastTime=-1.0, temp[2], maxAmp, maxBad, cbase, hisicc;
-  olong *hissig=NULL, *blLookup=NULL;
+  ofloat timeAvg, lastTime=-1.0, temp[2], maxAmp, maxBad, hisicc;
+  olong *hissig=NULL;
+  olong *blLookup=NULL;
   olong *corChan=NULL, *corIF=NULL, *corStok=NULL;
   olong *BLAnt1=NULL, *BLAnt2=NULL, BIF, BChan;
-  olong flagTab, indx, jndx, kndx,  kndx2, nVisPIO, itemp, ant1, ant2;
-  olong numCell, ncorr, numAnt, numBL, blindx, hicell;
+  olong flagTab, nVisPIO, ant1, ant2;
+  olong numCell, ncorr, numAnt, hicell, itemp;
+  ollong lltmp, indx, jndx, kndx,  kndx2, numBL, blindx, i, j, k, jj, kk;
   gboolean doStat, done, isbad, *badAnt=NULL;
   ofloat *acc=NULL, *corCnt=NULL, *corBad=NULL, *hiClip=NULL, *Buffer;
   ofloat startTime, endTime, curTime, avg, avg2, hisinc;
-  ofloat mxamp2, sec;
+  ofloat minAmp=0.0, minAmp2, mxamp2, sec;
   gchar *tname, Stokes[5], oStokes[5], reason[25];
   struct tm *lp;
   time_t clock;
@@ -2249,13 +2418,15 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   /* Time interval */
   timeAvg = 1.0;  /* default 1 min */
   ObitInfoListGetTest(inUV->info, "timeAvg", &type, dim, &timeAvg);
-  if (timeAvg<=(1.0/60.0)) timeAvg = 1.0;
+  if (timeAvg<=(0.1/60.0)) timeAvg = 1.0;
   timeAvg /= 1440.0;  /* convert to days */
  /* RMS clipping parameters, no default */
   ObitInfoListGet(inUV->info, "maxAmp", &type, dim, temp, err);
   maxAmp = temp[0];
-  doStat = ((dim[0]==1) || (temp[1]!=0.0));
+  doStat = ((dim[0]==1) || (temp[1]<=0.0));
   mxamp2 = maxAmp * maxAmp;
+  ObitInfoListGetTest(inUV->info, "minAmp", &type, dim,  &minAmp);  
+  minAmp2 = minAmp*minAmp;
   /* max. fraction bad baselines */
   maxBad = 0.25;           /* default 0.25 */
   ObitInfoListGetTest(inUV->info, "maxBad", &type, dim,  &maxBad);  
@@ -2263,6 +2434,9 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   /* Clipping Stokes type */
   Stokes[0] = 'V'; Stokes[1] = Stokes[2] = Stokes[3] = ' '; Stokes[4] = 0;
   ObitInfoListGetTest(inUV->info, "flagStok",   &type, dim, Stokes);  
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
 
   /* Data Selection */
   BIF = 1;
@@ -2279,7 +2453,7 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   dim[0] = dim[1] = dim[2] = 1;
   ObitInfoListAlwaysPut(inUV->info, "nVisPIO", OBIT_long, dim, &itemp);
 
-  /* Set Stokes to 'V' */
+  /* Set Stokes to ' ' */
   oStokes[0] = oStokes[1] = oStokes[2] = oStokes[3] = ' '; oStokes[4] = 0;
   ObitInfoListGetTest(inUV->info, "Stokes", &type, dim, oStokes);
   dim[0] = strlen(Stokes); dim[1] = dim[2] = 1;
@@ -2304,12 +2478,13 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
  
   /* Allocate arrays */
   numCell = 800;  /* number of cells in histogram */
-  suba    = 1;
-  numAnt  = inUV->myDesc->numAnt[suba-1];/* actually highest antenna number */
-  numBL   = (numAnt*(numAnt-1))/2;
+  if (inUV->myDesc->maxAnt<=0) ObitUVGetSubA (inUV,err);
+  numAnt  = inUV->myDesc->maxAnt;/* actually highest antenna number */
+  numBL   = (((ollong)numAnt)*(numAnt-1))/2;
   ncorr   = inUV->myDesc->ncorr;
   /* acc index = type + corr * (3) + BL * (3*ncorr)  where BL = 0-rel baseline index */
-  acc    = g_malloc (ncorr * 3 * numBL * sizeof(ofloat));
+  lltmp = ncorr * 3 * numBL * sizeof(ofloat);
+  acc    = g_malloc (lltmp);
   /* hissig index  = cell + numCell*corr */
   hissig = g_malloc (ncorr * numCell * sizeof(olong));
   hisicc = 0.005;  /* Histogram resolution ??? This seems critical */
@@ -2326,9 +2501,10 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   corStok  = g_malloc (ncorr * sizeof(olong));    /* Correlator Stokes */
 
   /* Baseline tables */
-  blLookup = g_malloc0(numAnt*sizeof(olong));
-  BLAnt1   = g_malloc (numBL * sizeof(olong));    /* First antenna of baseline */
-  BLAnt2   = g_malloc (numBL * sizeof(olong));    /* Second antenna of baseline */
+  blLookup = g_malloc0(numAnt*sizeof(ollong));
+  lltmp = numBL * sizeof(olong);
+  BLAnt1   = g_malloc (lltmp);    /* First antenna of baseline */
+  BLAnt2   = g_malloc (lltmp);    /* Second antenna of baseline */
   blLookup[0] = 0;
   k = 0;
   for (j=2; j<=numAnt; j++) {BLAnt1[k]=1; BLAnt2[k]=j; k++;}
@@ -2385,6 +2561,23 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   row->pFlags[1] = 0; 
   row->pFlags[2] = 0; 
   row->pFlags[3] = 0; 
+  /* Single correlation flags? */
+  if (!strncmp(Stokes, "RR", 2)) row->pFlags[0] = 1<<0;
+  if (!strncmp(Stokes, "LL", 2)) row->pFlags[0] = 1<<1;
+  if (!strncmp(Stokes, "RL", 2)) row->pFlags[0] = 1<<2;
+  if (!strncmp(Stokes, "LR", 2)) row->pFlags[0] = 1<<3;
+  if (!strncmp(Stokes, "XX", 2)) row->pFlags[0] = 1<<0;
+  if (!strncmp(Stokes, "YY", 2)) row->pFlags[0] = 1<<1;
+  if (!strncmp(Stokes, "XY", 2)) row->pFlags[0] = 1<<2;
+  if (!strncmp(Stokes, "YX", 2)) row->pFlags[0] = 1<<3;
+  /* Cross pol */
+  if ((Stokes[0]=='Q') && (inDesc->crval[inDesc->jlocs]< 0.0)) 
+    row->pFlags[0] = 1<<2 | 1<<3;
+  if ((Stokes[0]=='U') && (inDesc->crval[inDesc->jlocs]< 0.0))
+    row->pFlags[0] = 1<<2 | 1<<3;
+  /* Flag all related Stokes? */
+  if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
+
   /* Reason includes time/date */
   /* Get time since 00:00:00 GMT, Jan. 1, 1970 in seconds. */
   time (&clock);
@@ -2407,8 +2600,8 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
     while ((iretCode==OBIT_IO_OK) && (oretCode==OBIT_IO_OK)) {
       if ((!gotOne) || (inUV->myDesc->numVisBuff<=0)) { /* need to read new record? */
 	iretCode = ObitUVReadSelect (inUV, inUV->buffer, err);
+	if (err->error) goto cleanup;
 	/*if (iretCode!=OBIT_IO_OK) break;*/
-	firstVis = inDesc->firstVis;
       }
 
       /* Are we there yet??? */
@@ -2427,7 +2620,6 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	startTime = curTime;
 	lastTime = curTime;
 	endTime   = startTime +  timeAvg;
-	startVis  = firstVis;
 	lastSourceID = curSourceID;
       }
 
@@ -2435,9 +2627,10 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
       if ((curTime<endTime) && (curSourceID == lastSourceID) && 
 	  (inDesc->firstVis<=inDesc->nvis) && (iretCode==OBIT_IO_OK)) {
 	/* accumulate statistics */
-	cbase = Buffer[inUV->myDesc->ilocb]; /* Baseline */
-	ant1 = (cbase / 256.0) + 0.001;
-	ant2 = (cbase - ant1 * 256) + 0.001;
+	ObitUVDescGetAnts(inUV->myDesc, Buffer, &ant1, &ant2, &lastSubA);
+	/* Check antenna number */
+	Obit_return_if_fail ((ant2<=numAnt), err, 
+			     "%s Antenna 2=%d > max %d", routine, ant2, numAnt);  
 	/* DEBUG 
 	   if ((ant1==11) && (ant2==28)) {
 	   indx = inDesc->nrparm;
@@ -2446,7 +2639,6 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	   Buffer[indx], Buffer[indx+1], Buffer[indx+2], 
 	   Buffer[indx+3], Buffer[indx+4]);
 	   }*/
-	lastSubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
 	/* Baseline index this assumes a1<a2 always - ignore auto correlations */
 	if (ant1!=ant2) {
 	  blindx =  blLookup[ant1-1] + ant2-ant1-1;
@@ -2474,7 +2666,7 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
       process:
 	/* Now have the next record in the IO Buffer */
 	if (iretCode==OBIT_IO_OK) gotOne = TRUE;
-	    
+
 	/* Get average amplitude/collect histogram */
 	for (i=0; i<ncorr * numCell; i++)  hissig[i] = 0;
 	for (i=0; i<numBL; i++) { /* loop 170 */
@@ -2487,6 +2679,8 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	      acc[jndx+1] = avg*avg;
 	      /* Histogram */
 	      hicell = avg / hisinc;
+	      /* Could have wrapped */
+	      if (hicell<0) hicell = numCell-1;
 	      hicell = MIN (hicell, numCell-1);
 	      hissig[hicell+j*numCell]++;
 	    } 
@@ -2517,7 +2711,7 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	      avg2 = acc[jndx+1];
 	      /* Is this one bad? */
 	      acc[jndx+2] = MIN (mxamp2, hiClip[j]);
-	      isbad = avg2  >  acc[jndx+2];
+	      isbad = (avg2  >  acc[jndx+2]) || (avg2 < minAmp2);
 
 	      /* Ant/Correlator info */
 	      corCnt[kndx]++;
@@ -2674,6 +2868,7 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   ObitInfoListAlwaysPut(inUV->info, "Stokes", OBIT_string, dim, oStokes);
 
   /* Cleanup */
+ cleanup:
   /* Deallocate arrays */
   row     = ObitTableFGRowUnref(row);
   outFlag = ObitTableFGUnref(outFlag);
@@ -2691,8 +2886,9 @@ void ObitUVEditStokes (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   g_free(BLAnt2);
 
   /* Give report */
-  Obit_log_error(err, OBIT_InfoErr, "Edit%c: flag %d of %d vis/interval= %5.1f percent",
-		 Stokes[0], countBad, countAll, 100.0*(ofloat)countBad/((ofloat)countAll));
+  Obit_log_error(err, OBIT_InfoErr, "Edit%c: flag %8.1lf of %8.1lf vis/interval= %5.1lf percent",
+		 Stokes[0], (odouble)countBad, (odouble)countAll, 
+		 100.0*(odouble)countBad/((odouble)countAll));
 
   return;
 } /* end  ObitUVEditStokes */
@@ -2847,6 +3043,7 @@ ObitUV* ObitUVEditClip (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
     if (doCalSelect) iretCode = ObitUVReadSelect (inUV, inUV->buffer, err);
     else iretCode = ObitUVRead (inUV, inUV->buffer, err);
     if (iretCode!=OBIT_IO_OK) break;
+    if (err->error) Obit_traceback_val (err, routine,inUV->name, outUV);
     firstVis = inUV->myDesc->firstVis;
 
    /* How many */
@@ -2944,7 +3141,7 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
   gint32 dim[MAXINFOELEMDIM];
   ofloat temp[2], maxAmp, maxAmp2, amp2, selFact[2], vis[2], sf1, sf2;
   ofloat wt1, wt2, *Buffer;
-  gboolean same, flagAll, flagIt, bothCorr, doConjg;
+  gboolean same, flagAll, flagIt, bothCorr;
   olong ichan, iif, istok, nchan, nif, nstok, kstoke0;
   olong incs, incf, incif, jadr[2], ioff, lfoff, ivoff, ip1, ip2;
   ObitIOAccess access;
@@ -3087,7 +3284,6 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
   incf  = 3 * inDesc->incf  / inDesc->inaxes[0];
   incif = 3 * inDesc->incif / inDesc->inaxes[0];
   bothCorr = FALSE;
-  doConjg  = FALSE;
   
   /* Offsets and stuff by desirec Stokes */
   switch (stok[0]) {
@@ -3129,7 +3325,6 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
       selFact[1] = 0.0;
     } else { /* data correlation based */
       bothCorr = TRUE;    /* Need both correlations for this */
-      doConjg  = TRUE;   /* Need to conjugate result */
       jadr[0] = (3+kstoke0) * incs;
       jadr[1] = jadr[0] + incs;
       selFact[0] = -0.5;
@@ -3194,6 +3389,7 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
     if (doCalSelect) iretCode = ObitUVReadSelect (inUV, inUV->buffer, err);
     else iretCode = ObitUVRead (inUV, inUV->buffer, err);
     if (iretCode!=OBIT_IO_OK) break;
+    if (err->error) Obit_traceback_val (err, routine,inUV->name, outUV);
     firstVis = inUV->myDesc->firstVis;
 
     /* How many in buffer? */
@@ -3236,7 +3432,7 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
 	  amp2 = (vis[0]*vis[0] +  vis[1]*vis[1]) / ((wt1+wt2)*(wt1+wt2));
 
 	  /* Flag? */
-	  flagIt = amp2 > maxAmp2;
+	  flagIt = (amp2 > maxAmp2);
 	  if (!flagIt) continue;
 	  cntFlagged++;   /* number flagged */
 
@@ -3310,6 +3506,8 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
  *                This takes into account any previous selection
  * \li "begChan"  OBIT_int    (1,1,1) First channel in data [ def. 1]
  * \li "allChan"  OBIT_boo    (1,1,1) If true, flag all channels [ def. FALSE]
+ * \li "killAll" OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ *                all Stokes correlations are flagged [def. FALSE]
  *
  * \param inUV    Input uv data to edit. Any prior selection/calibration applied.
  * \param outUV   UV data onto which the FG table is to be attached.
@@ -3319,6 +3517,9 @@ ObitUV* ObitUVEditClipStokes (ObitUV *inUV, gboolean scratch, ObitUV *outUV,
  */
 void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 {
+#ifndef MINTIME
+#define MINTIME 10  /* Minimum number of time to process */
+#endif
   ObitIOCode iretCode, oretCode;
   ObitTableFG *outFlag=NULL;
   ObitTableFGRow *row=NULL;
@@ -3326,26 +3527,27 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   ObitThread *myThread=NULL;
   ofloat  flagSig, alpha, timeWind, timeAvg;
   olong flagTab, begIF, begChan; 
-  gboolean doCalSelect;
-  olong i, j, k, firstVis, startVis, suba, ver;
-  olong countAll, countBad, checked, nThread;
+  gboolean doCalSelect, killAll;
+  olong ver;
+  ollong checked, countAll, countBad;
+  olong nThread;
   olong lastSourceID, curSourceID, lastSubA, lastFQID=-1;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   ObitIOAccess access;
   ObitUVDesc *inDesc;
-  ofloat lastTime=-1.0, tInt, cbase, tWind=0.0;
-  olong *blLookup=NULL;
+  ofloat lastTime=-1.0, tInt, tWind=0.0;
+  ollong *blLookup=NULL;
   olong *BLAnt1=NULL, *BLAnt2=NULL;
-  olong indx, jndx;
-  olong numCell, ncorr, numAnt, numBL, blindx, ant1, ant2;
+  olong ncorr, numAnt, ant1, ant2;
   gboolean gotOne, done, scanDone, scanStartDone, newTime, bufferFull, btemp;
+  ollong lltmp, numBL, blindx, i, j, k, indx, jndx, ndata, ndevs;
   gboolean allChan = FALSE;
   ofloat *times=NULL, *devs=NULL, *amps=NULL, *Buffer, fblank = ObitMagicF();
   ofloat *work=NULL;
   olong *Chan=NULL, *IFs=NULL, *Stoke=NULL, visNo=-1;
-  olong itime=0, ntime, numTime, nextTime, it, itDone, ndata, ndevs;
-  ofloat startTime, endTime, curTime=0.0, tTime, scanTime=0.0;
+  olong itime=0, ntime, numTime, nextTime, it=0, itDone;
+  ofloat startTime, curTime=0.0, tTime, scanTime=0.0;
   ofloat sec;
   /*gchar tString[25];*/
   gchar *tname, reason[25];
@@ -3389,6 +3591,9 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   timeAvg = 0.0;
   ObitInfoListGetTest(inUV->info, "timeAvg", &type, dim,  &timeAvg);  
   timeAvg /= 1440.0;
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
 
   /* How many integration intervals? */
   tInt = MedianUVInt (inUV, err);
@@ -3436,26 +3641,29 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if (err->error) Obit_traceback_msg (err, routine, outUV->name);
 
   /* Allocate arrays */
-  numCell = 800;  /* number of cells in histogram */
-  suba    = 1;
-  numAnt  = inUV->myDesc->numAnt[suba-1];/* actually highest antenna number */
-  numBL   = (numAnt*(numAnt-1))/2;
+  if (inUV->myDesc->maxAnt<=0) ObitUVGetSubA (inUV,err);
+  numAnt  = inUV->myDesc->maxAnt;/* actually highest antenna number */
+  numBL   = (((olong)numAnt)*(numAnt-1))/2;
   ncorr   = inUV->myDesc->ncorr;
   /* Circular amplitude storage (baseline,correlator,time) */
   ndata   = ncorr * numBL * numTime;
-  amps    = g_malloc0 (ndata * sizeof(ofloat));
+  lltmp = ndata * sizeof(ofloat);
+  amps    = g_malloc0 (lltmp);
   /* Time of each time slice */
   times   = g_malloc0 (numTime * sizeof(ofloat));
   /* Maximum deviation in sigma per baseline/correlator */
   ndevs   = ncorr * numBL;
-  devs    = g_malloc0 (ndevs * sizeof(ofloat));
+  lltmp = ndevs * sizeof(ofloat);
+  devs    = g_malloc0 (lltmp);
   /* Work array for median filtering */
-  work    = g_malloc0 (nThread*(numTime+3)*sizeof(ofloat));
+  lltmp = nThread*(numTime+3)*sizeof(ofloat);
+  work    = g_malloc0 (lltmp);
 
   /* Baseline tables */
-  blLookup = g_malloc0(numAnt*sizeof(olong));
-  BLAnt1   = g_malloc0 (numBL * sizeof(olong));    /* First antenna of baseline */
-  BLAnt2   = g_malloc0 (numBL * sizeof(olong));    /* Second antenna of baseline */
+  blLookup = g_malloc0(numAnt*sizeof(ollong));
+  lltmp = numBL * sizeof(olong);
+  BLAnt1   = g_malloc0 (lltmp);    /* First antenna of baseline */
+  BLAnt2   = g_malloc0 (lltmp);    /* Second antenna of baseline */
   blLookup[0] = 0;
   k = 0;
   for (j=2; j<=numAnt; j++) {BLAnt1[k]=1; BLAnt2[k]=j; k++;}
@@ -3472,7 +3680,6 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 
   /* Initialize things */
   startTime    = -1.0e20;
-  endTime      =  1.0e20;
   newTime      = FALSE;
   itDone       = 0;
   lastSourceID = -1;
@@ -3549,7 +3756,6 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	iretCode = ReadOne (inUV, doCalSelect, &Buffer, &visNo, err);
 	if (err->error) goto cleanup;
 	/*if (iretCode!=OBIT_IO_OK) break;*/
-	firstVis = inDesc->firstVis;
       }
       
       /* Are we there yet??? */
@@ -3569,8 +3775,6 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	scanTime  = curTime;
 	lastTime  = curTime;
 	tWind     = curTime;
-	endTime   = startTime + timeWind;
-	startVis  = firstVis;
 	lastSourceID = curSourceID;
 	itime     = 0;
 	times[0]  = curTime;
@@ -3610,29 +3814,33 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	/* Has the beginning of the scan been done? */
 	if ((!scanStartDone) && (!scanDone)) {  /* Beginning of scan */
 	  itDone = ntime/2;    /* only do first half */
-	  /* Loop over times */
-	  for (it=0; it<=itDone; it++) {
-	    checked  += MedianDev (amps, it, times, numBL, ncorr, numTime, ntime, alpha, devs, work,
-				   nThread, args, err);
-	    countBad += MedianFlag (devs, flagSig, numBL, ncorr, allChan, times[it], timeAvg, 
-				    BLAnt1, BLAnt2, Chan, IFs, Stoke, outFlag, row, err);
-	    if (err->error) goto cleanup;
-	  }
+	  if (ntime>=MINTIME) {  /* enough samples for this to work? */
+	    /* Loop over times */
+	    for (it=0; it<=itDone; it++) {
+	      checked  += MedianDev (amps, it, times, numBL, ncorr, numTime, ntime, alpha, devs, work,
+				     nThread, args, err);
+	      countBad += MedianFlag (devs, flagSig, numBL, ncorr, allChan, killAll, times[it], timeAvg, 
+				      BLAnt1, BLAnt2, Chan, IFs, Stoke, outFlag, row, err);
+	      if (err->error) goto cleanup;
+	    }
+	  } /* end if enough samples */
 	  itDone = it-1;    /* Highest done in current scan */
 	  
 	  scanStartDone = TRUE;    /* Beginning of scan now processed */
 	  
 	} else if (scanDone) {  /* All undone intervals in scan */
 	  /* Loop over times doing all later than last one done */
-	  for (it=0; it<ntime; it++) {
-	    if (times[it]>times[itDone]) {
-	      checked  += MedianDev (amps, it, times, numBL, ncorr, numTime, ntime, alpha, devs, work,
-				     nThread, args, err);
-	      countBad += MedianFlag (devs, flagSig, numBL, ncorr, allChan, times[it], timeAvg, 
-				      BLAnt1, BLAnt2, Chan, IFs, Stoke, outFlag, row, err);
-	      if (err->error) goto cleanup;
+	  if (ntime>=MINTIME) {  /* enough samples for this to work? */
+	    for (it=0; it<ntime; it++) {
+	      if (times[it]>times[itDone]) {
+		checked  += MedianDev (amps, it, times, numBL, ncorr, numTime, ntime, alpha, devs, work,
+				       nThread, args, err);
+		countBad += MedianFlag (devs, flagSig, numBL, ncorr, allChan, killAll, times[it], timeAvg, 
+					BLAnt1, BLAnt2, Chan, IFs, Stoke, outFlag, row, err);
+		if (err->error) goto cleanup;
+	      }
 	    }
-	  }
+	  } /* end if enough samples */
 	  
 	  /* Init for next scan */
 	  itDone       = 0;
@@ -3647,11 +3855,13 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	} else {  /* just do center time (next undone */
 	  itDone++;  /* Highest done in current scan */
 	  if (itDone>=ntime) itDone = 0;
-	  checked  += MedianDev (amps, itDone, times, numBL, ncorr, numTime, ntime, alpha, devs, work,
-				 nThread, args, err);
-	  countBad += MedianFlag (devs, flagSig, numBL, ncorr, allChan, times[itDone], timeAvg, 
-				  BLAnt1, BLAnt2, Chan, IFs, Stoke, outFlag, row, err);
-	  if (err->error) goto cleanup;
+	  if (ntime>=MINTIME) {  /* enough samples for this to work? */
+	    checked  += MedianDev (amps, itDone, times, numBL, ncorr, numTime, ntime, alpha, devs, work,
+				   nThread, args, err);
+	    countBad += MedianFlag (devs, flagSig, numBL, ncorr, allChan, killAll, times[itDone], timeAvg, 
+				    BLAnt1, BLAnt2, Chan, IFs, Stoke, outFlag, row, err);
+	    if (err->error) goto cleanup;
+	  } /* end if enough samples */
 	}
 
 	/* Are we there yet??? */
@@ -3683,7 +3893,7 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 	/* Purge any now expired time slots */
 	tTime = curTime-timeWind;
 	for (k=0; k<numTime; k++) {
-	  if (times[k]<tTime) {
+	  if ((times[k]<tTime) && (times[k]>-1.0e10)) {
 	    times[k] = -1.0e20;
 	    /* Blank fill data buffer */
 	    for (j=0; j<numBL; j++) {
@@ -3699,10 +3909,7 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
       } /* end new time processing */
       
       /* accumulate data */
-      cbase = Buffer[inUV->myDesc->ilocb]; /* Baseline */
-      ant1 = (cbase / 256.0) + 0.001;
-      ant2 = (cbase - ant1 * 256) + 0.001;
-      lastSubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
+      ObitUVDescGetAnts(inUV->myDesc, Buffer, &ant1, &ant2, &lastSubA);
       /* Baseline index this assumes a1<a2 always - ignore auto correlations */
       if (ant1!=ant2) {
 	blindx =  blLookup[ant1-1] + ant2-ant1-1;
@@ -3748,13 +3955,13 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if ((iretCode > OBIT_IO_EOF) || (oretCode > OBIT_IO_EOF) ||
       (err->error)) goto cleanup;
   
+  /* Cleanup */
+ cleanup:  
   /* Reset passAll */
   btemp = FALSE;
   dim[0] = dim[1] = dim[2] = 1;
   ObitInfoListAlwaysPut(inUV->info, "passAll", OBIT_bool, dim, &btemp);
   
-  /* Cleanup */
- cleanup:  
   /* close uv file */
   iretCode = ObitUVClose (inUV, err);
   
@@ -3784,15 +3991,615 @@ void ObitUVEditMedian (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
   if (err->error)  Obit_traceback_msg (err, routine, inUV->name);
 
   /* Give report */
-  Obit_log_error(err, OBIT_InfoErr, "%s: flag %d of %d vis/interval= %6.2f percent",
-		 routine, countBad, countAll, 100.0*(ofloat)countBad/((ofloat)countAll));
-  if ((100.0*(ofloat)checked/((ofloat)countAll)) < 0.3) {
-    Obit_log_error(err, OBIT_InfoWarn, "%s: Small fraction of data checked (%5.2f), is timeWind too short?",
-		 routine, (ofloat)checked/((ofloat)countAll));
+  Obit_log_error(err, OBIT_InfoErr, "%s: flag %8.1lf of %8.1lf vis/interval= %6.2lf percent",
+		 routine, (odouble)countBad, (odouble)countAll, 
+		 100.0*(odouble)countBad/((odouble)countAll));
+  if ((100.0*(odouble)checked/((odouble)countAll)) < 0.3) {
+    Obit_log_error(err, OBIT_InfoWarn, "%s: Small fraction of data checked (%5.2lf), is timeWind too short?",
+		 routine, (odouble)checked/((odouble)countAll));
   }
 
   return;
 } /* end ObitUVEditMedian */
+
+/**
+ * Append the contents of the highest numbered AIPS FG table to flagTab
+ * And then delete the highest numbered table.
+ * Nothing is done if the highest numbered table has a number less than flagTab.
+ * \param inUV     Input uv data to with flag tables.
+ * \param flagTab  AIPS FG table version number for output, MUST be >= 1
+ * \param err      Error stack, returns if not empty.
+ */
+void ObitUVEditAppendFG (ObitUV *inUV, olong flagTab, ObitErr *err)
+{
+  ObitTableFG *inFlag=NULL, *outFlag=NULL;
+  ObitTableFGRow *row=NULL;
+  olong hiTab, iRow, oRow; 
+  gchar *routine = "ObitUVEditAppendFG";
+
+  /* error checks */
+  if (err->error) return;
+  g_assert (ObitUVIsA(inUV));
+
+  Obit_return_if_fail ((flagTab>=1), err, 
+		       "%s flagTab MUST be >= 1, not %d", routine, flagTab);  
+
+  /* Fully instantiate UV data if needed */
+  ObitUVFullInstantiate (inUV, TRUE, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+
+  /* Highest table number */
+  hiTab = ObitTableListGetHigh (inUV->tableList, "AIPS FG");
+
+  /* If hiTab not greater than flagTab return with warning */
+  if (hiTab<=flagTab) {
+    Obit_log_error(err, OBIT_InfoWarn, "%s: temp hiTab (%d) must be greater than flagTab (%d)",
+		 routine, hiTab, flagTab);
+    return;
+  }
+ 
+  /* input table */
+  inFlag = newObitTableFGValue("InFG", (ObitData*)inUV, &hiTab, OBIT_IO_ReadWrite, 
+			       err);
+  ObitTableFGOpen (inFlag, OBIT_IO_ReadWrite, err);
+  if (err->error) goto cleanup;
+
+  /* Anything in input? */
+  if (inFlag->myDesc->nrow<=0) goto cleanup;
+  
+  /* Now output table */
+  outFlag = newObitTableFGValue("OutFG", (ObitData*)inUV, &flagTab, OBIT_IO_ReadWrite, 
+				err);
+  /* Open output table */
+  ObitTableFGOpen (outFlag, OBIT_IO_ReadWrite, err);
+  if (err->error) goto cleanup;
+  
+  /* Create Row */
+  row = newObitTableFGRow (inFlag);
+  
+  /* Attach row to output buffer */
+  ObitTableFGSetRow (outFlag, row, err);
+  if (err->error) goto cleanup;
+  
+  /* If there are entries in the output table, mark it unsorted */
+  if (outFlag->myDesc->nrow>0) 
+    {outFlag->myDesc->sort[0]=0; outFlag->myDesc->sort[1]=0;}
+
+  /* Loop over input copying */
+  for (iRow=1; iRow<=inFlag->myDesc->nrow; iRow++) {
+    ObitTableFGReadRow  (inFlag,  iRow, row, err);
+    oRow = -1;
+    ObitTableFGWriteRow (outFlag, oRow, row, err);
+    if (err->error) goto cleanup;
+  } /* end loop copying */
+  
+  /* Close tables */
+  ObitTableFGClose (outFlag, err);
+  ObitTableFGClose (inFlag, err);
+
+  /* Give report */
+  Obit_log_error(err, OBIT_InfoErr, "Copied %d flags from temp table %d to %d",
+		 inFlag->myDesc->nrow, hiTab, flagTab);
+  /* Cleanup */
+ cleanup:
+  /* Delete input table */
+  ObitDataZapTable ((ObitData*)inUV, "AIPS FG", hiTab, err);
+  inFlag   = ObitTableFGUnref(inFlag);
+  row      = ObitTableFGRowUnref(row);
+  outFlag  = ObitTableFGUnref(outFlag);
+  if (err->error)  Obit_traceback_msg (err, routine, inUV->name);
+} /* end ObitUVEditAppendFG */
+
+/**
+ * Edit a UV data above a given elevation
+ * Uses NX table
+ * Control parameters are on the inUV info member:
+ * \li "minElev" OBIT_float  (1,1,1) Minimum allowed elevation in deg., [5]
+ * \li "flagTab" OBIT_long  (1,1,1)  output Flag table version [1]
+ * \li "PFlag"   OBIT_string  (4,1,1) Stokes/PFlag string, def '1111'
+ * \li "Reason"  OBIT_string  (24,1,1) Reason for flagging
+ * \li "killAll" OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ *               all Stokes correlations are flagged [def. FALSE]
+ * \param inUV     Input uv data to edit 
+ * \param outUV    UV on which the FG table to be written, may be the same as inUV.
+ * \param err      Error stack, returns if not empty.
+ */
+void ObitUVEditElev (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
+{
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM];
+  olong i, flagTab, ver, irow, orow, maxAnt, iant, numIF=0, numPCal, numOrb;
+  olong cntFlag;
+  gboolean want, killAll, *AntOK=NULL;
+  ofloat minElev, minElevRad, elevBeg, elevEnd, sumFlag;
+  ofloat t, tBeg, tEnd, oneMin = 1.0/1440.0;
+  ObitTableFG  *FlagTab=NULL;
+  ObitTableFGRow *row=NULL;
+  ObitTableNX  *NXTab=NULL;
+  ObitTableNXRow *nxrow=NULL;
+  ObitUVSel *sel = inUV->mySel;
+  ObitUVDesc   *inDesc=inUV->myDesc, *inIODesc=(ObitUVDesc*)inUV->myIO->myDesc;
+  ObitSourceList  *SouList  = NULL;
+  ObitSource      *mySource = NULL, *curSource;
+  ObitTableSU     *SUTable  = NULL;
+  ObitAntennaList *AntList  = NULL;
+  ObitTableAN     *ANTable  = NULL;
+  gchar Stokes[5], Reason[25], tString1[25], tString2[25];
+  gchar *routine = "ObitUVEditElev";
+ 
+  /* error checks */
+  g_assert (ObitErrIsA(err));
+  if (err->error) return;
+  g_assert (ObitUVIsA(inUV));
+
+  /* Control parameters */
+  minElev = 5.0;
+  ObitInfoListGetTest(inUV->info, "minElev",   &type, dim, &minElev);  
+  minElevRad = minElev * DG2RAD;   /* to radians */
+  flagTab = 1;
+  ObitInfoListGetTest(inUV->info, "flagTab",   &type, dim, &flagTab);  
+  strncpy (Stokes, "    ", 4);
+  ObitInfoListGetTest(inUV->info, "PFlag",  &type, dim, Stokes); Stokes[4] = 0;
+  strncpy (Reason, "                        ", 24);
+  ObitInfoListGetTest(inUV->info, "Reason",  &type, dim, Reason); Reason[24] = 0;
+  /* Default reason */
+  if (!strncmp(Reason, "          ", 10))
+      strncpy (Reason, "Elevation Limit         ", 24);
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
+
+  /* Tell */
+  Obit_log_error(err, OBIT_InfoErr, "Flagging data above elevation %5.1f deg",
+		 minElev);
+
+  /* Get FlaG table */
+  FlagTab = newObitTableFGValue("outFG", (ObitData*)inUV, &flagTab, OBIT_IO_ReadWrite, 
+				err);
+  ObitTableFGOpen (FlagTab, OBIT_IO_ReadWrite, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  
+  /* Create Row */
+  row = newObitTableFGRow (FlagTab);
+  
+  /* Attach row to output buffer */
+  ObitTableFGSetRow (FlagTab, row, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  
+  /* Stokes flags */
+  if      (!strncmp(Stokes, "    ", 4)) row->pFlags[0] = 1+2+4+8;     /* All */
+  else if (!strncmp(Stokes, "I   ", 4)) row->pFlags[0] = 1+2;         /* I */
+  else if (!strncmp(Stokes, "Q   ", 4)) row->pFlags[0] = 1+2+4+8;     /* Q */
+  else if (!strncmp(Stokes, "U   ", 4)) row->pFlags[0] = 1+2+4+8;     /* U */
+  else if (!strncmp(Stokes, "V   ", 4)) row->pFlags[0] = 1+2+4+8;     /* V */
+  else if (!strncmp(Stokes, "RR  ", 4) || !strncmp(Stokes, "XX  ", 4)) row->pFlags[0] = 1;
+  else if (!strncmp(Stokes, "LL  ", 4) || !strncmp(Stokes, "YY  ", 4)) row->pFlags[0] = 2;
+  else if (!strncmp(Stokes, "RL  ", 4) || !strncmp(Stokes, "XY  ", 4)) row->pFlags[0] = 4;
+  else if (!strncmp(Stokes, "LR  ", 4) || !strncmp(Stokes, "YY  ", 4)) row->pFlags[0] = 8;
+  else if ((Stokes[0]=='1') || (Stokes[0]=='0')) {
+    /* flag bits passed */
+    row->pFlags[0] = 0;
+    if (Stokes[0]=='1')  row->pFlags[0] |= 1;
+    if (Stokes[1]=='1')  row->pFlags[0] |= 2;
+    if (Stokes[2]=='1')  row->pFlags[0] |= 4;
+    if (Stokes[3]=='1')  row->pFlags[0] |= 8;
+  } else row->pFlags[0] = 1+2+4+8;   /* what the hell */
+  /* Flag all related Stokes? */
+  if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
+  /* Channels/IFs selected */
+  row->chans[0] = inUV->mySel->startChann; row->chans[1] = row->chans[0]+inUV->mySel->numberChann-1;
+  row->ifs[0]   = inUV->mySel->startIF;    row->ifs[1]   = row->ifs[0]+inUV->mySel->numberIF-1;
+
+  strncpy (row->reason, Reason, 24);  /* Set reason */
+
+  /* Get iNdeX table */
+  ver = 1;
+  NXTab = newObitTableNXValue("index", (ObitData*)inUV, &ver, OBIT_IO_ReadOnly, 
+			      err);
+  Obit_return_if_fail ((NXTab!=NULL), err, 
+		       "%s: UV data %s MUST have an index (NX) table", 
+		       routine, inUV->name);  
+  ObitTableNXOpen (NXTab, OBIT_IO_ReadOnly, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  
+  /* Create Row */
+  nxrow = newObitTableNXRow (NXTab);
+
+  /* Convert SU table into Source List if there is an SourceID parameter */
+  if (inIODesc->ilocsu>=0) {
+    ver = 1;
+    SUTable = newObitTableSUValue (inUV->name, (ObitData*)inUV, &ver, numIF, 
+				   OBIT_IO_ReadOnly, err);
+    if (SUTable) SouList = ObitTableSUGetList (SUTable, err);
+    if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+    SUTable = ObitTableSUUnref(SUTable);
+  } else {  /* Create a source object */
+    mySource = newObitSource("Single");
+    strncpy (mySource->SourceName, inDesc->object, MIN(20,UVLEN_VALUE));
+    mySource->equinox = inDesc->equinox;
+    mySource->RAMean  = inDesc->crval[inDesc->jlocr];
+    mySource->DecMean = inDesc->crval[inDesc->jlocd];
+    /* Compute apparent position */
+    ObitPrecessUVJPrecessApp (inDesc, mySource);
+  }
+
+  /* Convert AN table into AntennaList */
+  ver = 1;
+  numPCal  = 0;
+  numOrb   = 0;
+  ANTable = newObitTableANValue (inUV->name, (ObitData*)inUV, &ver, 
+				 numIF, numOrb, numPCal, OBIT_IO_ReadOnly, err);
+  if (ANTable) AntList = ObitTableANGetList (ANTable, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  ANTable = ObitTableANUnref(ANTable);
+
+  /* List of antennas to display */
+  maxAnt = 0;
+  for (i=0; i<AntList->number; i++) maxAnt = MAX (maxAnt, AntList->ANlist[i]->AntID);
+
+  /* Which antennas wanted */
+  AntOK  = g_malloc0(maxAnt*sizeof(gboolean));
+  for (iant = 0; iant<maxAnt; iant++)
+    AntOK[iant] = ObitUVSelWantAnt (sel, iant+1);
+
+  /* How much flagged */
+  cntFlag = 0;
+  sumFlag = 0.0;
+ 
+  /* Loop over NX table  */
+  for (irow=1; irow<=NXTab->myDesc->nrow; irow++) {
+    ObitTableNXReadRow (NXTab, irow, nxrow, err);
+    if (err->error) goto cleanup;
+    if (nxrow->status==-1) continue;  /* Deselected? */
+    
+    /* Want this one? */
+    want = ObitUVSelWantSour (sel, nxrow->SourID);
+    want = want && ((sel->SubA <= 0) || (sel->SubA ==  nxrow->SubA));
+    want = want && ((sel->FreqID <= 0) || (sel->FreqID ==  nxrow->FreqID));
+    want = want && (nxrow->Time-0.5*nxrow->TimeI >= sel->timeRange[0]);
+    want = want && (nxrow->Time+0.5*nxrow->TimeI <= sel->timeRange[1]);
+
+    /* If so write selected flagging */
+    if (want) {
+
+      row->SourID       = nxrow->SourID;
+      row->SubA         = nxrow->SubA;
+      row->freqID       = nxrow->FreqID;
+      tBeg              = nxrow->Time-0.5*nxrow->TimeI;
+      tEnd              = nxrow->Time+0.5*nxrow->TimeI;
+
+      /* Source info */
+      if (SouList) curSource = SouList->SUlist[nxrow->SourID-1];
+      else curSource = mySource;
+      
+      /* Loop over antennas */
+      for (iant=0; iant<maxAnt; iant++) {
+	if (!AntOK[iant]) continue;  /* selected? */
+	/* Check Elevation at beginning and end */
+	elevBeg = ObitAntennaListElev(AntList, iant+1, tBeg, curSource);	
+	elevEnd = ObitAntennaListElev(AntList, iant+1, tEnd, curSource);
+	if ((elevBeg>minElevRad) && (elevEnd>minElevRad)) continue;  /* Both OK */
+	/* If OK at start but not end, test by one min increments */
+	if (elevBeg>minElevRad) {
+	  t = tBeg + oneMin;
+	  while (t<tEnd) {
+	    elevBeg = ObitAntennaListElev(AntList, iant+1, t, curSource);	
+	    if (elevBeg<minElevRad) break;
+	    tBeg = t;
+	    t += oneMin;
+	  }
+	}
+	/* If OK at end but not start, test by one min increments */
+	if (elevEnd>minElevRad) {
+	  t = tEnd - oneMin;
+	  while (t<tEnd) {
+	    elevEnd = ObitAntennaListElev(AntList, iant+1, t, curSource);	
+	    if (elevEnd<minElevRad) break;
+	    tEnd = t;
+	    t -= oneMin;
+	  }
+	}
+	if ((elevBeg<minElevRad) || (elevEnd<minElevRad)) {
+	  /* if either end too low, write row */
+	  row->ants[0]      = iant+1;
+	  row->TimeRange[0] = tBeg;
+	  row->TimeRange[1] = tEnd;
+	  orow = FlagTab->myDesc->nrow+1;
+	  ObitTableFGWriteRow (FlagTab, orow, row, err);
+	  if (err->error) goto cleanup;
+	  cntFlag++;
+	  sumFlag += nxrow->TimeI;
+	  /* Diagnostics */
+	  if (err->prtLv>3) {
+	    T2String (tBeg, tString1);
+	    T2String (tEnd, tString2);
+	    Obit_log_error(err, OBIT_InfoErr, "Ant %d Sou %d flagged %s - %s ",
+			   row->ants[0], row->SourID, tString1, tString2);
+	  }
+	} /* End if write */
+      } /* end antenna loop */
+      ObitErrLog(err);    /* Any messages */
+    } /* end if want */
+  } /* end loop over rows */
+
+  /* Give report */
+  Obit_log_error(err, OBIT_InfoErr, "Wrote %d elevation flags for %14.3g min.",
+		 cntFlag, sumFlag*1440.0);
+
+   /* Cleanup */
+ cleanup:
+  /* Close  tables */
+  ObitTableFGClose (FlagTab, err);
+  ObitTableNXClose (NXTab, err);
+  FlagTab = ObitTableFGUnref(FlagTab);
+  row     = ObitTableFGRowUnref(row);
+  NXTab   = ObitTableNXUnref(NXTab);
+  nxrow   = ObitTableNXRowUnref(nxrow);
+  SouList = ObitSourceListUnref(SouList);
+  mySource= ObitSourceUnref(mySource);
+  SUTable = ObitTableSUUnref(SUTable);
+  AntList = ObitAntennaListUnref(AntList);
+  ANTable = ObitTableANUnref(ANTable);
+  if (AntOK) g_free(AntOK);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+} /* end ObitUVEditElev */
+
+/**
+ * Shadowing/cross talk flagging 
+ * Loops through the NX table in 1 min increments, ant antenna that 
+ * is in a baseline < minShad in length and behind the other antenna
+ * is flagged for that interval.
+ * Baselines shorter than minCross but longer than minShad are flagged.
+ * Control parameters are on the inUV info member:
+ * \li "minShad"  OBIT_float  (1,1,1)  Minimum shadowing (m) [0]
+ *                All baselines to affected antenna flagged
+ * \li "minCross" OBIT_float  (1,1,1)  Minimum bl for crosstalk (m) [0]
+ *                Only affected baselines flagged.
+ * \li "flagTab"  OBIT_long   (1,1,1)  output Flag table version [1]
+ * \li "PFlag"    OBIT_string  (4,1,1) Stokes/PFlag string, def '1111'
+ * \li "Reason"   OBIT_string  (24,1,1) Reason for flagging
+ * \li "killAll"  OBIT_bool (1,1,1) If TRUE and any Stokes correlation is flagged,
+ *                 all Stokes correlations are flagged [def. FALSE]
+ * \param inUV     Input uv data to edit 
+ * \param outUV    UV on which the FG table to be written, may be the same as inUV.
+ * \param err      Error stack, returns if not empty.
+ *                 if prtLv >3 then give diagnostics
+ */
+void ObitUVEditShadCross (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
+{
+  ObitInfoType type;
+  gint32 dim[MAXINFOELEMDIM];
+  olong flagTab, ver, irow, orow, maxAnt, iant, ibase, oant;
+  olong cntFlagS, cntFlagC;
+  gboolean *AntOK=NULL, doFlag, want, killAll;
+  ofloat minShad, minShadLam2, minCross, minCrossLam2;
+  ofloat sumFlagS, sumFlagC;
+  ofloat tBeg, tEnd, bl2, bl2B, bl2E;
+  ofloat time, oneMin=1.0/1440.0, uvw[3];
+  ObitTableFG  *FlagTab=NULL;
+  ObitTableFGRow *row=NULL;
+  ObitTableNX  *NXTab=NULL;
+  ObitTableNXRow *nxrow=NULL;
+  ObitUVSel *sel = inUV->mySel;
+  ObitUVWCalc  *UVWCalc=NULL;
+  gchar Stokes[5], Reason[25], tString[25];
+  gchar *routine = "ObitUVEditShadCross";
+ 
+  /* error checks */
+  g_assert (ObitErrIsA(err));
+  if (err->error) return;
+  g_assert (ObitUVIsA(inUV));
+
+  /* Open UV data  */
+  ObitUVOpen (inUV, OBIT_IO_ReadCal, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+
+ /* Control parameters */
+  minShad = 25.0;
+  ObitInfoListGetTest(inUV->info, "minShad",   &type, dim, &minShad);  
+  minShadLam2 = minShad / (VELIGHT/inUV->myDesc->freq);   /* In wavelengths at reference freq */
+  minShadLam2 *= minShadLam2;                              /* Squared */
+  minCross = 25.0;
+  ObitInfoListGetTest(inUV->info, "minCross",  &type, dim, &minCross);  
+  minCrossLam2 = minCross / (VELIGHT/inUV->myDesc->freq);    /* In wavelengths at reference freq */
+  minCrossLam2 *= minCrossLam2;                              /* Squared */
+  flagTab = 1;
+  ObitInfoListGetTest(inUV->info, "flagTab",   &type, dim, &flagTab);  
+  strncpy (Stokes, "    ", 4);
+  ObitInfoListGetTest(inUV->info, "PFlag",  &type, dim, Stokes); Stokes[4] = 0;
+  strncpy (Reason, "                        ", 24);
+  ObitInfoListGetTest(inUV->info, "Reason",  &type, dim, Reason); Reason[24] = 0;
+  /* Default reason */
+  if (!strncmp(Reason, "          ", 10))
+      strncpy (Reason, "Shadowing/crosstalk     ", 24);
+  /* killAll - any Stokes flag => flag all */
+  killAll = FALSE;
+  ObitInfoListGetTest(inUV->info, "killAll", &type, dim,  &killAll);  
+
+  /* Tell */
+  Obit_log_error(err, OBIT_InfoErr, "Flagging Shadow limit %5.1f m Crosstalk limit %5.1f m  ",
+		 minShad, minCross);
+
+  /* Get FlaG table */
+  FlagTab = newObitTableFGValue("outFG", (ObitData*)inUV, &flagTab, OBIT_IO_ReadWrite, 
+				err);
+  ObitTableFGOpen (FlagTab, OBIT_IO_ReadWrite, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  
+  /* Create Row */
+  row = newObitTableFGRow (FlagTab);
+  
+  /* Attach row to output buffer */
+  ObitTableFGSetRow (FlagTab, row, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  
+  /* Stokes flags */
+  if      (!strncmp(Stokes, "    ", 4)) row->pFlags[0] = 1+2+4+8;     /* All */
+  else if (!strncmp(Stokes, "I   ", 4)) row->pFlags[0] = 1+2;         /* I */
+  else if (!strncmp(Stokes, "Q   ", 4)) row->pFlags[0] = 1+2+4+8;     /* Q */
+  else if (!strncmp(Stokes, "U   ", 4)) row->pFlags[0] = 1+2+4+8;     /* U */
+  else if (!strncmp(Stokes, "V   ", 4)) row->pFlags[0] = 1+2+4+8;     /* V */
+  else if (!strncmp(Stokes, "RR  ", 4) || !strncmp(Stokes, "XX  ", 4)) row->pFlags[0] = 1;
+  else if (!strncmp(Stokes, "LL  ", 4) || !strncmp(Stokes, "YY  ", 4)) row->pFlags[0] = 2;
+  else if (!strncmp(Stokes, "RL  ", 4) || !strncmp(Stokes, "XY  ", 4)) row->pFlags[0] = 4;
+  else if (!strncmp(Stokes, "LR  ", 4) || !strncmp(Stokes, "YY  ", 4)) row->pFlags[0] = 8;
+  else if ((Stokes[0]=='1') || (Stokes[0]=='0')) {
+    /* flag bits passed */
+    row->pFlags[0] = 0;
+    if (Stokes[0]=='1')  row->pFlags[0] |= 1;
+    if (Stokes[1]=='1')  row->pFlags[0] |= 2;
+    if (Stokes[2]=='1')  row->pFlags[0] |= 4;
+    if (Stokes[3]=='1')  row->pFlags[0] |= 8;
+  } else row->pFlags[0] = 1+2+4+8;   /* what the hell */
+  /* Flag all related Stokes? */
+  if (killAll) row->pFlags[0] = 15; /* 1+2+4+8 */
+
+  /* Channels/IFs selected */
+  row->chans[0] = inUV->mySel->startChann; row->chans[1] = row->chans[0]+inUV->mySel->numberChann-1;
+  row->ifs[0]   = inUV->mySel->startIF;    row->ifs[1]   = row->ifs[0]+inUV->mySel->numberIF-1;
+
+  strncpy (row->reason, Reason, 24);  /* Set reason */
+
+  /* Get iNdeX table */
+  ver = 1;
+  NXTab = newObitTableNXValue("index", (ObitData*)inUV, &ver, OBIT_IO_ReadOnly, 
+			      err);
+  Obit_return_if_fail ((NXTab!=NULL), err, 
+		       "%s: UV data %s MUST have an index (NX) table", 
+		       routine, inUV->name);  
+  ObitTableNXOpen (NXTab, OBIT_IO_ReadOnly, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  
+  /* Create Row */
+  nxrow = newObitTableNXRow (NXTab);
+
+  /* UVW calculator */
+  UVWCalc = ObitUVWCalcCreate("UVWCalc", inUV, err);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+  maxAnt = UVWCalc->maxAnt;  /* Maximum antenna number */
+
+  /* Which antennas wanted */
+  AntOK  = g_malloc0((maxAnt+2)*sizeof(gboolean));
+  for (iant = 0; iant<maxAnt; iant++)
+    AntOK[iant] = ObitUVSelWantAnt (sel, iant+1);
+
+  /* How much flagged */
+  cntFlagS = cntFlagC = 0;
+  sumFlagS = sumFlagC = 0.0;
+ 
+
+  /* Loop over NX table  */
+  for (irow=1; irow<=NXTab->myDesc->nrow; irow++) {
+    ObitTableNXReadRow (NXTab, irow, nxrow, err);
+    if (err->error) goto cleanup;
+    if (nxrow->status==-1) continue;  /* Deselected? */
+    
+    /* Want this one? */
+    want = ObitUVSelWantSour (sel, nxrow->SourID);
+    want = want && ((sel->SubA <= 0) || (sel->SubA ==  nxrow->SubA));
+    want = want && ((sel->FreqID <= 0) || (sel->FreqID ==  nxrow->FreqID));
+    want = want && (nxrow->Time-0.5*nxrow->TimeI >= sel->timeRange[0]);
+    want = want && (nxrow->Time+0.5*nxrow->TimeI <= sel->timeRange[1]);
+
+    /* If so write selected flagging */
+    if (want) {
+
+      row->SourID       = nxrow->SourID;
+      row->SubA         = nxrow->SubA;
+      row->freqID       = nxrow->FreqID;
+      tBeg              = nxrow->Time-0.5*nxrow->TimeI;
+      tEnd              = nxrow->Time+0.5*nxrow->TimeI;
+
+      /* Loop over 1 min increments */
+      time = tBeg + oneMin/2;
+      while (time<tEnd) {
+	row->TimeRange[0] = time-oneMin/2;
+	row->TimeRange[1] = time+oneMin/2;
+
+	/* Loop over antennas */
+	for (iant=0; iant<maxAnt-1; iant++) {
+	  if (!AntOK[iant]) continue;  /* selected? */
+	  /* Loop over baseline */
+	  for (ibase=iant+1; ibase<maxAnt; ibase++) {
+	    if (!AntOK[ibase]) continue;  /* selected? */
+	    
+	    /* Get baseline at start and end */
+	    ObitUVWCalcUVW (UVWCalc, time-oneMin/2, row->SourID, row->SubA, 
+			    iant+1, ibase+1, uvw, err);
+	    bl2B = uvw[0]*uvw[0] + uvw[1]*uvw[1];
+	    ObitUVWCalcUVW (UVWCalc, time+oneMin/2, row->SourID, row->SubA, 
+			    iant+1, ibase+1, uvw, err);
+	    if (err->error) goto cleanup;
+	    bl2E = uvw[0]*uvw[0] + uvw[1]*uvw[1];
+	    bl2 = MIN (bl2B, bl2E); /* Use shorter of the two ends */
+	    /* Shadowing? */
+	    doFlag = FALSE;
+	    if (bl2<=minShadLam2) {
+	      /* Shadowing, flag the one furthest from the source (neg w) */
+	      if (uvw[2]<0.0) {row->ants[0] = iant+1; oant = ibase+1;}
+	      else            {row->ants[0] = ibase+1;oant = iant+1;}
+	      row->ants[1] = 0;
+	      doFlag = TRUE;
+	      cntFlagS++;
+	      sumFlagS += oneMin;
+	      /* Diagnostics */
+	      if (err->prtLv>3) {
+		T2String (time, tString);
+		Obit_log_error(err, OBIT_InfoErr, "Ant %d shadowded by ant %d sou %d at %s  ",
+			       row->ants[0], oant, row->SourID, tString);
+	      }
+	    } else if (bl2<=minCrossLam2) {
+	      /* In cross talk zone, flag baseline */
+	      row->ants[0] = iant+1;
+	      row->ants[1] = ibase+1;
+	      doFlag = TRUE;
+	      cntFlagC++;
+	      sumFlagC += oneMin;
+	      /* Diagnostics */
+	      if (err->prtLv>3) {
+		T2String (time, tString);
+		Obit_log_error(err, OBIT_InfoErr, "Ant %d cross talk with ant %d sou %d at %s  ",
+			       row->ants[0], row->ants[1], row->SourID, tString);
+	      }
+	    } /* end in cross talk */
+	    /* Write flag? */
+	    if (doFlag) {
+	      orow = FlagTab->myDesc->nrow+1;
+	      ObitTableFGWriteRow (FlagTab, orow, row, err);
+	      if (err->error) goto cleanup;
+	    }
+
+	  } /* end baseline loop */
+	} /* end antenna loop */
+	time += oneMin;
+      } /* end loop in time */
+      ObitErrLog(err);    /* Any messages */
+    } /* end if scan selected */
+  } /* end loop over scans */
+  
+  /* Give report */
+  if (minShad>0.001) {
+    Obit_log_error(err, OBIT_InfoErr, "Wrote %d Shadow flags for %14.3g min.",
+		   cntFlagS, sumFlagS*1440.0);
+  }
+  if (minCross>0.001) {
+    Obit_log_error(err, OBIT_InfoErr, "Wrote %d Cross talk flags for %14.3g min.",
+		   cntFlagC, sumFlagC*1440.0);
+  }
+
+   /* Cleanup */
+ cleanup:
+  /* Close  */
+  ObitTableFGClose (FlagTab, err);
+  ObitUVClose (inUV, err);
+  FlagTab = ObitTableFGUnref(FlagTab);
+  row     = ObitTableFGRowUnref(row);
+  NXTab   = ObitTableNXUnref(NXTab);
+  nxrow   = ObitTableNXRowUnref(nxrow);
+  UVWCalc = ObitUVWCalcUnref(UVWCalc);
+  if (AntOK) g_free(AntOK);
+  if (err->error) Obit_traceback_msg (err, routine, inUV->name);
+} /* end ObitUVEditShadCross */
 
 /**
  * Routine translated from the AIPSish TDEDIT.FOR/TDCLHI  
@@ -3884,11 +4691,12 @@ static void editHist (olong ncorr, olong numCell, ofloat hisinc, olong *hissig,
  *                        1=I, 2=Q, 2=U, 4=V
  */
 static void digestCorr (ObitUVDesc *inDesc, ofloat *maxRMS, ofloat *maxRMS2, 
-			olong *crossBL1, olong *crossBL2, 
+			ollong *crossBL1, ollong *crossBL2, 
 			olong *corChan, olong *corIF, olong *corStok) 
 {
   olong ichan, iif, istok, nchan, nif, nstok, kstoke0;
-  olong incs, incf, incif, jstok, ioff, lfoff, soff;
+  olong incs, incf, incif, jstok, ioff, lfoff;
+  ollong soff;
 
   /* Set up for parsing data */
   nchan = inDesc->inaxes[inDesc->jlocf];
@@ -3985,11 +4793,12 @@ static void digestCorr (ObitUVDesc *inDesc, ofloat *maxRMS, ofloat *maxRMS2,
  *                        1=I, 2=Q, 2=U, 4=V
  */
 static void digestCorrTDRMSAvg (ObitUVDesc *inDesc, ofloat maxRMSAvg, ofloat *maxRMS2, 
-				olong *crossBL1, olong *crossBL2, 
+				ollong *crossBL1, ollong *crossBL2, 
 				olong *corChan, olong *corIF, olong *corStok) 
 {
   olong ichan, iif, istok, nchan, nif, nstok, kstoke0;
-  olong incs, incf, incif, jstok, ioff, lfoff, soff;
+  olong incs, incf, incif, jstok, ioff, lfoff;
+  ollong soff;
 
   /* Set up for parsing data */
   nchan = inDesc->inaxes[inDesc->jlocf];
@@ -4190,270 +4999,29 @@ static void EditFDChanMask(olong numChan, olong numIF, olong numPol, olong *chan
 } /* end EditFDChanMask */
 
 /**
- * Average values, get RMSes and do clipping
- * \param numChan Number of spectral channels in count, sumA, sumA2
- * \param numIF   Number of IFs in count, sumA, sumA2
- * \param numPol  Number of polarizations in count, sumA, sumA2
- * \param numBL   Number of baselines in count, sumA, sumA2
- * \param count   Count of entries in each cell of sumA, sumA2
- * \param sumA    [In/Out] Sum of amplitudes in time interval for 
- *                freq, IF, poln, baseline <=0.0 => no data or flagged, 
- *                [Out] average
- *                -9999 => flagged
- * \param sumA2   [In] Sum of amplitude**2 in time interval for 
- *                freq, IF, poln, baseline
- *                [Out] RMS
- * \param maxAmp  Maximum allowable average amplitude
- * \param maxV    Maximum allowable VPol, >1.0e10=> no VPol clipping
- * \param corV    Entry per element of sumA which if >0 is the 0-rel index of the 
- *                corresponding Stokes RR for a Stokes LL measurement, used with maxV
+ * Do processing for FD editing, possible with threading
+ * \param nThread  Number of parallel threads
+ * \param args     arguments per thread
+ * \param err      Error stack, returns if  error.
  */
-static void EditFDAvg(olong numChan, olong numIF, olong numPol, olong numBL, olong *count, 
-		      ofloat *sumA, ofloat *sumA2, ofloat maxAmp, 
-		      ofloat maxV, olong *corV)
+static void EditFDProcess(olong nThread, UVMednFuncArg** args, ObitErr *err)
 {
-  olong js, jf, jif, jbl, indx, vindx;
-  ofloat vpol;
-
-  /* Loop over array averaging, clip excessive amplitude*/
-  indx = 0;
-  for (jbl=0; jbl<numBL; jbl++) {
-    for (js=0; js<numPol; js++) {
-      for (jif=0; jif<numIF; jif++) {
-	for (jf=0; jf<numChan; jf++) {
-	  if (count[indx]>0) {  /* Any data? */
-	    sumA[indx] /= count[indx];
-	    if (sumA[indx]>maxAmp) sumA[indx] = -9999.0; /* Too large? */
-	    if (count[indx]>1) { /* Enough data for RMS? */
-	      sumA2[indx] = sqrt((sumA2[indx]/count[indx] - sumA[indx]*sumA[indx])*
-				 ((ofloat)count[indx])/(count[indx]-1.0));
-	    } else sumA2[indx] = 0.0;
-	  } /* end if data */
-	  indx++;
-	} /* end loop over Channel */
-      } /* end loop over IF */
-    } /* end loop over polarization */
-  } /* end loop over baseline */
-
-  /* Vpol clipping? */
-  if (maxV>1.0e10) return;
-  /* Loop over array */
-  indx = 0;
-  for (jbl=0; jbl<numBL; jbl++) {
-    vindx = 0;
-    for (js=0; js<numPol; js++) {
-      for (jif=0; jif<numIF; jif++) {
-	for (jf=0; jf<numChan; jf++) {
-	  /* Anything to do? */
-	  if ((sumA[indx]>0.0) && (corV[vindx]>0) && (sumA[corV[vindx]]>0.0)){ 
-	    vpol = fabs(sumA[indx]-sumA[corV[vindx]]);
-	    if (vpol>maxV) { /* Flag both */
-	      sumA[indx] = sumA[corV[vindx]] = -9999.0;
-	    }
-	  } /* end if anything to do */
-	  vindx++;
-	  indx++;
-	} /* end loop over Channel */
-      } /* end loop over IF */
-    } /* end loop over polarization */
-  } /* end loop over baseline */
-
-} /* end EditFDAvg */
-
-/**
- * Fit Spectral baseline, either linear or Median Window, subtract
- * Checks than baselines fitted to each IF.
- * \param numChan  Number of spectral channels in count, sumA, RMS
- * \param numIF    Number of IFs in count, sumA, RMS
- * \param numPol   Number of polarizations in count, sumA, RMS
- * \param numBL    Number of baselines in count, sumA, RMS
- * \param count    Count of entries in each cell of avg, RMS
- * \param avg     Sum of amplitudes in time interval for freq, IF, poln, baseline
- *                 <=0.0 => no data or flagged
- * \param RMS    Sum of amplitude**2 in time interval for freq, IF, poln, baseline
- * \param widMW    If > 0 the width of the median window in channels.
- *                 If <= 0 use linear baseline and chanMask
- * \param chanMask Mask, True if channel is to be used in baseline fit
- * \param err      Error stack, returns if not empty.
- */
-static void EditFDBaseline(olong numChan, olong numIF, olong numPol, olong numBL, 
-			   olong *count, ofloat *avg, ofloat *RMS, 
-			   olong widMW, gboolean *chanMask, ObitErr* err)
-{
-  olong js, jf, jif, jbl, jj, indx, jndx, cnt, half;
-  gboolean haveBL, doMW = widMW>0;  /* Median window filter or linear baseline */
-  ofloat a, b, *temp=NULL;
-  /*gchar *routine = "EditFDBaseline";*/
+  gboolean OK;
+  ObitThreadFunc func=(ObitThreadFunc)ThreadEditFDProcess;
+  gchar *routine = "EditFDprocess";
 
   /* error checks */
   if (err->error) return;
 
-  /* Which method? */
-  if (doMW) { /* Median window filter */
-    temp = g_malloc0(2*widMW*sizeof(ofloat)); /* Work array for sorting */
-    half = widMW/2;  /* Half width of window */
-    /* Loop over array */
-    indx = 0;
-    for (jbl=0; jbl<numBL; jbl++) {
-      for (js=0; js<numPol; js++) {
-	for (jif=0; jif<numIF; jif++) {
-	  for (jf=0; jf<numChan; jf++) {
-	    /* Median window are we at the beginning, end or middle? */
-	    cnt = 0;
-	    if (jf<half) { /* Beginning */
-	      for (jj=0; jj<widMW; jj++) {
-		if ((count[indx+jj]>0) && (avg[indx]>-9900.0)) {  /* Any data? */
-		  temp[cnt++] = avg[indx+jj];
-		}
-	      }
-	    } else if (jf>=(numChan-half-1)) { /* End */
-	      for (jj=numChan-widMW; jj<numChan; jj++) {
-		if ((count[indx+jj]>0) && (avg[indx]>-9900.0)) {  /* Any data? */
-		  temp[cnt++] = avg[indx+jj];
-		}
-	      }
-	    } else { /* Middle */
-	      for (jj=jf-half; jj<jf+half; jj++) {
-		if ((count[indx+jj]>0) && (avg[indx]>-9900.0)) {  /* Any data? */
-		  temp[cnt++] = avg[indx+jj];
-		}
-	      }
-	    }
-	    /* Get Median and subtract */
-	    if ((count[indx+jj]>0) && (avg[indx]>-9900.0))
-	      avg[indx] -= medianVal (temp, 1, cnt);
-	    indx++;
-	  } /* end loop over Channel */
-	} /* end loop over IF */
-      } /* end loop over polarization */
-    } /* end loop over baseline */
-    g_free(temp);
+  /* Do operation on buffer possibly with threads */
+  OK = ObitThreadIterator (args[0]->thread, nThread, func, (gpointer**)args);
 
-  } else { /* Linear baseline fit */
-    /* Loop over spectra */
-    indx = 0;
-    temp = g_malloc0(numChan*sizeof(ofloat)); /* Work array for channel number */
-    for (jf=0; jf<numChan; jf++) temp[jf] = (ofloat)jf;
-    for (jbl=0; jbl<numBL; jbl++) {
-      jndx = 0;
-      for (js=0; js<numPol; js++) {
-	haveBL = FALSE;
-	for (jif=0; jif<numIF; jif++) {
+  /* Check for problems */
+  if (!OK) {
+    Obit_log_error(err, OBIT_Error,"%s: Problem in threading", routine);
+  }
 
-	  /* Fit spectral baseline */
-	  EditFDBLFit (temp, &avg[indx], &chanMask[jndx], numChan, &a, &b);
-	  jndx += numChan;
-	  
-	  /* Baseline fitted? */
-	  haveBL = a>-900.0;  /* Some baseline data this IF */
-	  /* Baseline for this IF? */
-	  if (!haveBL) continue;
-
-	  /* Remove baseline */
-	  for (jf=0; jf<numChan; jf++) {
-	    if (avg[indx]>-9900.0) {
-	      avg[indx] -= a + b*temp[jf];
-	      indx++;
-	    }
-	  }
-	} /* end loop over IF */
-      } /* end loop over polarization */
-    } /* end loop over baseline */
-   
-    g_free(temp);
-  } /* end fitting */ 
-} /* end  EditFDBaseline */
-	    
-/**
- * Frequency Domain editing
- * \param numChan  Number of spectral channels in count, avg, RMS
- * \param numIF    Number of IFs in count, avg, RMS
- * \param numPol   Number of polarizations in count, avg, RMS
- * \param numBL    Number of baselines in count, avg, RMS
- * \param count    Count of entries in each cell of avg, RMS
- * \param avg      Sum of amplitudes in time interval for freq, IF, poln, baseline
- *                 <=0.0 => no data or flagged, -9999 => flagged
- * \param RMS      Sum of amplitude**2 in time interval for freq, IF, poln, baseline
- * \param maxRMS   Flag all channels having RMS values > maxRMS[0] of the 
- *                 channel median sigma.[default 6.0] plus maxRMS[1] (default 0.1) 
- *                 of the channel average in quadrature
- *                 if maxRMS[0] > 100.0 no RMS flagging
- * \param maxRes   Max. residual flux in sigma allowed for channels outside 
- *                 the baseline fitting regions.
- * \param maxResBL Max. residual flux in sigma allowed for channels within 
- *                 the baseline fitting regions. 
- * \param chanMask Mask, True if channel is to be used in baseline fit
- */
-static void EditFDEdit(olong numChan, olong numIF, olong numPol, olong numBL, 
-		       olong *count, ofloat *avg, ofloat *RMS, 
-		       ofloat *maxRMS, ofloat maxRes, ofloat maxResBL, 
-		       gboolean *chanMask)
-{
-  olong js, jf, jif, jbl, indx, jndx, cnt;
-  odouble sum1, sum2, meanRMS, residualRMS;
-  ofloat *temp=NULL;
-
-  if (maxRMS[0]<100.0)
-    temp = g_malloc0(numChan*sizeof(ofloat)); /* Work array for median */
-
-  /* Loop over array */
-  indx = 0;
-  for (jbl=0; jbl<numBL; jbl++) {
-    jndx = 0;
-    for (js=0; js<numPol; js++) {
-      for (jif=0; jif<numIF; jif++) {
-	
-	/* Determine average RMS for spectrum */
-	if (maxRMS[0]<100.0) {
-	  cnt = 0;
-	  for (jf=0; jf<numChan; jf++) {
-	    if (avg[indx+jf]>-9900.0) temp[cnt++] = RMS[indx+jf];
-	  }
-	  
-	  /* Median rms */
-	  if (cnt>0) meanRMS = medianVal(temp, 1, cnt);
-	  else meanRMS = 0.0;
-	  
-	  /* RMS flagging */
-	  for (jf=0; jf<numChan; jf++) {
-	    if ((avg[indx+jf]>-9900.0) && 
-		(RMS[indx+jf] > 
-		 sqrt(maxRMS[0]*meanRMS*maxRMS[0]*meanRMS + 
-		      (avg[indx+jf]*maxRMS[1]*avg[indx+jf]*maxRMS[1]))))
-	      avg[indx+jf] = -9999.0;
-	  } /* end flagging loop */
-	} /* end RMS flagging */
-
-	/* Get residual RMS */
-	sum1 = sum2 = 0.0; cnt = 0.0;
-	for (jf=0; jf<numChan; jf++) {
-	  if (avg[indx+jf]>-9900.0) {
-	    cnt++; 
-	    sum1 += avg[indx+jf];
-	    sum2 += avg[indx+jf]*avg[indx+jf];
-	  }
-	}
-	/* Residual RMS */
-	if (cnt>0) residualRMS = sqrt (sum2/cnt + (sum1/cnt)*(sum1/cnt));
-	else residualRMS = 1.0e20;
-
-	/* Residual flagging */
-	for (jf=0; jf<numChan; jf++) {
-	  if (chanMask[jndx+jf]) { /* In baseline */
-	    if (fabs(avg[indx+jf])>maxResBL*residualRMS) avg[indx+jf] = -9999.0;
-	  } else {  /* Not in baseline */
-	    if (fabs(avg[indx+jf])>maxRes*residualRMS)   avg[indx+jf] = -9999.0;
-	  }
-	} /* end loop over Channel */
-	jndx += numChan;
-	indx += numChan;
-      } /* end loop over IF */
-    } /* end loop over polarization */
-  } /* end loop over baseline */
-
-  if (temp) g_free(temp); /* Cleanup */
-  
-} /* end EditFDEdit */
+} /* end EditFDAvg */
 
 /**
  * Return median of an array
@@ -4476,7 +5044,6 @@ static ofloat medianVal (ofloat *array, olong incs, olong n)
 
   return out;
 } /* end medianVal */
-
 /**
  * ofloat comparison of two arguments
  * \param arg1 first value to compare
@@ -4560,7 +5127,7 @@ static ofloat MedianUVInt (ObitUV *inUV, ObitErr *err)
   ObitUVDesc *inDesc;
   ObitIOCode iretCode;
   gboolean doCalSelect;
-  ofloat  lastTime, curTime, tInt;
+  ofloat  lastTime, curTime, tInt, halfsec=0.5/86400.0;
   ObitIOAccess access;
   gchar *routine = "ObitUVEditMedian";
 
@@ -4593,7 +5160,7 @@ static ofloat MedianUVInt (ObitUV *inUV, ObitErr *err)
       indx = i*inDesc->lrec ;
       curTime = inUV->buffer[indx+inDesc->iloct];
       if (curTime>lastTime) {
-	if ((curTime-lastTime)>0.0) tInt = MIN (tInt, curTime-lastTime);
+	if ((curTime-lastTime)>halfsec) tInt = MIN (tInt, curTime-lastTime);
 	lastTime = curTime;
 	count++;
 	if (count>20) break;
@@ -4630,15 +5197,15 @@ static ofloat MedianUVInt (ObitUV *inUV, ObitErr *err)
  * \param err     Error stack, returns if  error.
  * \return number of baselines/correlations with valid data
  */
-static olong MedianDev (ofloat *amps, olong itime, ofloat *times,
-			olong numBL, olong numCorr, olong numTime, olong ntime,
-			ofloat alpha, ofloat *devs, 
-			ofloat *work, olong nThread, UVMednEditFuncArg** args,
-			ObitErr *err)
+static ollong MedianDev (ofloat *amps, olong itime, ofloat *times,
+			 ollong numBL, olong numCorr, olong numTime, olong ntime,
+			 ofloat alpha, ofloat *devs, 
+			 ofloat *work, olong nThread, UVMednEditFuncArg** args,
+			 ObitErr *err)
 {
-  olong out = 0;
+  ollong out = 0;
   ObitThreadFunc func=(ObitThreadFunc)ThreadMedianDev;
-  olong  i, nBLPerThread, loBL, hiBL;
+  ollong  i, nBLPerThread, loBL, hiBL;
   gboolean OK;
   gchar *routine = "MedianDev";
 
@@ -4786,7 +5353,7 @@ static ofloat MedianLevel (olong n, ofloat *value, ofloat alpha)
  *                data samples are discarded and the rest averaged). 
  * \return RMS value, fblank if cannot determine
  */
-static ofloat MedianSigma (olong n, ofloat *value, ofloat mean, ofloat alpha)
+static ofloat MedianSigma (ollong n, ofloat *value, ofloat mean, ofloat alpha)
 {
   ofloat fblank = ObitMagicF();
   ofloat out;
@@ -4827,6 +5394,7 @@ static ofloat MedianSigma (olong n, ofloat *value, ofloat mean, ofloat alpha)
  * \param numBL   Number of baselines
  * \param numCorr Number of correlators
  * \param allChan If TRUE flag all channels
+ * \param killAll If TRUE flag all Stokes
  * \param time    Time of this time interval
  * \param timeInt Width in time to flag
  * \param BLAnt1  First antenna number of baseline
@@ -4842,16 +5410,17 @@ static ofloat MedianSigma (olong n, ofloat *value, ofloat mean, ofloat alpha)
  * \param err     Error stack, returns if error.
  * \return number of baselines/correlations flagged
  */
-static olong MedianFlag (ofloat *devs, ofloat flagSig, 
-			 olong numBL, olong numCorr, gboolean allChan,
-			 ofloat time, ofloat timeInt,
-			 olong *BLAnt1, olong *BLAnt2, 
-			 olong *Chan, olong *IFs, olong *Stoke,
-			 ObitTableFG *FGtab, ObitTableFGRow *FGrow, 
-			 ObitErr *err)
+static ollong MedianFlag (ofloat *devs, ofloat flagSig, 
+			  ollong numBL, olong numCorr, 
+			  gboolean allChan, gboolean killAll,
+			  ofloat time, ofloat timeInt,
+			  olong *BLAnt1, olong *BLAnt2, 
+			  olong *Chan, olong *IFs, olong *Stoke,
+			  ObitTableFG *FGtab, ObitTableFGRow *FGrow, 
+			  ObitErr *err)
 {
-  olong out = 0;
-  olong  iBL, icorr, indx, jndx, kndx;
+  ollong out = 0;
+  ollong  iBL, icorr, indx, jndx, kndx;
   olong iFGRow;
   ofloat fblank = ObitMagicF();
 
@@ -4894,6 +5463,8 @@ static olong MedianFlag (ofloat *devs, ofloat flagSig,
 	else if (Stoke[kndx]==2) FGrow->pFlags[0] |= 1<<(1);
 	else if (Stoke[kndx]==4) FGrow->pFlags[0] |= 1<<(2);
 	else if (Stoke[kndx]==8) FGrow->pFlags[0] |= 1<<(3);
+	/* Flag all related Stokes? */
+	if (killAll) FGrow->pFlags[0] = 15; /* 1+2+4+8 */
 	/* DEBUG
 	fprintf (stdout," %f %d %d %d %f\n",
 		 time, BLAnt1[iBL], BLAnt2[iBL], Stoke[kndx], devs[indx]);*/
@@ -4993,7 +5564,8 @@ static olong* medianIFs (ObitUVDesc *inDesc, ObitUVDesc *outDesc, olong begIF)
   }
   
   /* Number of IFs averaged */
-  nifAvg = outDesc->inaxes[outDesc->jlocif] /  inDesc->inaxes[inDesc->jlocif];
+  if (outDesc->jlocif>=0) nifAvg = outDesc->inaxes[outDesc->jlocif] /  inDesc->inaxes[inDesc->jlocif];
+  else                    nifAvg = 1;
   nifAvg = MAX (1, nifAvg);  
   /* If selection - assume no averaging */
   if (begIF>1) nifAvg = 1;
@@ -5002,7 +5574,7 @@ static olong* medianIFs (ObitUVDesc *inDesc, ObitUVDesc *outDesc, olong begIF)
   for (iif=0; iif<nif; iif++) {
     bif = (begIF-1) + iif*nifAvg;
     eif = (begIF-1) + (iif+1)*nifAvg;
-    if (nifAvg==outDesc->inaxes[outDesc->jlocif]) eif = 0;  /* All? */
+    if ((outDesc->jlocif>=0) && (nifAvg==outDesc->inaxes[outDesc->jlocif])) eif = 0;  /* All? */
     if (inDesc->inaxes[outDesc->jlocif]==1) eif = bif+1;
     /* Loop over channels */
     for (ichan=0; ichan<inDesc->inaxes[inDesc->jlocf]; ichan++) {
@@ -5110,8 +5682,8 @@ static gpointer ThreadMedianDev (gpointer arg)
 {
   /* Get arguments from structure */
   UVMednEditFuncArg *largs = (UVMednEditFuncArg*)arg;
-  olong loBL      = largs->first-1;
-  olong hiBL      = largs->last;
+  ollong loBL     = largs->first-1;
+  ollong hiBL     = largs->last;
   ofloat *amps    = largs->amps;
   olong itime     = largs->itime;  
   ofloat* times   = largs->times;   
@@ -5122,8 +5694,8 @@ static gpointer ThreadMedianDev (gpointer arg)
   ofloat* devs    = largs->devs;   
   ofloat* work    = largs->work;
 
-  olong out = 0;
-  olong  iBL, icorr, it, count, jndx, indx;
+  ollong out = 0;
+  ollong  iBL, icorr, it, count, jndx, indx;
   ofloat delta, sigma, level, fblank = ObitMagicF();
 
   /* Loop over baselines */
@@ -5148,7 +5720,8 @@ static gpointer ThreadMedianDev (gpointer arg)
       } else {         /* yes */
 	level = MedianLevel (count, work, alpha);
 	delta = fabs(amps[jndx] - level);
-	sigma = MedianSigma (count, work, level, alpha);
+	/* This sigma will be an underestimate - double */
+	sigma = 2*MedianSigma (count, work, level, alpha);
 	/* Don't go overboard - min 0.1% */
 	if (level!=fblank) sigma = MAX (0.001*level, sigma);
 	if ((sigma>0.0) && (level!=fblank)) {
@@ -5167,4 +5740,301 @@ static gpointer ThreadMedianDev (gpointer arg)
   
   return NULL;
 } /* end ThreadMedianDev */
+
+/**
+ * Threaded Processing for Frequency domain editing
+ * Flag channels with less than or equal minGood of time samples valid
+ * \param arg     pointer to structure with:
+ * \li numChan  Number of spectral channels in count, sumA, RMS
+ * \li numIF    Number of IFs in count, sumA, RMS
+ * \li numPol   Number of polarizations in count, sumA, RMS
+ * \li numBL    Number of baselines in count, sumA, RMS
+ * \li count    Count of entries in each cell of avg, RMS
+ * \li avg      Sum of amplitudes in time interval for freq, IF, poln, baseline
+ *                  <=0.0 => no data or flagged
+ * \li RMS      Sum of amplitude**2 in time interval for freq, IF, poln, baseline
+ * \li sigma    [out] median alpha sigma for values in avg (MW only)
+ * \li corV     Entry per element of sumA which if >0 is the 0-rel index of the 
+ *                corresponding Stokes RR for a Stokes LL measurement, used with maxV
+ * \li maxAmp   Maximum allowable average amplitude
+ * \li maxV     Maximum allowable VPol, >1.0e10=> no VPol clipping
+ * \li widMW    If > 0 the width of the median window in channels.
+ *                 If <= 0 use linear baseline and chanMask
+ * \li chanMask Mask, True if channel is to be used in baseline fit
+ * \li maxRMS   Flag all channels having RMS values > maxRMS[0] of the 
+ *              channel median sigma.[default 6.0] plus maxRMS[1] (default 0.1) 
+ *              of the channel average in quadrature
+ *              if maxRMS[0] > 100.0 no RMS flagging
+ * \li maxRes   Max. residual flux in sigma allowed for channels outside 
+ *              the baseline fitting regions.
+ * \li maxResBL Max. residual flux in sigma allowed for channels within 
+ *              the baseline fitting regions. 
+ * \li minGood  Min. fraction of good times.
+ * \li doMW     True if using median window baselines.
+ * \li err      Error stack, returns if not empty.
+ */
+static gpointer ThreadEditFDProcess(gpointer arg)
+{
+  /* Get arguments from structure */
+  UVMednFuncArg *largs = (UVMednFuncArg*)arg;
+  ollong loBL        = largs->first-1;
+  ollong hiBL        = largs->last;
+  ofloat *sumA       = largs->avg;
+  ofloat *avg        = largs->avg;
+  ofloat *sumA2      = largs->RMS;
+  ofloat *RMS        = largs->RMS;
+  ofloat *sigma      = largs->sigma;
+  ollong *count      = largs->count;
+  olong numPol       = largs->numPol; 
+  olong numIF        = largs->numIF; 
+  olong numChan      = largs->numChan; 
+  olong *corV        = largs->corV;
+  ofloat maxAmp      = largs->maxAmp;
+  ofloat maxV        = largs->maxV;
+  olong widMW        = largs->widMW;
+  gboolean *chanMask = largs->chanMask;
+  ofloat *maxRMS     = largs->maxRMS;
+  ofloat maxRes      = largs->maxRes;
+  ofloat maxResBL    = largs->maxResBL;
+  ofloat minGood     = largs->minGood;
+  gboolean doMW      = largs->doMW;
+
+  ollong js, jf, jif, jbl, indx, jndx, vindx, jj, jjj, cnt, half;
+  ollong maxCount, flagCount;
+  gboolean haveBL;
+  ofloat vpol, a, b, aaa, *temp, *temp2;
+  odouble sum1, sum2, meanRMS, residualRMS;
+
+  /* error checks */
+  if (largs->err->error) goto done;
+
+  /* Formerly EditFDAvg */
+  /* Loop over array averaging, clip excessive amplitude*/
+  indx = loBL*numChan*numIF*numPol;
+  for (jbl=loBL; jbl<hiBL; jbl++) {
+    for (js=0; js<numPol; js++) {
+      for (jif=0; jif<numIF; jif++) {
+	for (jf=0; jf<numChan; jf++) {
+	  if (count[indx]>0) {  /* Any data? */
+	    sumA[indx] /= count[indx];
+	    if (sumA[indx]>maxAmp) sumA[indx] = -9999.0; /* Too large? */
+	    if (count[indx]>1) { /* Enough data for RMS? */
+	      sumA2[indx] = sqrt((sumA2[indx]/count[indx] - sumA[indx]*sumA[indx])*
+				 ((odouble)count[indx])/(count[indx]-1.0));
+	    } else sumA2[indx] = 0.0;
+	  } /* end if data */
+	  indx++;
+	} /* end loop over Channel */
+      } /* end loop over IF */
+    } /* end loop over polarization */
+  } /* end loop over baseline */
+
+  /* Vpol clipping? */
+  if (maxV>1.0e10) goto baseline;
+  /* Loop over array */
+  indx = loBL*numChan*numIF*numPol;
+  for (jbl=loBL; jbl<hiBL; jbl++) {
+    vindx = 0;
+    for (js=0; js<numPol; js++) {
+      for (jif=0; jif<numIF; jif++) {
+	for (jf=0; jf<numChan; jf++) {
+	  /* Anything to do? */
+	  if ((sumA[indx]>0.0) && (corV[vindx]>0) && (sumA[corV[vindx]]>0.0)){ 
+	    vpol = fabs(sumA[indx]-sumA[corV[vindx]]);
+	    if (vpol>maxV) { /* Flag both */
+	      sumA[indx] = sumA[corV[vindx]] = -9999.0;
+	    }
+	  } /* end if anything to do */
+	  vindx++;
+	  indx++;
+	} /* end loop over Channel */
+      } /* end loop over IF */
+    } /* end loop over polarization */
+  } /* end loop over baseline */
+
+  /* Formerly EditFDBaseline */
+ baseline:
+  /* Which method? */
+  if (doMW) { /* Median window filter */
+    temp  = largs->work;
+    temp2 = largs->work2;
+    half  = widMW/2;  /* Half width of window */
+    /* Loop over array */
+    indx = loBL*numChan*numIF*numPol;
+    for (jbl=loBL; jbl<hiBL; jbl++) {
+      for (js=0; js<numPol; js++) {
+	for (jif=0; jif<numIF; jif++) {
+	  for (jf=0; jf<numChan; jf++) temp2[jf] =  avg[indx+jf];
+	  for (jf=0; jf<numChan; jf++) {
+	    /* Median window are we at the beginning, end or middle? */
+	    cnt = 0;
+	    if (jf<half) { /* Beginning */
+	      for (jj=0; jj<widMW; jj++) {
+		jjj = jj - jf;  /* If we're no longer at the beginning */
+		if ((count[indx+jjj]>0) && (temp2[jj]>-9900.0)) {  /* Any data? */
+		  temp[cnt++] = temp2[jj];
+		}
+	      }
+	    } else if (jf>=(numChan-half-1)) { /* End */
+	      for (jj=numChan-widMW; jj<numChan; jj++) {
+		jjj = jj - jf;  /* If we're no longer at the beginning */
+		if ((count[indx+jjj]>0) && (temp2[jj]>-9900.0)) {  /* Any data? */
+		  temp[cnt++] =  temp2[jj];
+		}
+	      }
+	    } else { /* Middle */
+	      for (jj=-half; jj<=half; jj++) {
+		if ((count[indx+jj]>0) && (temp2[jf+jj]>-9900.0)) {  /* Any data? */
+		  temp[cnt++] = temp2[jf+jj];
+		}
+	      }
+	    }
+	    /* Get Median and subtract */
+	    if ((count[indx]>0) && (avg[indx]>-9900.0)) {
+	      aaa = medianVal (temp, 1, cnt);
+	      avg[indx] -= aaa;
+	      sigma[indx] = MedianSigma (cnt, temp, aaa, 0.2);
+	    } else {  /* Datum bad */
+	      if (avg[indx]>-9900.0) avg[indx]   = 0.0;
+	      sigma[indx] = 100.0;
+	    }
+	    indx++;
+	  } /* end loop over Channel */
+	} /* end loop over IF */
+      } /* end loop over polarization */
+    } /* end loop over baseline */
+
+  } else { /* Linear baseline fit */
+    /* Loop over spectra */
+    indx = loBL*numChan*numIF*numPol;
+    temp = largs->work; /* Work array for channel number */
+    for (jf=0; jf<numChan; jf++) temp[jf] = (ofloat)jf;
+    for (jbl=loBL; jbl<hiBL; jbl++) {
+      jndx = 0;
+      for (js=0; js<numPol; js++) {
+	haveBL = FALSE;
+	for (jif=0; jif<numIF; jif++) {
+
+	  /* Fit spectral baseline */
+	  EditFDBLFit (temp, &avg[indx], &chanMask[jndx], numChan, &a, &b);
+	  jndx += numChan;
+	  
+	  /* Baseline fitted? */
+	  haveBL = a>-900.0;  /* Some baseline data this IF */
+	  /* Baseline for this IF? */
+	  if (!haveBL) {indx += numChan; continue;}
+
+	  /* Remove baseline */
+	  for (jf=0; jf<numChan; jf++) {
+	    if (avg[indx]>-9900.0) {
+	      avg[indx] -= a + b*temp[jf];
+	      indx++;
+	    }
+	  }
+	} /* end loop over IF */
+      } /* end loop over polarization */
+    } /* end loop over baseline */
+   
+  } /* end fitting type */ 
+
+  /* Formerly EditFDEdit */
+  temp = largs->work; /* Work array for median */
+ 
+  /* Loop over array */
+  indx = loBL*numChan*numIF*numPol;
+  for (jbl=loBL; jbl<hiBL; jbl++) {
+    jndx = 0;
+    for (js=0; js<numPol; js++) {
+      for (jif=0; jif<numIF; jif++) {
+	
+	/* Determine average RMS for spectrum */
+	if (maxRMS[0]<100.0) {
+	  cnt = 0;
+	  for (jf=0; jf<numChan; jf++) {
+	    if ((avg[indx+jf]>-9900.0) && (RMS[indx+jf]>0.0)) {
+	      temp[cnt++] = RMS[indx+jf];
+	    }
+	  }
+	  
+	  /* Median rms */
+	  if (cnt>0) meanRMS = medianVal(temp, 1, cnt);
+	  else meanRMS = 0.0;
+	  
+	  /* RMS flagging */
+	  for (jf=0; jf<numChan; jf++) {
+	    if ((avg[indx+jf]>-9900.0) && (meanRMS>0.0) &&
+		(RMS[indx+jf] > 
+		 sqrt(maxRMS[0]*meanRMS*maxRMS[0]*meanRMS + 
+		      (avg[indx+jf]*maxRMS[1]*avg[indx+jf]*maxRMS[1]))))
+	      avg[indx+jf] = -9999.0;
+	  } /* end flagging loop */
+	} /* end RMS flagging */
+
+	/* Get residual RMS */
+	sum1 = sum2 = 0.0; cnt = 0.0;
+	for (jf=0; jf<numChan; jf++) {
+	  if (avg[indx+jf]>-9900.0) {
+	    if (avg[indx+jf]>0.0) {
+	      cnt++; 
+	      sum1 += avg[indx+jf];
+	      sum2 += avg[indx+jf]*avg[indx+jf];
+	    }
+	  }
+	}
+	/* Residual RMS */
+	if (cnt>0) residualRMS = sqrt (sum2/cnt + (sum1/cnt)*(sum1/cnt));
+	else residualRMS = 1.0e20;
+	if (!doMW) sigma[indx+jf] = residualRMS;
+
+	/* Residual flagging */
+	for (jf=0; jf<numChan; jf++) {
+	  if (chanMask[jndx+jf]) { /* In baseline */
+	    if (fabs(avg[indx+jf])>maxResBL*sigma[indx+jf]) avg[indx+jf] = -9999.0;
+	  } else {  /* Not in baseline */
+	    if (fabs(avg[indx+jf])>maxRes*sigma[indx+jf])   avg[indx+jf] = -9999.0;
+	  }
+	} /* end loop over Channel */
+	jndx += numChan;
+	indx += numChan;
+      } /* end loop over IF */
+    } /* end loop over polarization */
+  } /* end loop over baseline */
+
+  /* Flag data with fewer than 1/4 of time samples */
+  /* Find maximum number of time samples */
+  maxCount = 0;
+  indx = loBL*numChan*numIF*numPol;
+  for (jbl=loBL; jbl<hiBL; jbl++) {
+    for (js=0; js<numPol; js++) {
+      for (jif=0; jif<numIF; jif++) {
+	for (jf=0; jf<numChan; jf++) {
+	  maxCount = MAX (count[indx++], maxCount);
+	}
+      }
+    }
+  }
+  flagCount = (ollong)(maxCount*minGood);  /* Level at which to flag */
+  if (flagCount>0) {
+    indx = loBL*numChan*numIF*numPol;
+    for (jbl=loBL; jbl<hiBL; jbl++) {
+      for (js=0; js<numPol; js++) {
+	for (jif=0; jif<numIF; jif++) {
+	  for (jf=0; jf<numChan; jf++) {
+	    if ((count[indx]<=flagCount) && (count[indx]>0))
+	      avg[indx] = -9999.0;
+	    indx++;
+	  }
+	}
+      }
+    }
+  } /* end if enough time samples to flag */
+
+  /* Indicate completion */
+ done:
+  if (largs->ithread>=0)
+    ObitThreadPoolDone (largs->thread, (gpointer)&largs->ithread);
+  
+  return NULL;
+} /* end ThreadEditFDProcess */
+
 

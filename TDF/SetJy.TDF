@@ -3,7 +3,7 @@
 ;! Task to enter source info into the source (AIPS SU) table.
 ;# TASK CALIBRATION
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2007
+;;  Copyright (C) 2007-2018
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -52,6 +52,8 @@ BIF               0.0              Low IF # for flux density
 EIF               0.0              High IF # for flux density
 **PARAM** float 4
 ZeroFlux                            I,Q,U,V flux density (Jy)
+**PARAM** float 1  **DEF** 0.0
+Alpha           -20.       20.      Spectral Index to correct
 **PARAM** str 4
 OPType                             '    ' => use other adverbs
                                    for required operation
@@ -87,22 +89,29 @@ Parms                              [0]: Pixel to which SysVel
                                      <= 0 => use latest VLA
                                          values (1999.2) or,
                                          for 1934-638, the
-                                         ATCA value of 30Jul94.
-                                        1 => use Baars values
+					 ATCA value of 30Jul94.
+                                         or MeerKAT 0408-658
+                                       1 => use Baars values
                                          or old ATCA/PKS values
-                                         for 1934-638
+                                         for 1934-638, 0408-65
                                         2 => use VLA 1995.2
                                          values or for 1934-638
                                          the ATCA value of
                                          30Jul94.
-                                     >= 3 => use oldest VLA
+                                        3 => use oldest VLA
                                          values (1990) or,
                                          for 1934-638, the
                                          ATCA value of 30Jul94.
+                                      = 4 => Perley & Butler 2012
+                                         3C123, 3C196, 3C286, 
+                                         3C295
+                                      >=5 Perley & Butler 2017
                                    [2]: Only for 'CALC' option:
                                         multiply the calculated
                                         fluxes by Parms[2] with
                                         0 -> 1
+**PARAM** str 128
+taskLog                            Logfile to write task messages to
 ----------------------------------------------------------------
 SetJy
 Note: Adopted from AIPS and may not be entirely correct
@@ -131,12 +140,17 @@ Adverbs:
              densities are valid. 0 => 1.
   EIF........The highest IF number for which the given flux
              densities are valid. 0 => all.
-  ZeroFlux...The I, Q, U, and V flux densities in Jy.  If OPType=' ',
-             ZeroFlux is used to set the fluxes of all 4 polarizations
-             unless all 4 are zero - use REJY to do that.  If
-             ZeroFlux[0] < 0, then the I polarization flux is not
-             altered.  This allows you to CALC the I flux and set the
-             Q, U, and V fluxes.
+  ZeroFlux...The I, Q, U, and V flux densities in Jy at ref Freq.  
+             If OPType=' ', ZeroFlux is used to set the fluxes of 
+             all 4 polarizations unless all 4 are zero - 
+             use REJY to do that.  If ZeroFlux[0] < 0, then the 
+             I polarization flux is not altered.  This allows 
+             you to CALC the I flux and set the Q, U, and V 
+             fluxes.
+  Alpha......Spectral index of the values in ZeroFlux, thsi is 
+             used to convert the flux densities at the reference
+             frequency to the frequncy of each IF.
+             -0.7 is typical for synchrotron.
   OPType.....'   ' => use ZeroFlux values for the source flux
                   densities and SysVel for source velocity.
              'CALC' => use the standard Baars et al formulae
@@ -149,6 +163,7 @@ Adverbs:
                   Australia Telescope source 1934-638 is also
                   recognized (J2000 only but can start with P).
                   (see Parms[1] for polynomial selection).
+                  0408-658 MeerKAT value from Mauch/Hugo.
              'REJY' => reset source flux densities to zero
                   for source(s) specified.
              'REVL' => reset velocity to zero for source(s)
@@ -173,22 +188,49 @@ Adverbs:
                  The velocity stored in the 'SU' table will be
                  recalculated to refer to the reference pixel.
              [1]: Only for 'CALC' option:
-                  <= 0 => use latest VLA values (1999.2) or,
-                          for 1934-638, the ATCA value of
-                          30Jul94.
-                     1 => use Baars values or old ATCA/PKS
-                          values for 1934-638
+                  All provide 1934-638 and 9498-658.
+                  <= 0 => use latest VLA values (1999.2)
+                     1 => use Baars values
                      2 => use mid-1990s VLA determined values
-                          (1995.2) or, for 1934-638, the ATCA
-                          value of 30Jul94.
-                  >= 3 => use oldest VLA determined values
-                          (1990) or, for 1934-638, the ATCA
-                          value of 30Jul94.
+                          (1995.2)
+                     3 => use oldest VLA determined values
+                          (1990)
+                     4 => Use Perley & Butler 2012 values for
+                          3C123, 3C196, 3C286 and 3C295
+                          NB: there are always used for 
+			  3C123, 3C196
+                   >=5 => Use Perley & Butler 2017 
+                          Source       Freq range (GHz)
+                          J0133-3629    0.2-4
+                          3C48         0.05 - 50
+                          Fornax A     0.2 - 0.5
+                          3C123        0.05 - 50
+                          J0444+2809   0.2 - 2.0
+                          3C138        0.2 - 50
+                          Pictor A     0.2 - 4.0
+                          Taurus A     0.05 - 4.0
+                          3C147        0.05 - 50
+                          3C196        0.05 - 50
+                          Hydra A      0.05 - 12
+                          Virgo A      0.05 - 50
+                          3C286        0.05 - 50
+                          3C295        0.05 - 50
+                          Hercules A   0.2 - 12
+                          3C353        0.2 - 4
+                          3C380        0.05 - 50
+                          Cygnus A     0.05 - 12
+                          3C444        0.2 - 12
+                          Cassiopeia A 0.2 -4.
              [2]: Only for 'CALC' option:
                   You may wish to reduce the "official" flux computed
                   from the VLA measurements to account for resolution
                   effects.  If 0 < Parms[2] <= 2.0, the computed flux
                   is multipled by Parms[2].
+  taskLog.....Log file to write messages to INSTEAD of the terminal
+              This is useful in long runs or batch files where
+              a bug in the ObitTalk message handling may cause
+              tasks to hang.  Path is absolute or relative to where
+              the task executes.
 ----------------------------------------------------------------
 SetJy: Enter Source Flux Density and Calcode into the AIPS SU Table.
        Other source parameters may also be entered.
@@ -249,6 +291,7 @@ re-determined by John Reynolds (jreynold@atnf.csiro.au, 30/jul/94) and
 implemented in SetJy as the default on 30 August 1994.  Changes in the
 flux density scale are significant at all frequencies.  The old scale
 can be obtained with OPType='CALC' by setting Parms[1]=1
+0408-658 and 1934-638 are primary calibrators for MeerKAT.
 
 
 Frequency          New - Old
@@ -274,31 +317,6 @@ Frequency          New - Old
  The SetJy output in the SU table can be viewed with AIPS tasks
 LISTR or PRTAB.
 
- There are now models of some calibrator sources shipped with AIPS.
-These models are read in with the AIPS task CALRD.  
-Available models are
-       OBJECT           BAND
-        3C48             K
-        3C48             Q
-        3C48             U
-        3C138            K
-        3C138            Q
-        3C138            U
-        3C147            K
-        3C147            Q
-        3C147            U
-        3C286            K
-        3C286            Q
-        3C286            U
-The above were all taken from Claire Chandler's web site although the
-history files have been removed and the images cropped.
-
-Note, to use these as calibrators, you must enter a total flux in the
-source table with SetJy or GetJy which is correct for your observing
-frequency.  Then Calib will scale the flux in these models to that
-total flux.
-
-These models are in J2000 coordinates.  If your data are in B1950,
-either change the uv data to J2000 with AIPS UVFIX or change the 
-images to B1950 with POPS EPOSWTCH.
+A number of the standard calibrators/bands are provided in 
+share/data/.
 ----------------------------------------------------------------

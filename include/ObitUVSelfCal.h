@@ -1,4 +1,4 @@
-/* $Id: ObitUVSelfCal.h 167 2010-03-19 14:33:04Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2005-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

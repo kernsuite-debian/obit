@@ -1,6 +1,6 @@
-# $Id: Makefile 2 2008-06-10 15:32:27Z bill.cotton $
+# $Id: Makefile,v 1.6 2007/07/10 18:32:20 bcotton Exp $
 #-----------------------------------------------------------------------
-#;  Copyright (C) 2004-2007
+#;  Copyright (C) 2004-2013
 #;  Associated Universities, Inc. Washington DC, USA.
 #;
 #;  This program is free software; you can redistribute it and/or
@@ -29,7 +29,7 @@
 #    Makefile to run tests of Obit/python software 
 #
 #------------------------------------------------------------------------
-TARGETS := testObit testHGeom testFeather testUVImage testUVSub testCleanVis 
+TARGETS := testObit testHGeom testFeather testUVImage testUVSub testCleanVis testPlot
 
 all: $(TARGETS)
 
@@ -58,7 +58,12 @@ testCleanVis:
 	echo " "; echo " "; echo " "; echo " ********   Run test of CleanVis"
 	time python testCleanVis.py
 
+testPlot:
+	echo " "; echo " "; echo " "; echo " ********   Run test of Plotting"
+	time python testContourPlot.py
 
+
+# Requires special dataset
 testSquint:
 	echo " "; echo " "; echo " "; echo " ********   Run test of Squint"
 	testSquint.csh

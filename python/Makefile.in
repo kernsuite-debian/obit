@@ -1,6 +1,6 @@
-# $Id: Makefile.in 15 2008-08-12 10:49:55Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#;  Copyright (C) 2004-2008
+#;  Copyright (C) 2004-2019
 #;  Associated Universities, Inc. Washington DC, USA.
 #;
 #;  This program is free software; you can redistribute it and/or
@@ -41,19 +41,20 @@
 top_srcdir = @top_srcdir@
 
 CC = @CC@
-CPPFLAGS = @CPPFLAGS@
+#CPPFLAGS = @CPPFLAGS@
+CPPFLAGS = 
 CFLAGS = @CFLAGS@
 LDFLAGS = @LDFLAGS@
 
 ALL_CPPFLAGS = $(CPPFLAGS) -I$(top_srcdir)/include @CFITSIO_CPPFLAGS@ \
-	@PYTHON_CPPFLAGS@ @FFTW_CPPFLAGS@ @FFTW3_CPPFLAGS@ @PYTHON_CPPFLAGS@ \
+	@FFTW_CPPFLAGS@ @FFTW3_CPPFLAGS@ \
 	@PLPLOT_CPPFLAGS@ @PGPLOT_CPPFLAGS@ @DEFS@
 ALL_CFLAGS = $(CFLAGS) @GLIB_CFLAGS@ @GSL_CFLAGS@ @PLPLOT_CFLAGS@ \
 	@PGPLOT_CFLAGS@ 
 ALL_LDFLAGS = $(LDFLAGS) @CFITSIO_LDFLAGS@ @FFTW_LDFLAGS@  @FFTW3_LDFLAGS@  @GSL_LDFLAGS@ \
-	@PLPLOT_LDFLAGS@ @PGPLOT_LDFLAGS@ @PYTHON_LDFLAGS@ 
+	@PLPLOT_LDFLAGS@ @PGPLOT_LDFLAGS@
 
-LIBS = ../lib/libObit.a @CFITSIO_LIBS@ @FFTW_LIBS@ @FFTW3_LIBS@ @GLIB_LIBS@ \
+LIBS = -L../lib/ -lObit @CFITSIO_LIBS@ @FFTW_LIBS@ @FFTW3_LIBS@ @GLIB_LIBS@ \
 	@GSL_LIBS@ @PLPLOT_LIBS@ @PGPLOT_LIBS@ @LIBS@ @FLIBS@ @GTHREAD_LIBS@
 
 CLIENT_CPPFLAGS = $(ALL_CPPFLAGS) @XMLRPC_CLIENT_CPPFLAGS@ 
@@ -66,31 +67,41 @@ SERVER_CFLAGS =
 SERVER_LDFLAGS = $(LDFLAGS) @XMLRPC_SERVER_LDFLAGS@
 SERVER_LIBS =  @XMLRPC_SERVER_LIBS@ 
 
+# Use Swig to build interface, only needed to change interface
 SWIG = @SWIG@
+SWIGLIB	   = 
 
 # Libraries in case they've changed
 MYLIBS := $(wildcard ../lib/lib*.a)
 
 # Do everything in one big module
-TARGETS := Obit.so 
+TARGETS := Obit 
 
 all: $(TARGETS)
 
 # Build shared library for python interface
-$(TARGETS): %.so:setupdata.py $(MYLIBS)
-	python makesetup.py
-	python setup.py build install --install-lib=.
+$(TARGETS): setupdata.py $(MYLIBS)
+	rm -rf build
+	python3 makesetup.py
+	python3 setup.py build install --install-lib=.
 
 # Build python/Obit interface
-interface: Obit_wrap.c
-	echo "rebuild Obit/python interface"
+#interface: Obit_wrap.c
+#	echo "rebuild Obit/python interface"
 
 # Use Swig to build python/c interface if necessary
-Obit_wrap.c: *.inc 
-	echo "%module Obit" > Obit.i
-	cat ObitTypeMaps.swig >> Obit.i
-	cat *.inc >> Obit.i
-	$(SWIG) -python  $(INCDIR) Obit.i
+#Obit_wrap.c: *.inc $(MYLIBS)
+#	rm -f Obit_wrap.c
+#	echo "%module Obit" > Obit.i
+#	cat ObitTypeMaps.swig >> Obit.i
+#	cat *.inc >> Obit.i
+#	$(SWIG) -Wall -python -I$(SWIGLIB) -I$(SWIGLIB)/python Obit.i
+
+# libObit.so for binary distribution, libObit.a for build from source:
+Obit: Obit_wrap.c ../lib/libObit.a
+	rm -rf build
+	python3 makesetup.py
+	python3 setup.py build install --install-lib=.
 
 # Write compile/link info to setupdata.py
 setupdata.py: Makefile

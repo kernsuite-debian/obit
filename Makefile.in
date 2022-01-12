@@ -1,6 +1,6 @@
-# $Id: Makefile.in 117 2009-07-14 14:30:25Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#;  Copyright (C) 2002-2008
+#;  Copyright (C) 2002-2010
 #;  Associated Universities, Inc. Washington DC, USA.
 #;
 #;  This program is free software; you can redistribute it and/or
@@ -37,7 +37,7 @@ top_srcdir = @top_srcdir@
 CPPFLAGS = @CPPFLAGS@
 CFLAGS = @CFLAGS@  -Wall -fno-strict-aliasing
 LDFLAGS = @LDFLAGS@
-OBIT = @OBIT@
+OBIT = $(top_srcdir)
 CC = @CC@
 
 # RANLIB = library "randomizer", ranlib if needed, else blank
@@ -47,7 +47,7 @@ RANLIB = @RANLIB@
 LIBS = @LIBS@ @GTHREAD_LIBS@
 
 # DOCS = LaTeX Documentation file
-DOCS = $t(op_srcdir)/doc/obitdoc.tex
+DOCS = $(top_srcdir)/doc/obitdoc.tex
 
 # names of archive files
 ARCHIVE = @PACKAGE_TARNAME@Back@PACKAGE_VERSION@
@@ -56,10 +56,14 @@ DISTRIB = @PACKAGE_TARNAME@@PACKAGE_VERSION@
 DIRN = @PACKAGE_NAME@
 
 #------------------------------------------------------------------------
-TARGETS =  cfitsioupdate xmlrpcupdate srcupdate libupdate \
+TARGETS = versionupdate cfitsioupdate xmlrpcupdate srcupdate libupdate \
 	pythonupdate taskupdate
 
 all:  $(TARGETS)
+
+# update the Obit version (svn revision)
+versionupdate:
+	true
 
 # update dummy_cfitsio directory
 cfitsioupdate:
@@ -96,7 +100,6 @@ taskupdate:
 # update work directory
 work: 
 	cd src/work; $(MAKE) CC="$(CC)" CFLAGS="$(CFLAGS)" LIB="$(LIB)"
-
 
 # update python directory
 pythonupdate: 

@@ -1,4 +1,4 @@
-/* $Id: Obit.swig 2 2008-06-10 15:32:27Z bill.cotton $                            */  
+/* $Id$                            */  
 /*--------------------------------------------------------------------*/
 /* Swig module description for Obit typeS                             */
 /*                                                                    */
@@ -48,6 +48,12 @@ Swig is pretty stupid and the typemaps have to be defined before they are needed
 %}
 
 %inline %{
+
+// Macro for python3 unicode compatability
+#if PY_MAJOR_VERSION >= 3
+#define PyString_AsString(x) PyUnicode_AsUTF8(x)
+#endif
+
 extern int IsAnObitObject (Obit* in) {
   gconstpointer ObitClassInfo = ObitGetClass();
   return ObitIsA(in, ObitClassInfo);

@@ -1,6 +1,6 @@
-/* $Id: ObitImageUtil.h 159 2010-02-26 17:54:34Z bill.cotton $       */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2010                                          */
+/*;  Copyright (C) 2003-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -33,6 +33,8 @@
 #include "ObitInfoList.h"
 #include "ObitUV.h"
 #include "ObitImage.h"
+#include "ObitImageMF.h"
+#include "ObitImageWB.h"
 #include "ObitImageDesc.h"
 #include "ObitUVDesc.h"
 #include "ObitFArray.h"
@@ -128,6 +130,23 @@ void ObitImageUtilInterpolateImage (ObitImage *inImage, ObitImage *outImage,
 				    olong *inPlane, olong *outPlane,
 				    olong hwidth, ObitErr *err);
 
+/** Public: Copy pixels in one image to another.with weight  */
+gboolean 
+ObitImageUtilNoInterWeight (ObitImage *inImage, ObitImage *outImage, 
+			    ObitImage *outWeight, gboolean memOnly,
+			    olong radius, olong *inPlane, olong *outPlane,
+			    ObitErr *err);
+
+/** Public: Interpolate pixels in one image to another given pixels. */
+void ObitImageUtilInterpolateImageXY (ObitImage *inImage, ObitImage *outImage,
+				      ObitImage *XPix, ObitImage *YPix,
+				      olong *inPlane, olong *outPlane,
+				      olong hwidth, ObitErr *err);
+
+/** Public: Get input pixels in InImage for outImage. */
+void ObitImageUtilGetXYPixels (ObitImage *inImage, ObitImage *outImage,
+			       ObitImage *XPix, ObitImage *YPix, ObitErr *err);
+
 /** Public: Interpolate pixels in one image to another with Zernike corrections */
 void 
 ObitImageUtilInterpolateImageZern (ObitImage *inImage, ObitImage *outImage, 
@@ -141,6 +160,11 @@ void ObitImageUtilInterpolateWeight (ObitImage *inImage, ObitImage *outImage,
 				     olong radius, olong *inPlane, olong *outPlane,
 				     olong hwidth, ObitErr *err);
 
+/** Public: Interpolate a plane on the 3rd axis. */
+void ObitImageUtilInterp3 (ObitImage *inImage, ofloat inPlane,
+			   ObitImage *outImage, olong outPlane, 
+			   olong hwidth, ObitErr *err);
+
 /** Public: Correct (divide) an image by the primary beam pattern of another. */
 void ObitImageUtilPBCorr (ObitImage *inImage, ObitImage *pntImage, ObitImage *outImage, 
 			   olong *inPlane, olong *outPlane, ofloat antSize, ObitErr *err);
@@ -151,6 +175,11 @@ void ObitImageUtilPBApply (ObitImage *inImage, ObitImage *pntImage, ObitImage *o
 
 /** Public: Fill image with the primary beam pattern */
 void ObitImageUtilPBImage (ObitImage *pntImage, ObitImage *outImage, 
+			   olong *outPlane, ofloat antSize, ofloat minGain, 
+			   ObitErr *err);
+
+/** Public: Create an OTF Beam image */
+void ObitImageUtilOTFBeam (ObitImage *pntImage, ObitImage *outImage, 
 			   olong *outPlane, ofloat antSize, ofloat minGain, 
 			   ObitErr *err);
 
@@ -209,4 +238,14 @@ olong ObitImageUtilBufSize (ObitUV *inU);
 void ObitImageUtilTwoDShift (ObitUVDesc *UVDesc, ObitImageDesc *imageDesc,
 			     gboolean onGrid);
 
+/** Convert image with TSpec to Spec model type */
+void ObitImageUtilT2Spec  (ObitImage *inImage, ObitImage **outImage, 
+			   olong nTerm, olong *inCCVer, olong *outCCVer,
+			   olong startComp, olong endComp, ObitErr *err);
+
+/** Fit beam size to dirty beam */
+void ObitImageUtilFitBeam (ObitImage *beam, ObitErr *err);
+ 
+/* Blank fill image */
+void ObitImageUtilBlankFill (ObitImage* in, ObitErr* err);
 #endif /* OBITIMAGEUTIL_H */ 

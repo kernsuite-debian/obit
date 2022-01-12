@@ -1,6 +1,6 @@
-/* $Id: ObitUV.h 135 2009-10-16 12:02:19Z bill.cotton $       */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -393,6 +393,9 @@ ObitIOCode ObitUVGetSubA (ObitUV *in, ObitErr *err);
 /** Public: Get source position */
 void ObitUVGetRADec (ObitUV *uvdata, odouble *ra, odouble *dec, 
 		     ObitErr *err);
+
+/** Public: Get source */
+ObitSource* ObitUVGetSource (ObitSource* src, ObitUV *uvdata, ofloat suID,  ObitErr *err);
 
 /** Public: Get single source info */
 void ObitUVGetSouInfo (ObitUV *uvdata, ObitErr *err);

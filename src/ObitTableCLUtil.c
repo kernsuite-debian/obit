@@ -1,6 +1,6 @@
-/* $Id: ObitTableCLUtil.c 88 2009-03-16 11:07:29Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005,2009                                          */
+/*;  Copyright (C) 2005-2015                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -27,7 +27,9 @@
 /*--------------------------------------------------------------------*/
 
 #include <math.h>
+#include "ObitUVDesc.h"
 #include "ObitTableCLUtil.h"
+#include "ObitTableNX.h"
 
 /*----------------Obit: Merx mollis mortibus nuper ------------------*/
 /**
@@ -235,7 +237,7 @@ ObitIOCode ObitTableCLSelect (ObitUV *inUV, ObitUV *outUV, ObitErr *err)
 /**
  * Create dummy CL table table (applying will not modify data)
  * \param inUV     Input UV data. Control parameters:
- * \li "solInt"    OBIT_float (1,1,1) Solution interval in days [def 10 sec].
+ * \li "solInt"    OBIT_float (1,1,1) Solution interval in sec [def 10 sec].
  * \param outUV    UV with which the output  Table is to be associated
  * \param ver      CL table version
  * \param err      Error stack, returns if not empty.
@@ -252,10 +254,11 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
   ObitIOAccess access;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitInfoType type;
-  ofloat *rec, solInt, t0, sumTime, cbase, lastTime=-1.0, lastSource=-1.0, lastFQID=-1.0;
-  olong iRow, i, ia, lrec, maxant;
-  olong  nTime, SubA, ant1, ant2, lastSubA=-1;
-  oint numPol, numIF, numTerm;
+  ofloat *rec, solInt, t0, sumTime;
+  ofloat lastTime=-1.0, lastSource=-1.0, lastFQID=-1.0, curSource=1.0, curFQID=0.0;
+  olong iRow, i, ia, lrec, maxant, highVer;
+  olong  nTime, SubA=-1, ant1, ant2, lastSubA=-1;
+  oint numPol, numIF, numTerm, numAnt;
   gboolean doCalSelect, doFirst=TRUE, someData=FALSE, gotAnt[MAXANT];
   ObitIOCode retCode;
   gchar *tname;
@@ -280,12 +283,20 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
   lrec = inUV->myDesc->lrec;
   t0 = -1.0e20;
 
+  /* Delete output table if extant */
+  highVer = ObitTableListGetHigh (inUV->tableList, "AIPS CL");
+  if (highVer>=ver) {
+    ObitDataZapTable ((ObitData*)outUV, "AIPS CL", ver, err);
+    if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
+  }
+
   /* Create output */
   if (desc->jlocs>=0)  numPol = MIN (2, desc->inaxes[desc->jlocs]);
   else                 numPol = 1;
   if (desc->jlocif>=0) numIF = desc->inaxes[desc->jlocif];
   else                 numIF = 1;
   numTerm= 1;
+  numAnt = inUV->myDesc->numAnt[0];/* actually highest antenna number */
   tname  = g_strconcat ("Calibration for: ",inUV->name, NULL);
   outCal = newObitTableCLValue(tname, (ObitData*)outUV, &ver, OBIT_IO_WriteOnly,  
 			       numPol, numIF, numTerm, err);
@@ -312,7 +323,10 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
   ObitTableCLSetRow (outCal, row, err);
   if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
 
-  /* Initialize */
+  /* Set header values */
+  outCal->numAnt    = numAnt;  /* Max. antenna number */
+
+ /* Initialize */
   row->Time   = 0.0;
   row->TimeI  = 0.0;
   row->SourID = 0;
@@ -367,6 +381,8 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
     /* read buffer */
     if (doCalSelect) retCode = ObitUVReadSelect (inUV, NULL, err);
     else retCode = ObitUVRead (inUV, NULL, err);
+    /* EOF is OK */
+    if (retCode==OBIT_IO_EOF) ObitErrClear(err);
     if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
     if (retCode==OBIT_IO_EOF) break; /* done? */
     
@@ -376,28 +392,27 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
     /* First time */
     if (t0<-1.0e10) {
       t0         = rec[inUV->myDesc->iloct];
-      lastSource = rec[inUV->myDesc->ilocsu];
-      lastFQID   = rec[inUV->myDesc->ilocfq];
+      if (inUV->myDesc->ilocsu>=0) lastSource = rec[inUV->myDesc->ilocsu];
+      if (inUV->myDesc->ilocfq>=0) lastFQID   = rec[inUV->myDesc->ilocfq];
       lastTime   = rec[inUV->myDesc->iloct];
-      cbase      = rec[inUV->myDesc->ilocb]; /* Baseline */
-      ant1       = (cbase / 256.0) + 0.001;
-      ant2       = (cbase - ant1 * 256) + 0.001;
-      lastSubA   = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 0.5);
+      ObitUVDescGetAnts(inUV->myDesc, rec, &ant1, &ant2, &lastSubA);
     }
     
     /* Loop over buffer */
     for (i=0; i<inUV->myDesc->numVisBuff; i++) {
 
       /* Accumulation or scan finished? If so, write "calibration".*/
+      if (inUV->myDesc->ilocsu>=0) curSource = rec[inUV->myDesc->ilocsu];
+      if (inUV->myDesc->ilocfq>=0) curFQID   = rec[inUV->myDesc->ilocfq];
       if ((rec[inUV->myDesc->iloct] > (t0+solInt)) || 
-	  (rec[inUV->myDesc->ilocsu] != lastSource) ||  
-	  (rec[inUV->myDesc->ilocfq] != lastFQID)) {
+	  (curSource != lastSource) ||  
+	  (curFQID != lastFQID)) {
 	
 	/* Not first time - assume first descriptive parameter never blanked */
 	if (nTime>0) {
 	  /* if new scan write end of last scan and this time */
-	  if ((rec[inUV->myDesc->ilocsu] != lastSource) ||  
-	      (rec[inUV->myDesc->ilocfq] != lastFQID)) {
+	  if ((curSource != lastSource) ||  
+	      (curFQID != lastFQID)) {
 	    /* Need first entry for scan? */
 	    if (doFirst) {
 	      doFirst = FALSE;
@@ -438,14 +453,14 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
 	      /* Values for start of next scan */
 	      row->Time   = rec[inUV->myDesc->iloct]; 
 	      row->TimeI  = 0.0;
-	      row->SourID = (oint)(rec[inUV->myDesc->ilocsu]+0.5);
+	      if (inUV->myDesc->ilocsu>=0) row->SourID = (oint)(rec[inUV->myDesc->ilocsu]+0.5);
 	      row->SubA   = SubA;
 	    } /* end write beginning of scan value */
 	  } else {  /* in middle of scan - use average time */
 	    /* Set descriptive info on Row */
 	    row->Time  = sumTime/nTime;  /* time */
-	    row->TimeI = 2.0 * (row->Time - t0);
-	    row->SourID = (oint)(rec[inUV->myDesc->ilocsu]+0.5);
+	    row->TimeI = MAX (0.0, (2.0 * (row->Time - t0)));
+	    if (inUV->myDesc->ilocsu>=0) row->SourID = (oint)(rec[inUV->myDesc->ilocsu]+0.5);
 	    row->SubA   = SubA;
 	  }
       
@@ -464,8 +479,8 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
 	  }
 	  /* initialize accumulators */
 	  t0         = rec[inUV->myDesc->iloct];
-	  lastSource = rec[inUV->myDesc->ilocsu];
-	  lastFQID   = rec[inUV->myDesc->ilocfq];
+	  lastSource = curSource;
+	  lastFQID   = curFQID;
 	  sumTime    = 0.0;
 	  nTime      = 0;
 	  lastSubA   = -1;
@@ -479,10 +494,7 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
       
       /* accumulate statistics
 	 Antennas etc. */
-      cbase = rec[inUV->myDesc->ilocb]; /* Baseline */
-      ant1 = (cbase / 256.0) + 0.001;
-      ant2 = (cbase - ant1 * 256) + 0.001;
-      SubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 0.5);
+      ObitUVDescGetAnts(inUV->myDesc, rec, &ant1, &ant2, &SubA);
       if(lastSubA<=0) lastSubA = SubA;
       gotAnt[ant1] = TRUE;
       gotAnt[ant2] = TRUE;
@@ -531,5 +543,220 @@ ObitTableCL* ObitTableCLGetDummy (ObitUV *inUV, ObitUV *outUV, olong ver,
   if (!someData) Obit_log_error(err, OBIT_InfoWarn, 
 				"%s: Warning: NO data selected", routine);
 
+  /* Cleanup */
+  row = ObitTableCLRowUnref(row);
+
   return outCal;
 } /* end ObitTableCLGetDummy */
+/**
+ * Create dummy CL table table from NX table (applying will not modify data)
+ * \param inUV     Input UV data. Control parameters:
+ * \li "solInt"    OBIT_float (1,1,1) Solution interval in sec [def 10 sec].
+ * \param outUV    UV with which the output  Table is to be associated
+ * \param ver      CL table version
+ * \param err      Error stack, returns if not empty.
+ * \return Pointer to the newly created ObitTableCL object which is 
+ *                 associated with outUV.
+ */
+ObitTableCL* ObitTableCLGetDummyNX (ObitUV *inUV, ObitUV *outUV, olong ver, 
+				    ObitErr *err)
+{
+#define MAXANT    300    /* Maximum number of antennas */
+  ObitTableCL *outCal=NULL;
+  ObitTableCLRow *row=NULL;
+  ObitTableNX  *NXTable=NULL;
+  ObitTableNXRow *NXRow=NULL;
+  ObitUVDesc *desc=NULL;
+  ObitIOAccess access;
+  gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitInfoType type;
+  ofloat solInt, t1, t2, delta;
+  olong iRow, oRow, nTime, i, ia, iT, highVer;
+  oint numPol, numIF, numTerm, numAnt;
+  gboolean doCalSelect;
+  ObitIOCode retCode, iretCode;
+  gchar *tname;
+  gchar *routine = "ObitTableCLGetDummyNX";
+ 
+   /* error checks */
+  if (err->error) return outCal;
+  g_assert (ObitUVIsA(inUV));
+  desc = inUV->myDesc;
+
+  /* Calibration/selection wanted? */ 
+  doCalSelect = FALSE;
+  ObitInfoListGetTest(inUV->info, "doCalSelect", &type, dim, &doCalSelect);
+  if (doCalSelect) access = OBIT_IO_ReadCal;
+  else access = OBIT_IO_ReadWrite;
+
+  /* open UV data to fully instantiate if not already open */
+  if ((inUV->myStatus==OBIT_Inactive) || (inUV->myStatus==OBIT_Defined)) {
+    retCode = ObitUVOpen (inUV, access, err);
+    if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
+  }
+
+  /* Delete output table if extant */
+  highVer = ObitTableListGetHigh (inUV->tableList, "AIPS CL");
+  if (highVer>=ver) {
+    ObitDataZapTable ((ObitData*)outUV, "AIPS CL", ver, err);
+    if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
+  }
+
+  /* Create output */
+  if (desc->jlocs>=0)  numPol = MIN (2, desc->inaxes[desc->jlocs]);
+  else                 numPol = 1;
+  if (desc->jlocif>=0) numIF = desc->inaxes[desc->jlocif];
+  else                 numIF = 1;
+  numTerm= 1;
+  numAnt = inUV->myDesc->numAnt[0];/* actually highest antenna number */
+  tname  = g_strconcat ("Calibration for: ",inUV->name, NULL);
+  outCal = newObitTableCLValue(tname, (ObitData*)outUV, &ver, OBIT_IO_WriteOnly,  
+			       numPol, numIF, numTerm, err);
+  g_free (tname);
+  if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
+
+  /* Get parameters for calibration */
+  /* "Solution interval" default 10 sec */
+  solInt = 10.0;
+  ObitInfoListGetTest(inUV->info, "solInt", &type, dim, (gpointer*)&solInt);
+  solInt /= 86400.0;  /* to days */
+
+  /* Open NX Table */
+  ver = 1;
+  NXTable = newObitTableNXValue (inUV->name, (ObitData*)inUV, &ver, OBIT_IO_ReadOnly, err);
+  /* Should be there */
+  Obit_retval_if_fail((NXTable!=NULL), err, outCal,
+		      "%s: iNdeX table does not exist - use UV.PUtilIndex to create", routine);
+  /* Open Index table  */
+  iretCode = ObitTableNXOpen (NXTable, OBIT_IO_ReadOnly, err);
+  if ((iretCode!=OBIT_IO_OK) || (err->error)) /* add traceback,return */
+    Obit_traceback_val (err, routine, inUV->name, outCal);
+  /* Create row structure */
+  NXRow = newObitTableNXRow(NXTable);
+
+  /* Open CL table */
+  if ((ObitTableCLOpen (outCal, OBIT_IO_WriteOnly, err) 
+       != OBIT_IO_OK) || (err->error))  { /* error test */
+    Obit_log_error(err, OBIT_Error, "%s: ERROR opening input CL table", routine);
+    return outCal;
+  }
+
+  /* Create CL Row */
+  row = newObitTableCLRow (outCal);
+
+  /* Attach row to output buffer */
+  ObitTableCLSetRow (outCal, row, err);
+  if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
+
+  /* Set header values */
+  outCal->numAnt    = numAnt;  /* Max. antenna number */
+
+ /* Initialize */
+  row->Time   = 0.0;
+  row->TimeI  = 0.0;
+  row->SourID = 0;
+  row->antNo  = 0;
+  row->SubA   = 0;
+  row->FreqID = 0;
+  row->GeoDelay[0]= 0.0;
+  row->IFR       = 0.0;
+  row->atmos     = 0.0;
+  row->Datmos    = 0.0;
+  row->MBDelay1  = 0.0;
+  row->clock1    = 0.0;
+  row->Dclock1   = 0.0;
+  row->dispers1  = 0.0;
+  row->Ddispers1 = 0.0;
+  /* IF dependent things */
+  for (i=0; i<numIF; i++) {
+    row->Real1[i]   = 1.0;
+    row->Imag1[i]   = 0.0;
+    row->Rate1[i]   = 0.0;
+    row->Delay1[i]  = 0.0;
+    row->Weight1[i] = 1.0;
+    row->RefAnt1[i] = 0;
+  }
+  /* Multiple polarizations */
+  if (numPol>1) {
+    row->clock2    = 0.0;
+    row->Dclock2   = 0.0;
+    row->dispers2  = 0.0;
+    row->Ddispers2 = 0.0;
+    /* IF dependent things */
+    for (i=0; i<numIF; i++) {
+      row->Real2[i]   = 1.0;
+      row->Imag2[i]   = 0.0;
+      row->Rate2[i]   = 0.0;
+      row->Delay2[i]  = 0.0;
+      row->Weight2[i] = 1.0;
+      row->RefAnt2[i] = 0;
+    }
+  } /* end two poln */
+
+  /* loop over NX Table  */
+  for (iRow=1; iRow<=NXTable->myDesc->nrow; iRow++) {
+    iretCode = ObitTableNXReadRow (NXTable, iRow, NXRow, err);
+    if (err->error) Obit_traceback_val (err, routine, inUV->name, outCal);
+
+    /* Timerange */
+    t1 = NXRow->Time-0.5*NXRow->TimeI;
+    t2 = NXRow->Time+0.5*NXRow->TimeI;
+
+    /* Scan info */
+    row->SourID = NXRow->SourID;  /* Source */
+    row->SubA   = NXRow->SubA;    /* Subarray */
+    row->FreqID = NXRow->FreqID;  /* Frequency group ID */
+
+    /* Divvy up scan */
+    nTime = MAX (1, (olong)(0.5+(NXRow->TimeI/solInt)));
+    delta = NXRow->TimeI/nTime;
+    for (iT=0; iT<nTime; iT++) {
+      row->Time   = t1 + iT*delta;
+      row->TimeI  = delta;
+      /* Loop over antennas writing entries */
+      for (ia=1; ia<=numAnt; ia++) {
+	oRow = -1;
+	row->antNo = ia;
+	if ((ObitTableCLWriteRow (outCal, oRow, row, err)
+	     != OBIT_IO_OK) || (err->error>0)) { 
+	  Obit_log_error(err, OBIT_Error, "%s: ERROR writing CL Table file", routine);
+	  return outCal;
+	}
+      }
+    } /* end loop over times */
+    /* One at end */
+      row->Time   = t1 + iT*delta;
+       /* Loop over antennas writing entries */
+      for (ia=1; ia<=numAnt; ia++) {
+	oRow = -1;
+	row->antNo = ia;
+	if ((ObitTableCLWriteRow (outCal, oRow, row, err)
+	     != OBIT_IO_OK) || (err->error>0)) { 
+	  Obit_log_error(err, OBIT_Error, "%s: ERROR writing CL Table file", routine);
+	  return outCal;
+	}
+      }
+  } /* end loop over NX Table */
+
+
+  /* Close NX table */
+  if ((ObitTableNXClose (NXTable, err) 
+       != OBIT_IO_OK) || (err->error>0)) { /* error test */
+    Obit_log_error(err, OBIT_Error, "%s: ERROR closing NX Table", routine);
+    return outCal;
+  }
+  
+  /* Close cal table */
+  if ((ObitTableCLClose (outCal, err) 
+       != OBIT_IO_OK) || (err->error>0)) { /* error test */
+    Obit_log_error(err, OBIT_Error, "%s: ERROR closing CL Table", routine);
+    return outCal;
+  }
+  
+  /* Cleanup */
+  row   = ObitTableCLRowUnref(row);
+  NXRow = ObitTableNXRowUnref(NXRow);
+  NXTable = ObitTableNXUnref(NXTable);
+
+  return outCal;
+} /* end ObitTableCLGetDummyNX */

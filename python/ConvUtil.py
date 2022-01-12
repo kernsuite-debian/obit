@@ -1,6 +1,6 @@
-# $Id: ConvUtil.py 112 2009-06-17 12:31:53Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2006,2009
+#  Copyright (C) 2006,2009,2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -27,82 +27,90 @@
 #-----------------------------------------------------------------------
 
 # Python utility package for convolving images
+from __future__ import absolute_import
+from __future__ import print_function
 import Obit, Image, FArray, FArrayUtil, OErr
 
 def PConv(inImage, convFn, doDivide, rescale, outImage, err):
-    """ (de)Convolve an Image with an FArray and write outImage
-
+    """
+    (de)Convolve an Image with an FArray and write outImage
+    
     This routine convolves all selected planes in inImage with convFn if  
     doDivide is FALSE, else it does a linear deconvolution 
     Operations are performed using FFTs 
-    inImage  = Obit Image to be convolved
-    convFn   = Obit/FArray Convolving Function 
-    doDovide = If true divide FT of convFn into FT of inImage, else multiply.
-    rescale  = Multiplication factor to scale output to correct units
-    outImage = Output ObitImage must be a clone of inImage
-               Actual convolution size must be set externally 
-    err      = Python Obit Error/message stack
+
+    * inImage  = Obit Image to be convolved
+    * convFn   = Obit/FArray Convolving Function 
+    * doDovide = If true divide FT of convFn into FT of inImage, else multiply.
+    * rescale  = Multiplication factor to scale output to correct units
+    * outImage = Output ObitImage must be a clone of inImage
+      Actual convolution size must be set externally 
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        print "Actually ",inImage.__class__
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        print("Actually ",inImage.__class__)
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not FArray.PIsA(convFn):
-        print "Actually ",convFn.__class__
-        raise TypeError,"convFn MUST be a Python Obit FArray"
+        print("Actually ",convFn.__class__)
+        raise TypeError("convFn MUST be a Python Obit FArray")
     if not Image.PIsA(outImage):
-        print "Actually ",outImage.__class__
-        raise TypeError,"outImage MUST be a Python Obit Image"
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     Obit.ConvUtilConv (inImage.me, convFn.me, doDivide, rescale, outImage.me, err.me)
     # end PConv
 
 def PConvGauss(inImage, maj, min, pa, rescale, outImage, err):
-    """ Convolve an Image with a Gaussian and write outImage
-
+    """
+    Convolve an Image with a Gaussian and write outImage
+    
     This routine convolves all selected planes in inImage with a Gaussian
     Operations are performed using FFTs 
-    inImage  = Obit Image to be convolved
-    maj      = Major axis of Gaussian in image plane (arcsec)
-    min      = Minor axis of Gaussian in image plane  (arcsec)
-    pa       = Position angle of Gaussian in image plane, from N thru E, (deg)
-    rescale  = Multiplication factor to scale output to correct units
-    outImage = Output ObitImage must be a clone of inImage
-               Actual convolution size must be set externally 
-    err      = Python Obit Error/message stack
+
+    * inImage  = Obit Image to be convolved
+    * maj      = Major axis of Gaussian in image plane (arcsec)
+    * min      = Minor axis of Gaussian in image plane  (arcsec)
+    * pa       = Position angle of Gaussian in image plane, from N thru E, (deg)
+    * rescale  = Multiplication factor to scale output to correct units
+    * outImage = Output ObitImage must be a clone of inImage
+      Actual convolution size must be set externally 
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        print "Actually ",inImage.__class__
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        print("Actually ",inImage.__class__)
+        raise TypeError("inImage MUST be a Python Obit Image")
     if not Image.PIsA(outImage):
-        print "Actually ",outImage.__class__
-        raise TypeError,"outImage MUST be a Python Obit Image"
+        print("Actually ",outImage.__class__)
+        raise TypeError("outImage MUST be a Python Obit Image")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     Obit.ConvUtilConvGauss (inImage.me, maj, min, pa, rescale, outImage.me, err.me)
     # end PConvGauss
 
 def PGaus(inImage, Beam):
-    """ Create an ObitFArray containing a unit area Gaussian in the center
-
+    """
+    Create an ObitFArray containing a unit area Gaussian in the center
+    
     returns  Python FArray object with normalized Gaussian
-    inImage  = Obit Image with geometry
-    Beam     = [maj, min, PA] defining eliptical Gaussian
-               size in image cell units or pixels if none given
+
+    * inImage  = Obit Image with geometry
+    * Beam     = [maj, min, PA] defining eliptical Gaussian
+      size in image cell units or pixels if none given
     """
     ################################################################
     # Checks
     if not Image.PIsA(inImage):
-        print "Actually ",inImage.__class__
-        raise TypeError,"inImage MUST be a Python Obit Image"
+        print("Actually ",inImage.__class__)
+        raise TypeError("inImage MUST be a Python Obit Image")
     if len(Beam) < 3:
-        raise TypeError,"Beam MUST have 3 elements"
+        raise TypeError("Beam MUST have 3 elements")
     #
     outFA = FArray.FArray("None")
     outFA.me = Obit.ConvUtilGaus (inImage.me, Beam[0], Beam[1], Beam[2])
@@ -110,13 +118,15 @@ def PGaus(inImage, Beam):
     # end PGaus
 
 def Deconv(fBeam, cBeam):
-    """ Deconvolves a Gaussian "beam" from a Gaussian component. 
-
+    """
+    Deconvolves a Gaussian "beam" from a Gaussian component. 
+    
     Returns list of deconvolved [Maj, Min, PA], Maj,Min=0 -> unable to fit
     Can also be used to determine the Gaussian parameters which when
     convolved with (cMaj, cMin, cPA) gives fMaj, fMin, fPA).
-    fBeam = Convolved [major axis, minor axis, position angle of major axis]
-    cBeam = Beam [major axis, minor axis, position angle of major axis]
+
+    * fBeam = Convolved [major axis, minor axis, position angle of major axis]
+    * cBeam = Beam [major axis, minor axis, position angle of major axis]
     """
     ################################################################
     return Obit.ConvUtilDeconv (fBeam[0], fBeam[1], fBeam[2], \

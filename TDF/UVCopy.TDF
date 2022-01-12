@@ -1,10 +1,10 @@
-; $Id: UVCopy.TDF 199 2010-06-15 11:39:58Z bill.cotton $
+; $Id$
 ; UVCopy
 ;---------------------------------------------------------------
 ;! Copy UV data
 ;# Task UV  Obit 
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2007-2010
+;;  Copyright (C) 2007-2015
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -33,7 +33,7 @@ UVCopy     LLLLLLLLLLLLUUUUUUUUUUUU CCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 UVCopy     Obit Task to copy uv data
 **PARAM** str 4
 DataType                           "FITS" or "AIPS" type of input
-**PARAM** str 48
+**PARAM** str 128
 inFile                             FITS input uvdata if Type=='FITS'
 **PARAM** str 12
 inName                             Input UV file name (name)
@@ -51,23 +51,29 @@ Qual            -10.0              Source qualifier -1=>any
 souCode                             Calibrator code '    '=>any
 **PARAM** float 2
 timeRange                           Time range to process.
+**PARAM** float 2
+UVRange         0.                 Min & max baseline (klambda)
 **PARAM** str 4
 Stokes                              Stokes to process
 **PARAM** int 1
 FreqID                              Freq. ID to select.
-**PARAM** int 1
+**PARAM** int 1 **DEF** 1
 BChan            0.0     8192.0     Low freq. channel 
 **PARAM** int 1
 EChan            0.0     8192.0     Highest freq channel
+**PARAM** int 1 **DEF** 1
+chanInc          0.0     8192.0     Channel increment
+**PARAM** int 1 **DEF** 1
+BIF               0.0     9999.0    First IF (0=>1)
 **PARAM** int 1
-BIF               0.0     9999.0   First IF (0=>1)
-**PARAM** int 1
-EIF               0.0     9999.0   Highest IF (0=>BIF to last)
+EIF               0.0     9999.0    Highest IF (0=>BIF to last)
+**PARAM** int 1 **DEF** 1
+IFInc             0.0     8192.0    IF increment
 **PARAM** int 1
 subA                                Subarray
 **PARAM** int 50
 Antennas         0.0     1000.0     List of antennas to calibrate
-**PARAM** int 1
+**PARAM** int 1 **DEF** 1
 corrType                            Cross or auto correlations
                                       0 pass only xc data
                                       1 pass xc and ac data
@@ -79,6 +85,9 @@ doCalib          -1.0        2.0   If >0 calibrate data
 gainUse                            CL (or SN) table to apply
 **PARAM** boo 1 **DEF** F
 doPol            -1.0       10.0   If >0 correct polarization.
+**PARAM** int 1 **DEF** 1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
 **PARAM** int 1
 flagVer                            Flag table version
 **PARAM** int 1
@@ -91,7 +100,7 @@ BPVer                              Bandpass table version
 Smooth                             Smoothing function. 
 **PARAM** str 4
 outDType                           "FITS" or "AIPS" type of output
-**PARAM** str 48
+**PARAM** str 128
 outFile                            FITS output uvdata if Type=='FITS'
 **PARAM** str 12
 outName                            Output UV AIPS file name
@@ -133,6 +142,7 @@ Adverbs:
   timeRange..Time range of the data to be processed. In order:
              Start and end times in days relative to ref. date.  
              Use  dhms2day to convert from human readable form
+  UVRange....(Minimum,Maximum) baseline (kilo-lambda) to process. 
   Stokes.....Stokes parameters to copy, "    "=> Don't convert
              Otherwise will select and/or convert..
   FreqID.....Frequency identifier to select , <=0=>any
@@ -140,9 +150,11 @@ Adverbs:
              relative as defined in the input data file.
   EChan......Highest channel number to to include in image,
              0 => max 
+  chanInc....Increment in channel selected, 0=>1
   BIF........First IF to process. 0=>1
   EIF........Highest IF to process 0=> do BIF to highest.
              Note: not all data sets will have IFs.
+  IFInc......Increment in IF selected, 0=>1
   subA.......Sub-array number to use. 0=>all.
   Antennas...A list of the antennas to  have solutions
              determined. If any number is negative then all
@@ -164,6 +176,9 @@ Adverbs:
              represented in the AN table.  This correction is only
              useful if PCAL has been run or feed polarization parameters
              have been otherwise obtained. 
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   flagVer....Specifies the version of the flagging table to be applied.
              0 => highest numbered table. <0 => no flagging to be
              applied.

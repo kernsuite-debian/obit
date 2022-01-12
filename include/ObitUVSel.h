@@ -1,6 +1,6 @@
-/* $Id: ObitUVSel.h 109 2009-06-10 12:11:14Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -60,10 +60,13 @@
  *               "HALF" = RR,LL, "FULL"=RR,LL,RL,LR. [default "    "]
  *               In the above 'F' can substitute for "formal" 'I' (both RR+LL).
  * \li  "BChan" OBIT_int (1,1,1) First spectral channel selected. [def all]
+ * \li  "chanInc" OBIT_int (1,1,1) Highest spectral channel selected. [def 1]
  * \li  "EChan" OBIT_int (1,1,1) Highest spectral channel selected. [def all]
  * \li  "BIF"   OBIT_int (1,1,1) First "IF" selected. [def all]
  * \li  "EIF"   OBIT_int (1,1,1) Highest "IF" selected. [def all]
+ * \li  "IFInc" OBIT_int (1,1,1) "IF" increment. [def 1]
  * \li  "doPol"   OBIT_int (1,1,1) >0 -> calibrate polarization.
+ * \li  "PDVer"   OBIT_int (1,1,1) >0 -> AIPS PD table for poln cal..
  * \li  "doCalib" OBIT_int (1,1,1) >0 -> calibrate, 2=> also calibrate Weights
  * \li  "gainUse" OBIT_int (1,1,1) SN/CL table version number, 0-> use highest
  * \li  "flagVer" OBIT_int (1,1,1) Flag table version, 0-> use highest, <0-> none
@@ -121,6 +124,8 @@
  *            function has value - in channels.
  *            Defaults: 1, 3, 1, 4 times Smooth(2) used when
  * \li "Alpha"  OBIT_float (1,1,1) Spectral index to apply
+ * \li "AlphaRefF"  OBIT_double (1,1,1) Reference freq for Alpha
+ *              Defaults to data reference frequency.
  * \li "SubScanTime" Obit_float scalar [Optional] if given, this is the 
  *          desired time (days) of a sub scan.  This is used by the 
  *          selector to suggest a value close to this which will
@@ -176,7 +181,7 @@ ObitUVSel* ObitUVSelCopy (ObitUVSel* in, ObitUVSel* out,
 			  ObitErr *err);
 
 /** Public: How big a buffer is needed for a data transfer? */
-olong ObitUVSelBufferSize (ObitUVDesc* desc, 
+ollong ObitUVSelBufferSize (ObitUVDesc* desc, 
 			   ObitUVSel* sel);
 
 /** Public: Enforces defaults in inaxes, blc, trc */

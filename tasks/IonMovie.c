@@ -1,4 +1,4 @@
-/* $Id: IonMovie.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit task to make ionospheric movies from an SN table             */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2007,2010                                          */
@@ -942,7 +942,7 @@ olong doMovie  (ObitInfoList* myInput, ObitUV* inData, ObitImage *outImage,
   ObitInfoListGetTest(myInput, "subA", &type, dim, &subA);
   ANver = MAX (1, subA);
   ANTable = newObitTableANValue (inData->name, (ObitData*)inData, &ANver, 
-				 OBIT_IO_ReadOnly, 0, 0, err);
+				 OBIT_IO_ReadOnly, 0, 0, 0, err);
   antList = ObitTableANGetList (ANTable, err);
   if (err->error) Obit_traceback_val (err, routine, inData->name, iplane);
   ANTable = ObitTableANUnref (ANTable);

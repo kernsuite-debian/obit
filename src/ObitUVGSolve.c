@@ -1,6 +1,6 @@
-/* $Id: ObitUVGSolve.c 167 2010-03-19 14:33:04Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2018                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -26,6 +26,7 @@
 /*;                         Charlottesville, VA 22903-2475 USA        */
 /*--------------------------------------------------------------------*/
 
+#include "ObitUVDesc.h"
 #include "ObitUVSel.h"
 #include "ObitUVGSolve.h"
 #include "ObitMem.h"
@@ -83,19 +84,19 @@ doSolve (ofloat* vobs, olong *ant1, olong *ant2, olong numAnt, olong numIF,
 
 /** Private: Determine SNR of solution */
 static void   
-calcSNR (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt, 
+calcSNR (ofloat* vobs, olong *ant1, olong *ant2, ollong numBL, olong numAnt, 
 	 ofloat* gain, ofloat* snr, ofloat closer[2][2], ofloat snrmin, odouble time, 
 	 olong iif, olong ist, olong* count, olong prtlv, gchar* prtsou, ObitErr *err);  
 
 /** Private: Gain Soln: Compute least squares gains */
 static void 
-gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt, olong refant, 
+gainCalc (ofloat* vobs, olong *ant1, olong *ant2, ollong numBL, olong numAnt, olong refant, 
 	  olong mode, olong minno, ofloat* g, olong* nref, olong prtlv, 
 	  olong* ierr, ObitErr* err);
 
 /** Private: Gain Soln: Does L1 solution for gains  */
 static void 
-gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt, olong refant, 
+gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, ollong numBL, olong numAnt, olong refant, 
 	    olong mode, olong minno, ofloat* g, olong* nref, olong prtlv, 
 	    olong* ierr, ObitErr* err);
 
@@ -280,21 +281,21 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
   ObitTableSNRow *row=NULL;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitInfoType type;
-  olong i, k, nif, npoln, iAnt, numBL, SNver;
+  olong nif, npoln, iAnt, SNver, itemp;
   olong nextVisBuf, cntmgm, iSNRow, numFreq, cntGood=0, cntPoss=0, cntBad=0;
+  ollong lltmp, numBL, i, k;
   oint numPol, numIF, numAnt, suba, refant, minno, prtlv, mode;
   ofloat solInt, snrmin, uvrang[2], wtuv, summgm, FractOK, minOK=0.1;
-  olong itemp, kday, khr, kmn, ksec, *refAntUse=NULL;
+  olong kday, khr, kmn, ksec, *refAntUse=NULL;
   olong *ant1=NULL, *ant2=NULL, *count=NULL;
   ofloat *antwt=NULL, *creal=NULL, *cimag=NULL, *cwt=NULL;
   ofloat *avgVis=NULL, *gain=NULL, *snr=NULL;
   gboolean avgpol, avgif, domgm, dol1, ampScalar, empty;
-  gboolean done, good, oldSN, *gotAnt;
+  gboolean done, oldSN, *gotAnt;
   gchar soltyp[5], solmod[5];
   odouble timec=0.0, timex;
   olong sid, fqid=0, sourid=0, lenEntry;
   ofloat timei=0.0, elevmgm, elev=90.0/57.296;
-  ObitIOCode retCode;
   gchar *tname, *ModeStr[] = {"A&P", "P", "P!A"};
   gchar *routine = "ObitUVGSolveCal";
   
@@ -316,9 +317,13 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
   ObitInfoListGetTest(in->info, "minOK", &type, dim, &minOK);
 
   /* open UV data  */
-  retCode = ObitUVOpen (inUV, OBIT_IO_ReadCal, err);
+  ObitUVOpen (inUV, OBIT_IO_ReadCal, err);
   if (err->error) Obit_traceback_val (err, routine, inUV->name, outSoln);
   
+  /* Make sure some data */
+  Obit_retval_if_fail((inUV->myDesc->nvis>0), err, outSoln,
+		      "%s: NO data in %s", routine, inUV->name);
+
   /* Update frequency tables on inUV */
   if (!inUV->myDesc->freqArr) ObitUVGetFreq (inUV, err);
   if (err->error) Obit_traceback_val (err, routine, inUV->name, outSoln);
@@ -338,6 +343,8 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
   if (inUV->myDesc->jlocs>=0)
     numPol = MIN (2, inUV->myDesc->inaxes[inUV->myDesc->jlocs]);
   else numPol = 1;
+  /* Only one pol for Stokes I */
+  if (inUV->myDesc->crval[inUV->myDesc->jlocs]>0.0)  numPol = 1;
   if (inUV->myDesc->jlocif>=0)
     numIF  = inUV->myDesc->inaxes[inUV->myDesc->jlocif];
   else numIF  = 1;
@@ -370,7 +377,8 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
 		      routine, inUV->name);
   
   /* Create arrays */
-  numAnt = inUV->myDesc->numAnt[suba-1];
+  if (inUV->myDesc->maxAnt<=0) ObitUVGetSubA (inUV,err);
+  numAnt  = inUV->myDesc->maxAnt;/* actually highest antenna number */
   gain   = g_malloc0(2*numAnt*sizeof(ofloat));
   snr    = g_malloc0(numAnt*sizeof(ofloat));
   count  = g_malloc0(numAnt*sizeof(olong));
@@ -380,9 +388,10 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
   cwt    = g_malloc0(numAnt*numIF*numPol*sizeof(ofloat));
   gotAnt = g_malloc0(numAnt*sizeof(gboolean));
   refAntUse = g_malloc0(numIF*numPol*sizeof(olong));
-  numBL  = (numAnt * (numAnt-1)) / 2;
-  ant1   = g_malloc0(numBL*sizeof(olong)+5);
-  ant2   = g_malloc0(numBL*sizeof(olong)+5);
+  numBL  = (((ollong)numAnt) * (numAnt-1))/ 2;
+  lltmp  = numBL*sizeof(olong)+5;
+  ant1   = g_malloc0(lltmp);
+  ant2   = g_malloc0(lltmp);
   
   /* Get parameters from inUV */
   refant = 1;
@@ -445,10 +454,11 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
   
   /* Allocate average visibility array */
   lenEntry = 4;
-  avgVis  = g_malloc0(lenEntry*nif*npoln*numBL*sizeof(ofloat));
+  lltmp = lenEntry*nif*npoln*numBL*sizeof(ofloat);
+  avgVis  = g_malloc0(lltmp);
   
   /* Open output table */
-  retCode = ObitTableSNOpen (outSoln, OBIT_IO_ReadWrite, err);
+  ObitTableSNOpen (outSoln, OBIT_IO_ReadWrite, err);
   if (err->error) goto cleanup;
   /* Anything already there? */
   empty = outSoln->myDesc->nrow==0;
@@ -556,14 +566,13 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
 	elev = ObitAntennaListElev (in->AList, iAnt+1, timec, 
 				    in->SList->SUlist[sourid]);
       if (gotAnt[iAnt]) {
-	good = FALSE; /* Until proven */
 	row->antNo  = iAnt+1; 
 	for (i=0; i<numIF; i++) {
 	  row->Real1[i]   = creal[iAnt+i*numAnt]; 
 	  row->Imag1[i]   = cimag[iAnt+i*numAnt]; 
 	  row->Weight1[i] = cwt[iAnt+i*numAnt]; 
 	  row->RefAnt1[i] = refAntUse[i]; 
-	  if (cwt[iAnt+i*numAnt]>0.0) {good = TRUE; cntGood++;}
+	  if (cwt[iAnt+i*numAnt]>0.0) {cntGood++;}
 	  if (cwt[iAnt+i*numAnt]<=0.0) cntBad++;    /* DEBUG */
 	  /* If good sum mean gain modulus */
 	  if (domgm && (cwt[iAnt+i*numAnt]>0.0) && (elev>elevmgm)) {
@@ -579,7 +588,7 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
 	    row->Imag2[i]   = cimag[iAnt+(i+numIF)*numAnt]; 
 	    row->Weight2[i] = cwt[iAnt+(i+numIF)*numAnt]; 
 	    row->RefAnt2[i] = refAntUse[numIF+i];
-	    if (cwt[iAnt+(i+numIF)*numAnt]>0.0) {good = TRUE; cntGood++;}
+	    if (cwt[iAnt+(i+numIF)*numAnt]>0.0) {cntGood++;}
 	    if (cwt[iAnt+(i+numIF)*numAnt]<=0.0) cntBad++;    /* DEBUG */
 	    /* If good sum mean gain modulus */
 	    if (domgm && (cwt[iAnt+(i+numIF)*numAnt]>0.0) && (elev>elevmgm)) {
@@ -596,7 +605,7 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
 			 row->Time, row->antNo, row->Weight1[0], row->Weight1[1], 
 			 row->Weight2[0], row->Weight2[1]);
  	} */
-	retCode = ObitTableSNWriteRow (outSoln, iSNRow, row, err);
+	ObitTableSNWriteRow (outSoln, iSNRow, row, err);
 	if (err->error) goto cleanup;
       } /* end if gotant */
     }
@@ -623,11 +632,11 @@ ObitTableSN* ObitUVGSolveCal (ObitUVGSolve *in, ObitUV *inUV, ObitUV *outUV,
   }
 
   /* Close output table */
-  retCode = ObitTableSNClose (outSoln, err);
+  ObitTableSNClose (outSoln, err);
   if (err->error) goto cleanup;
   
   /* Give success rate */
-  if (prtlv>=3) {
+  if (prtlv>=2) {
     Obit_log_error(err, OBIT_InfoErr, " %d of %d possible solutions found",
 		   cntGood, cntPoss);
   }
@@ -815,13 +824,14 @@ NextAvg (ObitUV* inUV, ofloat interv,
 {
   gboolean done=FALSE;
   ObitIOCode retCode= OBIT_IO_OK;
-  ofloat linterv, ctime, cbase, stime, ltime=0, weight, wt, bl, *visPnt, temp;
+  ofloat linterv, ctime, stime, ltime=0, weight, wt, bl, *visPnt, temp;
   ofloat tmp1, tmp2;
-  olong i, j, csid, cfqid, a1, a2, *blLookup=NULL, blIndex, visIndex, lenEntry;
-  olong iFreq, iIF, iStok, jBL, jIF, jStok, jncs, jncif, mPol, mIF, offset, numBL;
+  olong csid, cfqid, a1, a2, *blLookup=NULL, lenEntry, suba;
+  olong iFreq, iIF, iStok, jIF, jStok, jncs, jncif, mPol, mIF;
+  ollong numBL, i, j, jBL, blIndex, visIndex, accumIndex, offset;
   odouble timeSum;
-  olong timeCount, accumIndex;
-  olong maxAllow; /* DEBUG */
+  olong timeCount;
+  /*olong maxAllow;  DEBUG */
   /* olong maxShit=0; DEBUG */
   gboolean gotData;
   gchar *routine = "ObitUVGSolve:NextAvg";
@@ -853,7 +863,7 @@ NextAvg (ObitUV* inUV, ofloat interv,
   if (avgpol) jncs  = jncif;
   else jncs  = jncif * mIF;
   
-  maxAllow = lenEntry*((numAnt*(numAnt-1))/2)*mPol*mIF; /* DEBUG */
+  /*maxAllow = lenEntry*((numAnt*(numAnt-1))/2)*mPol*mIF;  DEBUG */
   
   /* Baseline lookup table */
   blLookup = g_malloc0(numAnt*sizeof(olong));
@@ -871,7 +881,7 @@ NextAvg (ObitUV* inUV, ofloat interv,
   }
   
   /* Zero accumulations */
-  numBL = (numAnt*(numAnt-1)) / 2;
+  numBL = (((ollong)numAnt)*(numAnt-1)) / 2;
   for (jBL=0; jBL<numBL; jBL++) {         /* Loop over baseline */
     for (jStok=0; jStok<mPol; jStok++) {  /* Loop over Pol */
       for (jIF=0; jIF<mIF; jIF++) {       /* Loop over IF */
@@ -925,7 +935,6 @@ NextAvg (ObitUV* inUV, ofloat interv,
     if (inUV->myDesc->ilocfq>=0) cfqid = (olong)visPnt[inUV->myDesc->ilocfq]; /* FQid */
     else cfqid  = 0;
     if (*fqid<0) *fqid = cfqid;  /* Set output fq id first vis */
-    cbase = visPnt[inUV->myDesc->ilocb]; /* Baseline */
     
     /* Is this integration done? */
     if ((*sid!=csid) || (*fqid!=cfqid) || (ctime-stime>=linterv)) break;
@@ -936,8 +945,7 @@ NextAvg (ObitUV* inUV, ofloat interv,
     ltime = ctime;   /* Last time in accumulation */
     
     /* crack Baseline */
-    a1 = (cbase / 256.0) + 0.001;
-    a2 = (cbase - a1 * 256) + 0.001;
+    ObitUVDescGetAnts(inUV->myDesc, visPnt, &a1, &a2, &suba);
 
     /* Check that antenna numbers in range */
     if (!((a1>0) && (a2>0) && (a1<=numAnt)&& (a2<=numAnt))) {
@@ -1089,7 +1097,8 @@ doSolve (ofloat* vobs, olong *ant1, olong *ant2, olong numAnt, olong numIF,
 	 olong prtlv, float* creal, ofloat* cimag, ofloat* cwt, olong* refan, 
 	 gboolean* gotant, ofloat *gain, ofloat *snr, olong *count, ObitErr *err)
 {
-  olong iif, ist, iant, iBL, numBL, BLIndex, mPol, mIF;
+  olong iif, ist, iant, mPol, mIF;
+  ollong numBL, BLIndex, iBL;
   olong lprtlv, iref, ierr, lenEntry=4;
   ofloat amp, time=0.0, fblank =  ObitMagicF();
   /* No printout from CLBSNR */
@@ -1116,7 +1125,7 @@ doSolve (ofloat* vobs, olong *ant1, olong *ant2, olong numAnt, olong numIF,
   /* No antennas found yet */
   for (iant=0; iant<numAnt; iant++) gotant[iant] = FALSE;
   
-  numBL = (numAnt*(numAnt-1)) / 2;  /* Number of baselines */
+  numBL = (((ollong)numAnt)*(numAnt-1)) / 2;  /* Number of baselines */
   
   /* (Loop) over Stokes' type */
   BLIndex = 0;
@@ -1136,6 +1145,11 @@ doSolve (ofloat* vobs, olong *ant1, olong *ant2, olong numAnt, olong numIF,
       }
       iref = refant;
       
+      /* Label diagnostics */
+      if (prtlv >= 4) {
+	Obit_log_error(err, OBIT_InfoErr, "IF=%d Stokes=%d", iif+1, ist);
+      }
+ 
       /* Do solution */
       
       if (dol1) {/* L1 solution */
@@ -1148,6 +1162,9 @@ doSolve (ofloat* vobs, olong *ant1, olong *ant2, olong numAnt, olong numIF,
       } 
       
       if (ierr != 0) { /* Solution failed */
+	if (prtlv >= 4) {
+	  Obit_log_error(err, OBIT_InfoWarn, "Solution failed %d", ierr);
+	}
 	for (iant=0; iant<numAnt; iant++) cwt[iant+(iif+ist*numIF)*numAnt] = -1.0;
 	BLIndex += (+numBL)*lenEntry; continue;
       } 
@@ -1248,15 +1265,16 @@ doSolve (ofloat* vobs, olong *ant1, olong *ant2, olong numAnt, olong numIF,
  * \param err     Error/message stack, returns if error.
  */
 static void 
-calcSNR (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, 
+calcSNR (ofloat* vobs, olong *ant1, olong *ant2, ollong numBL, 
 	 olong numAnt, ofloat* gain, ofloat* snr, ofloat closer[2][2], 
 	 ofloat snrmin, odouble time, olong iif, olong ist, olong* count, 
 	 olong prtlv, gchar* prtsou, ObitErr *err) 
 {
   gchar pol[5][5] = {"Rpol","Lpol","Rpol","Lpol","Ipol"};
-  olong   loop, ii, jj, nprt, id, ih, im, ls, blprt[3][3], ne,lenEntry=4;
+  olong    nprt, id, ih, im, ls, blprt[3][3], ne,lenEntry=4;
+  olong   loop, ii, jj;
   gboolean   doclos, msgdun, docls1, docls2;
-  ofloat      zr, zi, zzr, zzi, prtsnr, tmtemp, phsq, ae, pe, blrprt[3];
+  ofloat zr, zi, zzr, zzi, prtsnr, tmtemp, phsq, ae, pe, blrprt[3];
   ofloat *sumwt=NULL;
   olong   *error=NULL;
   gchar msgtxt[81];
@@ -1306,7 +1324,7 @@ calcSNR (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
   nprt = 0;
   for (loop=0; loop<numAnt; loop++) { /* loop 10 */
     /* ?? snr[loop]   = 1.0e-6; */
-    snr[loop]   = 0.0;
+    snr[loop]   = 1.0e-10;
     sumwt[loop] = 0.0;
     count[loop] = 0;
     error[loop] = 0;
@@ -1389,7 +1407,7 @@ calcSNR (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
 		   "%4.2d-%2.2d %7.1f %5d %4.2d-%2.2d %7.1f %5d %4.2d-%2.2d %7.1f %5d ", 
 			     blprt[0][0], blprt[0][1],  blrprt[0], blprt[0][2],
 			     blprt[1][0], blprt[1][1],  blrprt[1], blprt[1][2],
-			     blprt[2][0], blprt[2][1],  blrprt[1], blprt[3][2]);
+			     blprt[2][0], blprt[2][1],  blrprt[1], blprt[2][2]);
 	      nprt = 0;
 	    } 
 	    /* New entry */
@@ -1410,7 +1428,7 @@ calcSNR (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
 		   "%4.2d-%2.2d %7.1f %5d %4.2d-%2.2d %7.1f %5d %4.2d-%2.2d %7.1f %5d ", 
 		   blprt[0][0], blprt[0][1],  blrprt[0], blprt[0][2],
 		   blprt[1][0], blprt[1][1],  blrprt[1], blprt[1][2],
-		   blprt[2][0], blprt[2][1],  blrprt[1], blprt[3][2]);
+		   blprt[2][0], blprt[2][1],  blrprt[1], blprt[2][2]);
     nprt = 0;
   } 
   
@@ -1479,13 +1497,14 @@ calcSNR (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
  * \param err     Error/message stack, returns if error.
  */
 static void 
-gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt,
+gainCalc (ofloat* vobs, olong *ant1, olong *ant2, ollong numBL, olong numAnt,
 	  olong refant, olong mode, olong minno, ofloat *g, olong* nref,
 	  olong prtlv, olong *ierr, ObitErr* err) 
 {
   ofloat gng[2], z[2], zr, zi, amp, gd, ph, qq, rms, s, sumwt, tol, w=0.0, x, xx, xxx, 
     yy, wx, arg, xfail, xfail1, xfail2;
-  olong  i, ii, it, j, jj, k, nt, ntd, ntm1, itmax, nfail, iref, lenEntry=4;
+  olong  nt, ntd, itmax, nfail, iref, lenEntry=4;
+  ollong i, ii, it, j, jj, k;
   gboolean   convgd;
   ofloat *gn=NULL, *glast=NULL, *swt=NULL, tempR, tempI;
   gchar  msgtxt[81];
@@ -1517,9 +1536,9 @@ gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt,
 	amp = sqrt (vobs[k*lenEntry]*vobs[k*lenEntry] + 
 		    vobs[k*lenEntry+1]*vobs[k*lenEntry+1]);
 	ph = 57.296 * atan2 (vobs[k*lenEntry+1], vobs[k*lenEntry]+1.0e-20);
-	g_snprintf (msgtxt,80," %4d amp =%12.3e phase =%9.2f  %3d  %3d %12.3e", 
+	g_snprintf (msgtxt,80," %4ld amp =%12.3e phase =%9.2f  %3d  %3d %12.3e", 
 		    k+1, amp, ph, ant1[k], ant2[k], vobs[k*lenEntry+2]);
-	Obit_log_error(err, OBIT_InfoErr, msgtxt);
+	Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
       } 
     } /* end loop  L20:  */;
   } /* end if print */
@@ -1571,7 +1590,6 @@ gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt,
     } /* end loop  L90:  */;
   } /* L100: */
 
-  ntm1 = nt - 1;
   /* Too few antennas? */
   if (ntd < minno) {
     *ierr = 3; 
@@ -1598,8 +1616,8 @@ gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt,
     } /* end loop  L160: */;
     rms = sqrt (s/sumwt);
     it = 0;
-    g_snprintf (msgtxt, 80, "iter= %5d s=%15.5e rms=%15.5e", it, s, rms);
-    Obit_log_error(err, OBIT_InfoErr, msgtxt);
+    g_snprintf (msgtxt, 80, "iter= %5ld s=%15.5e rms=%15.5e", it, s, rms);
+    Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
   } /* end print */
  
   /* Begin solution iteration */
@@ -1745,8 +1763,8 @@ gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt,
 	}
       } /* end loop  L290: */;
       rms = sqrt (s/sumwt);
-      g_snprintf (msgtxt,80,"iter= %5d s=%15.5e rms=%15.5e", it, s, rms);
-      Obit_log_error(err, OBIT_InfoErr, msgtxt);
+      g_snprintf (msgtxt,80,"iter= %5ld s=%15.5e rms=%15.5e", it, s, rms);
+      Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
     } /* end print statistics */ 
 
     if (convgd) break;   /* Converged?  goto L400;*/
@@ -1781,9 +1799,9 @@ gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt,
 	/* Print results. */
 	amp = sqrt (g[i*2]*g[i*2] + g[i*2+1]*g[i*2+1]);
 	ph = 57.2958 * atan2 (g[i*2+1], g[i*2]);
-	g_snprintf (msgtxt,80,"ant=  %5d amp=%12.5f phase=%12.2f", 
+	g_snprintf (msgtxt,80,"ant=  %5ld amp=%12.5f phase=%12.2f", 
 		    i+1, amp, ph);
-	Obit_log_error(err, OBIT_InfoErr, msgtxt);
+	Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
       } 
     } /* end loop  L610: */;
   } /* end of print */ 
@@ -1817,12 +1835,13 @@ gainCalc (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, olong numAnt,
  * \param err     Error/message stack, returns if error.
  */
 static void 
-gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, olong numBL, 
+gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, ollong numBL, 
 	    olong numAnt, olong refant, olong mode, olong minno, ofloat *g, olong* nref, 
 	    olong prtlv, olong *ierr, ObitErr* err) 
 {
-  olong   k, nt, ntd, ie, ne, it, itmax, i, ii, j, jj, iref, lenEntry=4;
-  ofloat  amp, ph, xlamb, pterm;
+  olong   nt, ntd, ie, ne, it, itmax, iref, lenEntry=4;
+  ollong  k, i, ii, j, jj;
+  ofloat  amp, ph;
   odouble gd, t, eps, f, tol, s, qq, w=0.0, xx, yy, x, xrr, xrd, xrz, xrtemp, xrgng, 
     xir, xid, xiz, xitemp, xigng, d1, d2, f1, f2, rmean, t1, t2, sumwt, xxx;
   gboolean   convgd;
@@ -1848,8 +1867,6 @@ gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
   xiglas = g_malloc0(numAnt*sizeof(odouble));
 
   /* Init values */
-  xlamb = 0.0;
-  pterm = 0.0;
   ne = 3;
   itmax = 60;
   tol = 5.0e-5;
@@ -1869,9 +1886,9 @@ gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
       /* DEBUG g_snprintf (msgtxt,80," %4d amp =%12.3e phase =%9.3f  %3d  %3d %12.3e", 
 		  k+1, amp, ph, ant1[k], ant2[k], vobs[k*lenEntry+2]); */
       
-      g_snprintf (msgtxt,80," %4d real =%12.5e imag =%12.5e  %3d  %3d %12.5e", 
+      g_snprintf (msgtxt,80," %4ld real =%12.5e imag =%12.5e  %3d  %3d %12.5e", 
 		  k+1, vobs[k*lenEntry], vobs[k*lenEntry+1], ant1[k], ant2[k], vobs[k*lenEntry+2]);
-      Obit_log_error(err, OBIT_InfoErr, msgtxt);
+      Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
     } 
     if (vobs[k*lenEntry+2] > 0.0) {
       i = ant1[k]-1;
@@ -1943,14 +1960,14 @@ gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
 	  qq = xrz * xrz + xiz * xiz;
 	  s += vobs[k*lenEntry+2] * sqrt (qq + eps);
 	  /* DEBUG */
-	  Obit_log_error(err, OBIT_InfoErr, " %5d  %5d  %5d %15.5g %15.5g %15.5g %15.5g",
+	  Obit_log_error(err, OBIT_InfoErr, " %5ld  %5ld  %5ld %15.5g %15.5g %15.5g %15.5g",
 			 k+1,i+1,j+1,xrz,xiz,qq,s);
 	} /* end of if data valid */
       } /* end loop  L160: */;
       rmean = s / sumwt;
       it = 0;
       g_snprintf (msgtxt,80,"iter= %5d s=%15.5e rmean=%15.5e", it, s, rmean);
-      Obit_log_error(err, OBIT_InfoErr, msgtxt);
+      Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
     } /* end of if print */
 
     /* Inner Solution loop */
@@ -2078,7 +2095,7 @@ gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
 	} /* end loop  L290: */;
 	rmean = s / sumwt;
 	g_snprintf (msgtxt,80,"iter= %5d s=%15.5e rmean=%15.5e", it, s, rmean);
-	Obit_log_error(err, OBIT_InfoErr, msgtxt);
+	Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
       } /* end print */
 
       /* Inner loop converged? */
@@ -2113,9 +2130,9 @@ gainCalcL1 (ofloat* vobs, olong *ant1, olong *ant2, olong numBL,
       if (swt[i] > 0.0) { /*goto L610;*/
 	amp = sqrt (g[i*2]*g[i*2] + g[i*2+1]*g[i*2+1]);
 	ph = 57.2958 * atan2 (g[i*2+1], g[i*2]);
-	g_snprintf (msgtxt,80,"ant=  %5d amp=%12.5f phase=%12.2f", 
+	g_snprintf (msgtxt,80,"ant=  %5ld amp=%12.5f phase=%12.2f", 
 		    i+1, amp, ph);
-	Obit_log_error(err, OBIT_InfoErr, msgtxt);
+	Obit_log_error(err, OBIT_InfoErr, "%s", msgtxt);
       } /* end if valid */
     } /* end loop  L610: */;
   } /* end print */
@@ -2173,7 +2190,7 @@ static void SetLists (ObitUVGSolve *in, ObitUV *inUV, olong suba, ObitErr* err)
   /* Antenna list */
   iver = MAX (1, suba);
   ANTable = newObitTableANValue (in->name, (ObitData*)inUV, &iver, 
-				 OBIT_IO_ReadOnly, 0, 0, err);
+				 OBIT_IO_ReadOnly, 0, 0, 0, err);
   in->AList = ObitTableANGetList (ANTable, err);
   ANTable = ObitTableANUnref(ANTable);   /* Done with table */
   if (err->error) Obit_traceback_msg (err, routine, ANTable->name);

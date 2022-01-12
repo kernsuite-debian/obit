@@ -1,10 +1,10 @@
-; $Id: BPass.TDF 109 2009-06-10 12:11:14Z bill.cotton $
+; $Id$
 ; BPass
 ;---------------------------------------------------------------
 ;! Obit Radio interferometry bandpass calibration software
 ;# Task Obit Imaging calibration
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2009-2010
+;;  Copyright (C) 2009-2012
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -59,14 +59,14 @@ WtUV              0.0               Weight outside full wt uvrange
 **PARAM** int 1
 FreqID                              Freq. ID to select.
 **PARAM** int 1
-BChan1           0.0     8192.0     Low freq. channel,  initial
+BChan1           0.0    65536.0     Low freq. channel,  initial
 **PARAM** int 1
-EChan1           0.0     8192.0     Highest freq channel, initial
+EChan1           0.0    65536.0     Highest freq channel, initial
 **PARAM** int 1
-BChan2           0.0     8192.0     Low freq. channel for BP
+BChan2           0.0    65536.0     Low freq. channel for BP
 **PARAM** int 1
-EChan2           0.0     8192.0     Highest freq channel for BP
-**PARAM** int 1
+EChan2           0.0    65536.0     Highest freq channel for BP
+**PARAM** int 1  **DEF** 1
 ChWid2           0.0                Number of channels in BP soln
 **PARAM** int 1
 subA                                Subarray
@@ -84,6 +84,9 @@ BPVer                               Bandpass table version
 flagVer                             Flag table version
 **PARAM** boo 1 **DEF** F
 doPol                               Apply polarization cal?
+**PARAM** int 1 **DEF** -1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
 **PARAM** float 1  **DEF** 0.0
 Alpha           -20.       20.      Spectral Index to correct
 **PARAM** str 4
@@ -110,7 +113,7 @@ BComp                               First CLEAN comp to use.
 EComp                               Last CLEAN comp to use.
                                     to use (0 => all)
 **PARAM** str 4
-Cmethod                             Modeling method:
+Cmethod                             Modeling method (see Help):
                                     'DFT','GRID','    '
 **PARAM** str 4
 Cmodel                              Model type: 'COMP','IMAG'
@@ -134,7 +137,7 @@ solInt1           0.0               Initial Soln interval (min)
 solInt2           0.0               Bandpass solution interval (min)
 **PARAM** str 4
 solType                             Soln. Type: '  ', 'L1', 
-**PARAM** str 4
+**PARAM** str 4  **DEF** A&P
 solMode                             Soln. Mode:'A&P', 'P', 'P!A',
 **PARAM** boo 1 **DEF** F
 avgPol                              Avg. poln?
@@ -226,7 +229,7 @@ Adverbs:
   EChan2.....Highest channel number to to include,  0 => max 
              This defines the channels for which bandpass solutions are 
              desired.
-  ChWid2.....If >0, The bandpass calibration will use ChWid2 channels 
+  ChWid2.....If >0, The bandpass (2nd) calibration will use ChWid2 channels 
              centered on each channel, should be odd.
   FreqID.....Frequency identifier to select (you may determine which is
              applicable from the opType='SCAN' listing produced by
@@ -261,6 +264,9 @@ Adverbs:
              correction and there is no way to apply it to a BP table.
   flagVer....FG table to use for editing. 0 => highest.
   doPol......If True, apply polarization calibration
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   Alpha......If != 0.0 then correct data by spectral index Alpha before 
              calibration. 
              -0.7 is typical for optically thin synchrotron.
@@ -298,6 +304,8 @@ Adverbs:
              computation.
              '    ' allows the program to use the fastest
              method.
+             NB: If the input model has CLEAN components with spectral
+             parameters (not Tab Spec) then 'DFT' MUST be used.
   Cmodel.....This indicates the type of input model; 'COMP' means that
              the input model consists of Clean components, 'IMAG'
              indicates that the input model consists of images.  If

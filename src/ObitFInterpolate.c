@@ -1,6 +1,6 @@
-/* $Id: ObitFInterpolate.c 186 2010-04-05 11:28:50Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -128,7 +128,8 @@ ObitFInterpolate* newObitFInterpolateCreate (gchar* name, ObitFArray *array,
   /* Get array info */
   out->array  = array->array;
   out->nx     = array->naxis[0];
-  out->ny     = array->naxis[1];
+  if (array->ndim>1) out->ny = array->naxis[1];
+  else               out->ny = 1;
 
   /* Use same thread object */
   out->thread = ObitThreadUnref(out->thread);
@@ -202,7 +203,8 @@ ObitFInterpolate* ObitFInterpolateCopy (ObitFInterpolate *in, ObitFInterpolate *
   out->myDesc  = ObitImageDescCopy(in->myDesc, out->myDesc, err);
   out->array   = out->myArray->array;
   out->nx      = out->myArray->naxis[0];
-  out->ny      = out->myArray->naxis[1];
+  if (out->myArray->ndim>1) out->ny = out->myArray->naxis[1];
+  else               out->ny = 1;
   out->hwidth  = in->hwidth;
   for (i=0; i<10; i++) out->denom[i] = in->denom[i];
   
@@ -263,6 +265,60 @@ ObitFInterpolate* ObitFInterpolateClone  (ObitFInterpolate *in, ObitFInterpolate
 } /* end ObitFInterpolateClone */
 
 /**
+ * Make a less shallow shallow copy of a object- copy descriptor
+ * The result will have pointers to the more complex members.
+ * Parent class members are included but any derived class info is ignored.
+ * \param in  The object to copy
+ * \param out An existing object pointer for output or NULL if none exists.
+ * \return pointer to the new object.
+ */
+ObitFInterpolate* ObitFInterpolateClone2 (ObitFInterpolate *in, ObitFInterpolate *out, 
+					  ObitErr *err)
+{
+  const ObitClassInfo *myClass, *ParentClass;
+  gboolean oldExist;
+  olong i;
+  gchar *outName;
+
+  /* error checks */
+  g_assert (ObitIsA(in, &myClassInfo));
+  if (out) g_assert (ObitIsA(out, &myClassInfo));
+
+  /* Create if it doesn't exist */
+  oldExist = out!=NULL;
+  if (!oldExist) {
+    /* derive object name */
+    outName = g_strconcat ("Clone: ",in->name,NULL);
+    out = newObitFInterpolate(outName);
+    g_free(outName);
+  }
+
+  /* shallow copy any parent class members */
+   myClass     = in->ClassInfo;
+   ParentClass = myClass->ParentClass;
+   g_assert ((ParentClass!=NULL) && (ParentClass->ObitClone!=NULL));
+   ParentClass->ObitClone ((Obit*)in, (Obit*)out);
+
+   if (!oldExist) { /* only copy ObitInfoList if just created */
+     out->info = ObitInfoListUnref(out->info);
+     out->info = ObitInfoListRef(in->info);
+   }
+     
+   /* copy/set this classes additions */
+   out->myArray = ObitFArrayUnref(out->myArray);
+   out->myArray = ObitFArrayRef(in->myArray);
+   out->myDesc  = ObitImageDescUnref(out->myDesc);
+   out->myDesc  = ObitImageDescCopy(in->myDesc, out->myDesc, err);
+   out->array = in->array;
+   out->nx    = in->nx;
+   out->ny    = in->ny;
+   out->hwidth= in->hwidth;
+   for (i=0; i<10; i++) out->denom[i] = in->denom[i];
+   
+  return out;
+} /* end ObitFInterpolateClone2 */
+
+/**
  * Replace the ObitFArray member to be interpolated.
  * \param in        The object to update
  * \param newArray  The new FArray for in
@@ -282,7 +338,8 @@ void ObitFInterpolateReplace  (ObitFInterpolate *in, ObitFArray *newArray)
 
   /* update other data */
   in->nx = newArray->naxis[0];
-  in->ny = newArray->naxis[1];
+  if (newArray->ndim>1) in->ny = newArray->naxis[1];
+  else                  in->ny = 1;
   in->xPixel = -1.0;
   in->yPixel = -1.0;
   in->xStart = -1;
@@ -304,14 +361,16 @@ ofloat ObitFInterpolatePixel (ObitFInterpolate *in, ofloat *pixel, ObitErr *err)
   ofloat value = fblank;
   ofloat sum, sumwt, wty, wt, prod, den, xp, yp, row[10];
   ofloat *xKernal, *yKernal, *data;
-  olong i, j, k, good, xStart, yStart, iwid, indx, planeOff, iplane, iprod;
+  olong i, j, k, good, iwid, iplane, iprod;
+  olong ixpix, iypix;
+  ollong indx, planeOff, xStart, yStart;
   /*gchar *routine = "ObitFInterpolatePixel";*/
 
   /* error checks */
-  g_assert(ObitErrIsA(err));
+  /*g_assert(ObitErrIsA(err));*/
   if (err->error) return value;
-  g_assert (ObitIsA(in, &myClassInfo));
-  g_assert (ObitFArrayIsA(in->myArray));
+  /* g_assert (ObitIsA(in, &myClassInfo));*/
+  /* g_assert (ObitFArrayIsA(in->myArray));*/
   /* Must be inside array */
   iplane = 1;
   iprod = 1;
@@ -330,6 +389,19 @@ ofloat ObitFInterpolatePixel (ObitFInterpolate *in, ofloat *pixel, ObitErr *err)
     }
   }
   if (err->error) return value;
+
+  /* Offset to start of plane */
+  planeOff = (iplane-1);
+  planeOff *= in->nx * in->ny;
+    
+  /* If exactly (within 0.01 pixel) on a pixel no need to interpolate */
+  ixpix = (olong)(pixel[0]+0.5);
+  iypix = (olong)(pixel[1]+0.5);
+  if ((fabs(pixel[0]-ixpix)<0.01) && (fabs(pixel[1]-iypix)<0.01)) {
+    ixpix--; iypix--;  /* to zero rel */
+    indx = planeOff + ixpix + iypix*in->nx;
+    return in->array[indx];
+  }
 
   /* Update convolving x, y kernals as needed */
   if (pixel[0] != in->xPixel) {
@@ -350,114 +422,121 @@ ofloat ObitFInterpolatePixel (ObitFInterpolate *in, ofloat *pixel, ObitErr *err)
   yStart  = in->yStart;
   iwid    = 1 + 2 * in->hwidth;
 
-  /* Offset to start of plane */
-  planeOff = (iplane-1) * in->nx * in->ny;
-    
   /* Zero sums */
-  sum = 0.0;
+  sum   = 0.0;
   sumwt = 0.0;
-  good = 0;
+  good  = 0;
  
   /* Loop over data summing values times convolving weights */
   for (j=0; j<iwid; j++) {
     wty = yKernal[j];
+    indx = planeOff;
+    indx = indx + xStart + ((yStart + j) * in->nx);
     for (i=0; i<iwid; i++) {
-      indx = planeOff + xStart + i + ((yStart + j) * in->nx);
-      wt = xKernal[i] * wty;
       if (data[indx] != fblank) {
-	sumwt = sumwt + wt;
-	sum = sum + data[indx] * wt;
-	good = good + 1;
+	wt = xKernal[i] * wty;
+	sumwt += wt;
+	sum   += data[indx] * wt;
+	if ((isnan(data[indx]))||(isnan(sum))) g_error("INVALID VALUE, sum=%f data=%f\n",sum, data[indx]); /* DEBUG */
+ 	good++;
       } 
+      indx++;
     }
   }
 
   /* normalize sum if not excessive blanking */
   if (sumwt > 0.90) {
     value = sum / sumwt;
+    if (isnan(value)) g_error("INVALID VALUE, sum=%f wt=%f\n",sum, sumwt); /* DEBUG */
     return value;
-  } 
+  } else return fblank; 
 
   /* too much blanked data; try again  using knowledge of blanks if 
      sufficient data need at least a third of points. */
   if (good < (iwid * iwid)/3) return value;
+
+  /* Require sum of weights to be >0.25, i.e. some data close */
+  if (sumwt<0.25) return value;
 
   /* set "x" at first pixel to 1.0 */
   xp = pixel[0] - xStart;
   yp = pixel[1] - yStart;
   for (j= 1; j<=iwid; j++) { /* loop 200 */
     /* interpolate in rows */
-    sum = 0.0;
+    sum   = 0.0;
     sumwt = 0.0;
     for (i=0; i<iwid; i++) { /* loop 120 */
-      den = 1.0;
+      den  = 1.0;
       prod = 1.0;
       for (k=0; k<iwid; k++) { /* loop 110 */
 	indx = planeOff + xStart + k + ((yStart + j) * in->nx);
 	if (data[indx] != fblank) {
 	  if (i != k) {
-	    den = den * (i - k);
-	    prod = prod * (xp - k);
+	    den  *= (ofloat)(i - k);
+	    prod *= (ofloat)(xp - k);
 	  } 
 	} 
       } /* end loop  L110: */;
- 
-     indx = planeOff + xStart + i + ((yStart + j) * in->nx);
-
+      
+      indx = planeOff + xStart + i + ((yStart + j) * in->nx);
       /* accumulate */
       if (data[indx] != fblank) {
-	if (abs (den) > 1.0e-10) {
+	if (abs (den) > 1.0e-5) {
 	  wt = prod / den;
 	} else {
 	  wt = 0.0;
 	} 
-	sumwt = sumwt + wt;
-	sum = sum + wt * data[indx];
-      } 
+	sumwt += wt;
+	sum   += wt * data[indx];
+      }
     } /* end loop  L120: */
 
     /* interpolate column value */
-    if (sumwt > 0.5) {
+    if (sumwt > 0.75) {
       row[j-1] = sum / sumwt;
     } else {
       row[j-1] = fblank;
-    } 
+    }
   } /* end loop  L200: */
 
   /* interpolate in column */
-  sum = 0.0;
-  sumwt = 0.0;
+  sum = sumwt = 0.0;
   for (i=0; i<iwid; i++) { /* loop 220 */
-    den = 1.0;
-    prod = 1.0;
-    for (k=0; k<iwid; k++) { /* loop 210 */
-      if (row[k] != fblank) {
-	if (i != k) {
-	  den = den * (i - k);
-	  prod = prod * (yp - k);
+    if (row[i] != fblank) {
+      den  = 1.0;
+      prod = 1.0;
+      for (k=0; k<iwid; k++) { /* loop 210 */
+	if (row[k] != fblank) {
+	  if (i != k) {
+	    den  *= (ofloat)(i - k);
+	    prod *= (ofloat)(yp - k);
+	  } 
 	} 
-      } 
-    } /* end loop  L210: */
-    
-    /* accumulate */
-    if (row[i-1] != fblank) {
-      if (abs (den) > 1.0e-10) {
+      } /* end loop  L210: */
+      
+      /* accumulate */
+      if (abs (den) > 1.0e-5) {
 	wt = prod / den;
       } else {
 	wt = 0.0;
       } 
-      sumwt = sumwt + wt;
-      sum = sum + wt * row[i-1];
-    } 
+      sumwt += wt;
+      sum   += wt * row[i];
+    } /* end not blanked */
   } /* end loop  L220: */
 
   /* interpolate value */
-  if (sumwt > 0.5) {
+  if (sumwt > 0.75) {
     value = sum / sumwt;
   } else {
     value = fblank;
   } 
 
+  /* this seems to prevent an optimizer related bug */
+  if (isnan(value)) {
+    for (i=0; i<iwid; i++) fprintf (stderr, "row %d %f\n",i, row[i]);
+    g_error("INVALID VALUE2, sum=%f wt=%f\n",sum, sumwt); /* DEBUG */
+  }
   return value;
 } /* end ObitFInterpolatePixel */
 
@@ -473,7 +552,8 @@ ofloat ObitFInterpolate1D (ObitFInterpolate *in, ofloat pixel)
   ofloat value = fblank;
   ofloat sum, sumwt, wt;
   ofloat *xKernal, *data;
-  olong i, good, xStart, iwid, indx;
+  olong i, good, xStart, iwid;
+  ollong indx;
 
   /* error checks */
   g_assert (ObitIsA(in, &myClassInfo));
@@ -504,11 +584,11 @@ ofloat ObitFInterpolate1D (ObitFInterpolate *in, ofloat pixel)
   /* Loop over data summing values times convolving weights */
   for (i=0; i<iwid; i++) {
     indx = xStart + i;
-    wt = xKernal[i];
     if (data[indx] != fblank) {
+      wt = xKernal[i];
       sumwt = sumwt + wt;
       sum = sum + data[indx] * wt;
-      good = good + 1;
+      good++;
     } 
   }
 
@@ -729,14 +809,40 @@ static void SetConvKernal (ofloat Pixel, olong naxis, olong hwidth,
 
   /* set "x" at first pixel to 1.0 */
   xx = Pixel - cen;
-
+  
   /* compute interpolating kernal */
-  for (j= 0; j<iwid; j++) { /* loop 50 */
-    prod = denom[j];
-    for (i= 0; i<iwid; i++) { /* loop 30 */
-      if (i != j) prod = prod * (xx - (i+1));
-    } /* end loop  L30:  */;
-    Kernal[j] = prod;
-  } /* end loop  L50:  */;
-} /* end SetConvKernal */
+  switch (iwid) {
+  case 3:
+    Kernal[0] = denom[0]*(xx-2.)*(xx-3.);
+    Kernal[1] = denom[1]*(xx-1.)*(xx-3.);
+    Kernal[2] = denom[2]*(xx-1.)*(xx-2.);
+    break;
+  case 5:
+    Kernal[0] = denom[0]*(xx-2.)*(xx-3.)*(xx-4.)*(xx-5.);
+    Kernal[1] = denom[1]*(xx-1.)*(xx-3.)*(xx-4.)*(xx-5.);
+    Kernal[2] = denom[2]*(xx-1.)*(xx-2.)*(xx-4.)*(xx-5.);
+    Kernal[3] = denom[3]*(xx-1.)*(xx-2.)*(xx-3.)*(xx-5.);
+    Kernal[4] = denom[4]*(xx-1.)*(xx-2.)*(xx-3.)*(xx-4.);
+    break;
+  case 7:
+    Kernal[0] = denom[0]*(xx-2.)*(xx-3.)*(xx-4.)*(xx-5.)*(xx-6.)*(xx-7.);
+    Kernal[1] = denom[1]*(xx-1.)*(xx-3.)*(xx-4.)*(xx-5.)*(xx-6.)*(xx-7.);
+    Kernal[2] = denom[2]*(xx-1.)*(xx-2.)*(xx-4.)*(xx-5.)*(xx-6.)*(xx-7.);
+    Kernal[3] = denom[3]*(xx-1.)*(xx-2.)*(xx-3.)*(xx-5.)*(xx-6.)*(xx-7.);
+    Kernal[4] = denom[4]*(xx-1.)*(xx-2.)*(xx-3.)*(xx-4.)*(xx-6.)*(xx-7.);
+    Kernal[5] = denom[5]*(xx-1.)*(xx-2.)*(xx-3.)*(xx-4.)*(xx-5.)*(xx-7.);
+    Kernal[6] = denom[6]*(xx-1.)*(xx-2.)*(xx-3.)*(xx-4.)*(xx-5.)*(xx-6.);
+    break;
+  default:
+    /* Anything else here */
+    for (j= 0; j<iwid; j++) { /* loop 50 */
+      prod = denom[j];
+      for (i= 0; i<iwid; i++) { /* loop 30 */
+	if (i != j) prod = prod * (xx - (i+1));
+      } /* end loop  L30:  */;
+      Kernal[j] = prod;
+    }
+  }; /* end switch */
+  return;
+}  /* end SetConvKernal */
 

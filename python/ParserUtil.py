@@ -3,10 +3,11 @@ Python utility package for parameter file parser
 """
 
 # Python utility package for parameter file parser
+from __future__ import absolute_import
 import Obit, InfoList, OErr
-# $Id: ParserUtil.py 2 2008-06-10 15:32:27Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
-#  Copyright (C) 2007
+#  Copyright (C) 2007,2019
 #  Associated Universities, Inc. Washington DC, USA.
 #
 #  This program is free software; you can redistribute it and/or
@@ -33,7 +34,8 @@ import Obit, InfoList, OErr
 #-----------------------------------------------------------------------
 
 def PParse(infile, list, err):
-    """ Parse text file
+    """ 
+    Parse text file
 
     Parse parameter format text file and copy to list
     The input file is basically free format with a keyword=value syntax.  
@@ -43,24 +45,26 @@ def PParse(infile, list, err):
     blank before the comment delimiter.  Allowed types are:
     Str (String), Flt (float), Dbl (double), Int (int), Boo (boolean)
 
-    Examples:
-    # Comment
-    $Key = SomeStr   Str (9)   # Some string
-    Something
-    $Key =  FArr     Flt (2)   # Array of 2 floats
-    0.0 0.0
-    $Key = CLEANBox  Int(4,1)  # Clean box with 4 ints
-    0 0 0 0
+    Examples::
+
+        # Comment
+        $Key = SomeStr   Str (9)   # Some string
+        Something
+        $Key =  FArr     Flt (2)   # Array of 2 floats
+        0.0 0.0
+        $Key = CLEANBox  Int(4,1)  # Clean box with 4 ints
+        0 0 0 0
     
     returns  0 on success, else 1
-    infile   = Name of the input text file to parse
-    list     = ObitInfoList to accept values.
-    err      = ObitErr for reporting errors.
+
+    * infile   = Name of the input text file to parse
+    * list     = ObitInfoList to accept values.
+    * err      = ObitErr for reporting errors.
     """
     ################################################################
     # Checks
     if not InfoList.PIsA(list):
-        raise TypeError,"list MUST be a Python Obit InfoList"
+        raise TypeError("list MUST be a Python Obit InfoList")
     ret = Obit.Parse(infile, list.me, err.me)
     if ret or err.isErr:
         OErr.printErrMsg(err, "Error Parsing "+infile)
@@ -68,18 +72,20 @@ def PParse(infile, list, err):
     # end PParse
 
 def PDump(infile, list, err):
-    """ Dump list to text file
-
+    """
+    Dump list to text file
+    
     Dump parameter format text file and copy to list
     returns  0 on success, else 1
-    outfile  = Name of the output text file to write
-    list     = ObitInfoList to dump
-    err      = ObitErr for reporting errors.
+
+    * outfile  = Name of the output text file to write
+    * list     = ObitInfoList to dump
+    * err      = ObitErr for reporting errors.
     """
     ################################################################
     # Checks
     if not InfoList.PIsA(list):
-        raise TypeError,"list MUST be a Python Obit InfoList"
+        raise TypeError("list MUST be a Python Obit InfoList")
     ret = Obit.Dump(infile, list.me, err.me)
     if ret or err.isErr:
         OErr.printErrMsg(err, "Error Dumping to "+infile)

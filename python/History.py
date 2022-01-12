@@ -7,10 +7,13 @@ To create a History, instantiate with the InfoList from the relevant object
 to which the history is attached.
 History(name, info, err)
 History Members with python interfaces:
-List  - used to pass instructions to processing (file info)
+
+======  ===================================================
+List    used to pass instructions to processing (file info)
+======  ===================================================
 """
 # Python/Obit History class
-# $Id: History.py 41 2008-10-23 11:29:13Z bill.cotton $
+# $Id$
 #-----------------------------------------------------------------------
 #  Copyright (C) 2004-2008
 #  Associated Universities, Inc. Washington DC, USA.
@@ -39,33 +42,13 @@ List  - used to pass instructions to processing (file info)
 #-----------------------------------------------------------------------
 
 # Python shadow class to ObitHistory class
-import Obit, InfoList, OErr
+from __future__ import absolute_import
+from __future__ import print_function
+import Obit, _Obit, InfoList, OErr
 
-class HistoryPtr :
-    def __init__(self,this):
-        self.this = this
-    def __setattr__(self,name,value):
-        if name == "me" :
-            # Out with the old
-            Obit.HistoryUnref(Obit.History_me_get(self.this))
-            # In with the new
-            Obit.History_me_set(self.this,value)
-            return
-        self.__dict__[name] = value
-    def __getattr__(self,name):
-        if self.__class__ != History:
-            return
-        if name == "me" : 
-            return Obit.History_me_get(self.this)
-        if name=="List":
-            return PGetList(self)
-        raise AttributeError,str(name)
-    def __repr__(self):
-        if self.__class__ != History:
-            return
-        return "<C History instance> " + Obit.HistoryGetName(self.me)
-class History(HistoryPtr):
-    """ Python Obit History class
+class History(Obit.History):
+    """
+    Python Obit History class
     
     This class contains processing history and allows access.
     An ObitHistory is the front end to a persistent disk resident structure.
@@ -74,74 +57,123 @@ class History(HistoryPtr):
     to which the history is attached.
     History(name, info, err)
     History Members with python interfaces:
-    List  - used to pass instructions to processing (file info)
+    
+    ======  ===================================================
+    List    used to pass instructions to processing (file info)
+    ======  ===================================================
     """
     def __init__(self,name,info,err) :
-        self.this = Obit.new_History(name, info.me, err.me)
-    def __del__(self):
-        if Obit!=None:
-            Obit.delete_History(self.this)
-
+        super(History, self).__init__()
+        Obit.CreateHistory (self.this, name, info.me, err.me)
+    def __del__(self, DeleteHistory=_Obit.DeleteHistory):
+        if _Obit!=None:
+            DeleteHistory(self.this)
+    def __setattr__(self,name,value):
+        if name == "me" :
+            # Out with the old
+            if self.this!=None:
+                Obit.HistoryUnref(Obit.History_Get_me(self.this))
+            # In with the new
+            Obit.History_Set_me(self.this,value)
+            return
+        self.__dict__[name] = value
+    def __getattr__(self,name):
+        if self.__class__ != History:
+            return
+        if name == "me" : 
+            return Obit.History_Get_me(self.this)
+        if name=="List":
+            return PGetList(self)
+        raise AttributeError(str(name))
+    def __repr__(self):
+        if not isinstance(self, History):
+            return "Bogus dude"+str(self.__class__)
+        return "<C History instance> " + Obit.HistoryGetName(self.me)
+    
     def Zap (self, err):
         """ Destroy the persistent form of a History
-        
-        self = input Python Obit History
-        err  = Python Obit Error/message stack
+
+        * self = input Python Obit History
+        * err  = Python Obit Error/message stack
         """
         PZap (self, err)
         # end Zap 
 
     def Open (self, access, err):
-        """ Open History
+        """
+        Open History
         
         return 0 on success, else failure
-        self    = input Python History
-        access   = access code READONLY(1), WRITEONLY(2), READWRITE(3)
-        err      = Python Obit Error/message stack
+
+        * self    = input Python History
+        * access   = access code READONLY(1), WRITEONLY(2), READWRITE(3)
+        * err      = Python Obit Error/message stack
         """
         return POpen (self, access, err)
         # end POpen
 
     def Close (self, err):
-        """ Close History
+        """
+        Close History
         
         return 0 on success, else failure
-        self  = input Python History
-        err   = Python Obit Error/message stack
+
+        * self  = input Python History
+        * err   = Python Obit Error/message stack
         """
         return PClose (self, err)
     # end PClose
 
     def ReadRec (self, recno, err):
-        """ Read History record
+        """
+        Read History record
         
         returns string
-        self  = input Python History
-        recno = desired record
-        err   = Python Obit Error/message stack
+
+        * self  = input Python History
+        * recno = desired record
+        * err   = Python Obit Error/message stack
         """
         return PReadRec (self, recno, err)
     # end PReadRec
 
     def WriteRec (self, recno, hiCard, err):
-        """ Write History record
+        """
+        Write History record
         
         return 0 on success, else failure
-        self   = input Python History
-        recno  = desired record, -1 => end of table
-        hiCard = input history record
-        err    = Python Obit Error/message stack
+
+        * self   = input Python History
+        * recno  = desired record, -1 => end of table
+        * hiCard = input history record
+        * err    = Python Obit Error/message stack
         """
         return PWriteRec (self, recno, hiCard, err)
     # end PWriteRec
 
-    def TimeStamp (self, label, err):
-        """ Write timestamp and label to History
+    def Stalin (self, startr, endr, err):
+        """
+        Edit history
         
         return 0 on success, else failure
-        self  = input Python History
-        label = character string for label
-        err   = Python Obit Error/message stack
+
+        * self   = input Python History
+        * startr = first (1-rel) history record to delete
+        * endr   = highest (1-rel) history record to delete, 0->to end
+        * err    = Python Obit Error/message stack
+        """
+        return PEdit (self, startr, endr, err)
+    # end Stalin
+
+    def TimeStamp (self, label, err):
+        """
+        Write timestamp and label to History
+        
+        return 0 on success, else failure
+
+        * self  = input Python History
+        * label = character string for label
+        * err   = Python Obit Error/message stack
         """
         return PTimeStamp (self, label, err)
     # end TimeStamp
@@ -153,17 +185,18 @@ WRITEONLY = 2
 READWRITE = 3
 
 def PZap (inHis, err):
-    """ Destroy the persistent form of a History
+    """
+    Destroy the persistent form of a History
 
-    inHis    = input Python Obit History
-    err      = Python Obit Error/message stack
+    * inHis    = input Python Obit History
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     Obit.HistoryZap (inHis.me, err.me)
     if err.isErr:
@@ -171,20 +204,21 @@ def PZap (inHis, err):
     # end PZap 
 
 def PCopy (inHis, outHis, err):
-    """ Copy a History including persistent forms
+    """
+    Copy a History including persistent forms
 
-    inHis    = input Python Obit History
-    outHis   = extant output Python Obit History
-    err      = Python Obit Error/message stack
+    * inHis    = input Python Obit History
+    * outHis   = extant output Python Obit History
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not PIsA(outHis):
-        raise TypeError,"outHis MUST be a History"
+        raise TypeError("outHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     Obit.HistoryCopy(inHis.me, outHis.me, err.me)
     if err.isErr:
@@ -192,20 +226,21 @@ def PCopy (inHis, outHis, err):
     # end PCopy
 
 def PCopyHeader (inHis, outHis, err):
-    """ Copy a History from a (FITS) header
+    """
+    Copy a History from a (FITS) header
 
-    inHis    = input Python Obit History (FITS)
-    outHis   = extant output Python Obit History
-    err      = Python Obit Error/message stack
+    * inHis    = input Python Obit History (FITS)
+    * outHis   = extant output Python Obit History
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not PIsA(outHis):
-        raise TypeError,"outHis MUST be a History"
+        raise TypeError("outHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     Obit.HistoryCopyHeader(inHis.me, outHis.me, err.me)
     if err.isErr:
@@ -213,22 +248,23 @@ def PCopyHeader (inHis, outHis, err):
     # end PCopyHeader
 
 def PCopy2Header (inHis, outHis, err):
-    """ Copy a History to a (FITS) header
+    """
+    Copy a History to a (FITS) header
 
-    inHis    = input Python Obit History 
-    outHis   = extant output Python Obit (FITS) History in header
-    err      = Python Obit Error/message stack
+    * inHis    = input Python Obit History 
+    * outHis   = extant output Python Obit (FITS) History in header
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        print "inHis really",inHis.__class__ 
-        raise TypeError,"inHis MUST be a History"
+        print("inHis really",inHis.__class__) 
+        raise TypeError("inHis MUST be a History")
     if not PIsA(outHis):
-        print "outHis really",outHis.__class__ 
-        raise TypeError,"outHis MUST be a History"
+        print("outHis really",outHis.__class__) 
+        raise TypeError("outHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     Obit.HistoryCopy2Header(inHis.me, outHis.me, err.me)
     if err.isErr:
@@ -237,20 +273,21 @@ def PCopy2Header (inHis, outHis, err):
 
 
 def PHeader2Header (inHis, outHis, err):
-    """ Copy a History from a FITS header to a (FITS) header
+    """
+    Copy a History from a FITS header to a (FITS) header
 
-    inHis    = input Python Obit History 
-    outHis   = extant output Python Obit (FITS) History in header
-    err      = Python Obit Error/message stack
+    * inHis    = input Python Obit History 
+    * outHis   = extant output Python Obit (FITS) History in header
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not PIsA(outHis):
-        raise TypeError,"outHis MUST be a History"
+        raise TypeError("outHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     Obit.HistoryHeader2Header(inHis.me, outHis.me, err.me)
     if err.isErr:
@@ -259,19 +296,21 @@ def PHeader2Header (inHis, outHis, err):
 
 
 def POpen (inHis, access, err):
-    """ Open History
-
+    """
+    Open History
+    
     return 0 on success, else failure
-    inHis    = input Python History
-    access   = access code READONLY(1), WRITEONLY(2), READWRITE(3)
-    err      = Python Obit Error/message stack
+
+    * inHis    = input Python History
+    * access   = access code READONLY(1), WRITEONLY(2), READWRITE(3)
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     ret = Obit.HistoryOpen(inHis.me, access, err.me)
     if err.isErr:
@@ -280,18 +319,20 @@ def POpen (inHis, access, err):
     # end POpen
 
 def PClose (inHis, err):
-    """ Close History
-
+    """
+    Close History
+    
     return 0 on success, else failure
-    inHis    = input Python History
-    err      = Python Obit Error/message stack
+
+    * inHis    = input Python History
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     ret = Obit.HistoryClose(inHis.me, err.me)
     if err.isErr:
@@ -300,19 +341,21 @@ def PClose (inHis, err):
     # end PClose
 
 def PReadRec (inHis, recno, err):
-    """ Read History record
-
+    """
+    Read History record
+    
     returns string
-    inHis    = input Python History
-    recno    = desirec record
-    err      = Python Obit Error/message stack
+
+    * inHis    = input Python History
+    * recno    = desired record
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     ret = Obit.HistoryReadRec(inHis.me, recno, err.me)
     if err.isErr:
@@ -321,20 +364,22 @@ def PReadRec (inHis, recno, err):
     # end PReadRec
 
 def PWriteRec (inHis, recno, hiCard, err):
-    """ Write History record
-
+    """
+    Write History record
+    
     return 0 on success, else failure
-    inHis    = input Python History
-    recno    = desirec record
-    hiCard   = input history record
-    err      = Python Obit Error/message stack
+
+    * inHis    = input Python History
+    * recno    = desired record
+    * hiCard   = input history record
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
     #
     ret = Obit.HistoryWriteRec(inHis.me, recno, hiCard, err.me)
     if err.isErr:
@@ -342,20 +387,50 @@ def PWriteRec (inHis, recno, hiCard, err):
     return ret
     # end PWriteRec
 
-def PTimeStamp (inHis, label, err):
-    """ Write timestamp and label to History
-
+def PEdit (inHis, startr, endr, err):
+    """
+    Edit History
+    
+    Deletes a range of history records.
     return 0 on success, else failure
-    inHis    = input Python History
-    label    = character string for label
-    err      = Python Obit Error/message stack
+
+    * inHis    = input Python History
+    * startr   = first (1-rel) history record to delete
+    * endr     = highest (1-rel) history record to delete, 0=>to end
+    * err      = Python Obit Error/message stack
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     if not OErr.OErrIsA(err):
-        raise TypeError,"err MUST be an OErr"
+        raise TypeError("err MUST be an OErr")
+    #
+    ret = POpen (inHis, READWRITE, err)
+    ret = Obit.HistoryEdit(inHis.me, startr, endr, err.me)
+    OErr.printErr(err)
+    if err.isErr:
+        OErr.printErrMsg(err, "Error Editing History")
+    ret = PClose (inHis, err)
+    return ret
+    # end PEdit
+
+def PTimeStamp (inHis, label, err):
+    """
+    Write timestamp and label to History
+    
+    return 0 on success, else failure
+
+    * inHis    = input Python History
+    * label    = character string for label
+    * err      = Python Obit Error/message stack
+    """
+    ################################################################
+    # Checks
+    if not PIsA(inHis):
+        raise TypeError("inHis MUST be a History")
+    if not OErr.OErrIsA(err):
+        raise TypeError("err MUST be an OErr")
     #
     ret = Obit.HistoryTimeStamp(inHis.me, label, err.me)
     if err.isErr:
@@ -363,15 +438,17 @@ def PTimeStamp (inHis, label, err):
     # end PTimeStamp
 
 def PGetList (inHis):
-    """ Return the InfoList from a History
+    """
+    Return the InfoList from a History
     
     returns InfoList
-    inHis    = input Python History
+
+    * inHis    = input Python History
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     #
     out    = InfoList.InfoList()
     out.me = Obit.HistoryGetList(inHis.me)
@@ -379,29 +456,33 @@ def PGetList (inHis):
     # end PGetList
 
 def PIsA (inHis):
-    """ Tells if object thinks it's a Python Obit History
+    """
+    Tells if object thinks it's a Python Obit History
+    
+    return True, False
 
-    return true, false (1,0)
-    inHis    = input Python History
+    * inHis    = input Python History
     """
     ################################################################
     # Checks
-    if inHis.__class__ != History:
-        return 0
+    if not isinstance(inHis, History):
+        return False
     #
-    return Obit.HistoryIsA(inHis.me)
+    return Obit.HistoryIsA(inHis.me)!=0
     # end PIsA
 
 def PGetName (inHis):
-    """ Returns object name (label)
-
+    """
+    Returns object name (label)
+    
     return name string
-    inHis    = input Python History
+
+    * inHis    = input Python History
     """
     ################################################################
     # Checks
     if not PIsA(inHis):
-        raise TypeError,"inHis MUST be a History"
+        raise TypeError("inHis MUST be a History")
     #
     return Obit.HistoryGetName(inHis.me)
     # end PGetName

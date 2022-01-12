@@ -1,6 +1,6 @@
-/* $Id: ObitDConCleanPxListMF.h 128 2009-09-23 14:48:29Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -119,6 +119,9 @@ void ObitDConCleanPxListMFGetParms (ObitDConCleanPxList *in, ObitErr *err);
 
 /** Public: Reset Clean. */
 void ObitDConCleanPxListMFReset (ObitDConCleanPxList *in, ObitErr *err);
+
+/** Public: Set CC Tables */
+void ObitDConCleanPxListMFInitCC (ObitDConCleanPxList *in, ObitErr *err);
 
 /** Public: Resize Arrrays. */
 void ObitDConCleanPxListMFResize (ObitDConCleanPxList *in, olong maxPixel, 

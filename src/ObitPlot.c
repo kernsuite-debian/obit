@@ -1,6 +1,6 @@
-/* $Id: ObitPlot.c 80 2009-03-02 17:21:22Z bill.cotton $        */
+/* $Id$        */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2008                                          */
+/*;  Copyright (C) 2003-2016                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -1043,7 +1043,7 @@ void ObitPlotContour (ObitPlot* in, gchar *label, ObitImage *image,
 		      ofloat lev, ofloat cntfac, ObitErr *err)
 {
   gboolean OK=FALSE;  /* Have an implementation? */
-  gchar xlabel[121], ylabel[121];
+  gchar units[20], xlabel[121], ylabel[121];
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ofloat xtick, ytick;
   olong nxsub, nysub;
@@ -1060,7 +1060,7 @@ void ObitPlotContour (ObitPlot* in, gchar *label, ObitImage *image,
   olong pos[2];
   olong csize, lwidth, nx, ny;
   gchar rast[16], decst[16];
-  gchar units[20], *xopt_def="bcnts", *yopt_def="bcnts", pre;
+  gchar *xopt_def="bcnts", *yopt_def="bcnts", pre;
 
 
  /* error checks */
@@ -1160,14 +1160,30 @@ void ObitPlotContour (ObitPlot* in, gchar *label, ObitImage *image,
   /*  Plot labels */
   if (image->myDesc->equinox<1975.0) pre = 'B';
   else pre = 'J';
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (xlabel,120,"Right Ascension (%s)", units);
-  else /* Don't call it RA */
-    g_snprintf (xlabel,120,"Rotated Right Ascension (%s)", units);
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (ylabel,120,"Declination (%s)", units);
-  else  /* Don't call it Dec */
-    g_snprintf (ylabel,120,"Rotated Declination (%s)", units);
+  /* RA Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[0],"RA--", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (xlabel,120,"Right Ascension (%s)", units);
+    else /* Don't call it RA */
+      g_snprintf (xlabel,120,"Rotated Right Ascension (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[0],"GLON", 4)) {
+      g_snprintf (xlabel,120,"Gal. Long. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (xlabel,120,"X (%s)", units);
+  }
+  /* Dec Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[1],"DEC-", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (ylabel,120,"Declination (%s)", units);
+    else  /* Don't call it Dec */
+      g_snprintf (ylabel,120,"Rotated Declination (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[1],"GLAT", 4)) {
+      g_snprintf (ylabel,120,"Gal. Lat. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (ylabel,120,"Y (%s)", units);
+  }
+
+
   ObitPlotLabel (in, xlabel, ylabel, label, err);
 
   /* Get center position string */
@@ -1339,18 +1355,29 @@ void ObitPlotContour (ObitPlot* in, gchar *label, ObitImage *image,
   /*  Plot labels */
   if (image->myDesc->equinox<1975.0) pre = 'B';
   else pre = 'J';
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (xlabel,120,"Right Ascension (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
-  else /* Don't call it RA */
-    g_snprintf (xlabel,120,"Rotated Right Ascension (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (ylabel,120,"Declination (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
-  else  /* Don't call it Dec */
-    g_snprintf (ylabel,120,"Rotated Declination (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
+  /* RA Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[0],"RA--", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (xlabel,120,"Right Ascension (%s)", units);
+    else /* Don't call it RA */
+      g_snprintf (xlabel,120,"Rotated Right Ascension (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[0],"GLON", 4)) {
+      g_snprintf (xlabel,120,"Gal. Long. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (xlabel,120,"X (%s)", units);
+  }
+  /* Dec Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[1],"DEC-", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (ylabel,120,"Declination (%s)", units);
+    else  /* Don't call it Dec */
+      g_snprintf (ylabel,120,"Rotated Declination (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[1],"GLAT", 4)) {
+      g_snprintf (ylabel,120,"Gal. Lat. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (ylabel,120,"Y (%s)", units);
+  }
+
   ObitPlotLabel (in, xlabel, ylabel, label, err);
 
   /* set ticks, labels */
@@ -1469,7 +1496,7 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
 			ObitErr *err)
 {
   gboolean OK=FALSE;  /* Have an implementation? */
-  gchar xlabel[121], ylabel[121];
+  gchar units[20], xlabel[121], ylabel[121];
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ofloat xtick, ytick, pixmax=-1.0e20, pixmin=-1.0e20;
   gboolean doSQRT = FALSE, doINVERT = FALSE;
@@ -1543,13 +1570,13 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
 #ifdef HAVE_PLPLOT  /* Only if plplot available */
   ObitImageDesc *id;
   olong i, just, axis;
-  ofloat xmax, xmin, ymax, ymin, cscale;
+  ofloat xmax, xmin, ymax, ymin, dx, dy, cscale;
   PLFLT px, py, wx, wy, **map=NULL, clevel[256], delta;
   ofloat maxval=0.0, minval=0.0;
   olong pos[2];
   olong csize, nx, ny;
   gchar rast[16], decst[16];
-  gchar units[20], *xopt_def="bcnts", *yopt_def="bcnts", pre;
+  gchar *xopt_def="bcnts", *yopt_def="bcnts", pre;
   PLINT nlevel, red[255], green[255], blue[255], it;
 
 
@@ -1633,14 +1660,20 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
   ny = image->myDesc->inaxes[1];
   
   /* Define size of plot in world coordinates */
+  dx = image->myDesc->cdelt[0]; /* X Cell size */
+  dy = image->myDesc->cdelt[1]; /* X Cell size */
   px = (PLFLT)1.0; py = (PLFLT)1.0;
   plplotCoord (px, py, &wx, &wy, (PLPointer)in);
-  xmin = (ofloat)wx;
-  ymin = (ofloat)wy;
+  if (wx>0.0) xmin = (ofloat)(wx - MAX(0.015*nx, 5)*dx*in->scalex);  /* Allow extra for ticks */
+  else        xmin = (ofloat)(wx - MAX(0.015*nx, 5)*dx*in->scalex);
+  if (wy>0.0) ymin = (ofloat)(wy - MAX(0.015*ny, 5)*dy*in->scaley);
+  else        ymin = (ofloat)(wy - MAX(0.015*nx, 5)*dy*in->scaley);
   px = (PLFLT)nx; py = (PLFLT)ny;
   plplotCoord (px, py, &wx, &wy, (PLPointer)in);
-  xmax = (ofloat)wx;
-  ymax = (ofloat)wy;
+  if (wx>0.0) xmax = (ofloat)(wx + MAX(0.015*nx, 5)*dx*in->scalex);
+  else        xmax = (ofloat)(wx + MAX(0.015*nx, 5)*dx*in->scalex);
+  if (wy>0.0) ymax = (ofloat)(wy + MAX(0.015*ny, 5)*dy*in->scaley);
+  else        ymax = (ofloat)(wy + MAX(0.015*ny, 5)*dy*in->scaley);
 
   /* set plotting area */
   axis = -2;
@@ -1650,14 +1683,29 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
   /*  Plot labels */
   if (image->myDesc->equinox<1975.0) pre = 'B';
   else pre = 'J';
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (xlabel,120,"Right Ascension (%s)", units);
-  else /* Don't call it RA */
-    g_snprintf (xlabel,120,"Rotated Right Ascension (%s)", units);
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (ylabel,120,"Declination (%s)", units);
-  else  /* Don't call it Dec */
-    g_snprintf (ylabel,120,"Rotated Declination (%s)", units);
+  /* RA Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[0],"RA--", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (xlabel,120,"Right Ascension (%s)", units);
+    else /* Don't call it RA */
+      g_snprintf (xlabel,120,"Rotated Right Ascension (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[0],"GLON", 4)) {
+      g_snprintf (xlabel,120,"Gal. Long. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (xlabel,120,"X (%s)", units);
+  }
+  /* Dec Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[1],"DEC-", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (ylabel,120,"Declination (%s)", units);
+    else  /* Don't call it Dec */
+      g_snprintf (ylabel,120,"Rotated Declination (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[1],"GLAT", 4)) {
+      g_snprintf (ylabel,120,"Gal. Lat. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (ylabel,120,"Y (%s)", units);
+  }
+
   ObitPlotLabel (in, xlabel, ylabel, label, err);
 
   /* Get center position string */
@@ -1702,6 +1750,13 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
   ObitPlotRelText (in, "T", 1.0, 0.0, just, xlabel, err);
 
   /* Square root? */
+ /* Clip range to max/min */
+  ObitFArrayInClip (image->image, -1.0e25, minval, minval);
+  ObitFArrayInClip (image->image, maxval, 1.0e25, maxval);
+  /* blank below minval */
+  ObitFArrayDeblank (image->image, minval-1.0);
+  maxval = ObitFArrayMax (image->image, pos); /* DEBUG */
+
   if (doSQRT) {
     /* Modify image buffer */
     ObitFArraySAdd(image->image, -minval+1.0e-20);
@@ -1710,13 +1765,7 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
     minval = 0.0;
   }
 
-  /* Clip range to max/min */
-  ObitFArrayInClip (image->image, -1.0e25, minval, minval);
-  ObitFArrayInClip (image->image, maxval, 1.0e25, maxval);
-  /* blank below minval */
-  ObitFArrayDeblank (image->image, minval-1.0);
-
-  /* Convert Obit image to plplot array */
+   /* Convert Obit image to plplot array */
   map = reorderPixels(image->image);
 
   /* Color map */
@@ -1746,6 +1795,7 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
       it = green[i]; green[i] = green[nlevel-i-1]; green[nlevel-i-1] = it;
       it = blue[i];  blue[i]  = blue[nlevel-i-1];  blue[nlevel-i-1]  = it;
     }
+    i = nlevel-1; red[i] = green[i] = blue[i] = (PLINT)0;
   }
   plscmap1(red, green, blue, nlevel);
 
@@ -1871,18 +1921,29 @@ void ObitPlotGrayScale (ObitPlot* in, gchar *label, ObitImage *image,
   /*  Plot labels */
   if (image->myDesc->equinox<1975.0) pre = 'B';
   else pre = 'J';
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (xlabel,120,"Right Ascension (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
-  else /* Don't call it RA */
-    g_snprintf (xlabel,120,"Rotated Right Ascension (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
-  if (fabs(image->myDesc->crota[1])==0.0)
-    g_snprintf (ylabel,120,"Declination (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
-  else  /* Don't call it Dec */
-    g_snprintf (ylabel,120,"Rotated Declination (%c%6.1f)", 
-		pre, image->myDesc->equinox); 
+  /* RA Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[0],"RA--", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (xlabel,120,"Right Ascension (%s)", units);
+    else /* Don't call it RA */
+      g_snprintf (xlabel,120,"Rotated Right Ascension (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[0],"GLON", 4)) {
+      g_snprintf (xlabel,120,"Gal. Long. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (xlabel,120,"X (%s)", units);
+  }
+  /* Dec Equatorial or Galactic? */
+  if (!strncmp(image->myDesc->ctype[1],"DEC-", 4)) {
+    if (fabs(image->myDesc->crota[1])==0.0)
+      g_snprintf (ylabel,120,"Declination (%s)", units);
+    else  /* Don't call it Dec */
+      g_snprintf (ylabel,120,"Rotated Declination (%s)", units);
+  } else if (!strncmp(image->myDesc->ctype[1],"GLAT", 4)) {
+      g_snprintf (ylabel,120,"Gal. Lat. (%s)", units);
+  } else { /* Don't recognize */
+      g_snprintf (ylabel,120,"Y (%s)", units);
+  }
+
   ObitPlotLabel (in, xlabel, ylabel, label, err);
 
   /* set ticks, labels */
@@ -2875,7 +2936,7 @@ void  ObitPlotSetLineStyle (ObitPlot* in, olong lstyle, ObitErr *err)
 /****************** pgplot implementation *************************/
 #ifdef HAVE_PGPLOT  /* Only if pgplot available */
   /* Call pgplot routine */
-  cpgssls ((int)lstyle);
+  cpgsls ((int)lstyle);
 #endif /* HAVE_PGPLOT */
 
 } /* end ObitPlotSetLineStyle */
@@ -2884,8 +2945,8 @@ void  ObitPlotSetLineStyle (ObitPlot* in, olong lstyle, ObitErr *err)
  * Set foreground color
  * \param in      Pointer to Plot object.
  * \param color   color index (1-15)
- *                0=black, 1=red(default), 2=yellow, 3=green, 
- *                4=aquamarine, 5=pink, 6=wheat, 7=gray, 8=brown,
+ *                0=black (not really), 1=red(default), 2=yellow, 3=green, 
+ *                4=aquamarine, 5=black, 6=wheat, 7=gray, 8=brown,
  *                9=blue, 10=BlueViolet, 11=cyan, 12=turquoise
  *                13=magenta, 14=salmon, 15=white
  * \param err     ObitErr error stack
@@ -2901,6 +2962,10 @@ void  ObitPlotSetColor (ObitPlot* in, olong color, ObitErr *err)
 /****************** plplot implementation *************************/
 #ifdef HAVE_PLPLOT  /* Only if plplot available */
   /* Call plplot routine */
+  /* If it's 5 turn it black */
+  if (color==5) {
+    plscol0 (color, 0, 0, 0);
+  }
   plcol0 ((PLINT)color);
 #endif /* HAVE_PLPLOT */
 
@@ -3182,6 +3247,87 @@ void  ObitPlotDrawSymbol (ObitPlot* in, ofloat x, ofloat y,
 } /* end ObitPlotDrawSymbol */
 
 /** 
+ * Primitive routine draw a polygon, possibly with filling
+ * Polygon closed between last and first vertices
+ * \param in      Pointer to Plot object.
+ * \param n       number of vertices
+ * \param x       array of world x-coordinates of the vertices
+ * \param y       array of world y-coordinates of the vertices
+ * \param fill    Fill pattern, plot package dependent
+ *                values in the range [0,8] are usable 
+ * \li 0 =  no fill
+ * \li 1 = hatched
+ * \li 2 = crosshatched
+ * \li 3 = plplot:lines 45 deg downwards
+ * \li 4 = plplot:lines 30 deg upwards
+ * \li 5 = plplot:lines 30 deg downwards
+ * \li 6 = plplot:horizontal/vertical lines crossed
+ * \li 7 = plplot:horizontal lines
+ * \li 8 = plplot:vertical lines
+ * \param scale   scaling factor for spacing
+ * \param err     ObitErr error stack
+ */
+void  ObitPlotDrawPoly (ObitPlot* in, olong n, ofloat *x, ofloat *y, 
+			olong fill, ofloat scale, ObitErr *err)
+{
+  gboolean OK=FALSE;  /* Have an implementation? */
+
+/****************** plplot implementation *************************/
+#ifdef HAVE_PLPLOT  /* Only if plplot available */ 
+  /*PLINT nlin, inc[2], del[2], space;*/
+  PLINT sty;
+  /* error checks */
+  if (err->error) return;
+
+  OK = TRUE;  /* Have a plotting package */
+  /*plcol1(0.5);   Huh? */
+  if (fill>0) {
+    /* plpat doesn't work as advertized 
+       space = (PLINT)(2000*scale);
+       if (fill==1) {nlin=1; inc[0]= 450; del[0]=space;}
+       if (fill==2) {nlin=2; inc[0]= 450; del[0]=space; inc[1]=-450; del[1]=space;}
+       if (fill==3) {nlin=1; inc[0]=-450; del[0]=space;}
+       if (fill==4) {nlin=1; inc[0]= 300; del[0]=space;}
+       if (fill==5) {nlin=1; inc[0]=-300; del[0]=space;}
+       if (fill==6) {nlin=2; inc[0]=   0; del[0]=space; inc[1]= 900; del[1]=space;}
+       if (fill==7) {nlin=1; inc[0]=   0; del[0]=space;}
+       if (fill==8) {nlin=1; inc[0]= 900; del[0]=space;}
+       plpat(nlin, inc, del);*/
+    sty = MIN (8, MAX(1, fill+1));
+    if (fill==1) sty = 3;
+    if (fill==2) sty = 8;
+    if (fill==7) sty = 1;
+    if (fill==8) sty = 3;
+    plpsty(sty);
+  plfill((PLINT)n, (PLFLT*)x, (PLFLT*)y);
+  } 
+  /* Draw polygon */
+  ObitPlotDrawCurve(in, n, x, y, err);
+  ObitPlotDrawLine (in, x[n-1], y[n-1], x[0], y[0], err);
+#endif /* HAVE_PLPLOT */
+
+/****************** pgplot implementation *************************/
+#ifdef HAVE_PGPLOT  /* Only if pgplot available */
+  int fs;
+  /* error checks */
+  if (err->error) return;
+
+  OK = TRUE;  /* Have a plotting package */
+  if (fill>0) {
+    fs = 2;                     /* no fill */
+    if (fill==1) fs = 3;        /* hatched */
+    if (fill==2) fs = 4;        /* crosshatched */
+    cpgsfs(fs);                 /* Set fill */
+  }
+  cpgpoly((int)n, (float*)x, (float*)y);
+  cpgsfs(2);                    /* reset fill */
+#endif /* HAVE_PGPLOT */
+
+  /* Complain if plotting not available */
+  if (!OK) Obit_log_error(err, OBIT_Error, "No plotting package available for polygon");
+} /* end ObitPlotDrawPoly */
+
+/** 
  * Primitive routine draw a curve consisting of lines between a sequence of
  * points.
  * \param in      Pointer to Plot object.
@@ -3275,6 +3421,61 @@ void  ObitPlotDrawCurve (ObitPlot* in, olong n, ofloat *x, ofloat *y,
   /* Complain if plotting not available */
   if (!OK) Obit_log_error(err, OBIT_Error, "No plotting package available");
 } /* end ObitPlotDrawCurve */
+
+/** 
+ * Primitive routine draw a circle
+ * points.
+ * \param in      Pointer to Plot object.
+ * \param x       world x-coordinate of center
+ * \param y       world y-coordinate of center
+ * \param radius  world coordinate radius
+ * \param err     ObitErr error stack
+ */
+void  ObitPlotDrawCircle (ObitPlot* in, ofloat x, ofloat y, ofloat radius,
+		 	 ObitErr *err)
+{
+#define N_QUAD 90  /* Number of points per quadrant */
+  olong i, j, ns=N_QUAD, n1=N_QUAD-1;
+  /* Sin table every 1/N_QUAD of 90 deg. */
+  ofloat sc[N_QUAD] = {0.0, 0.017452406437283512, 0.034899496702500969, 0.052335956242943835, 0.069756473744125302, 
+			0.087155742747658166, 0.10452846326765347, 0.12186934340514748, 0.13917310096006544, 
+			0.15643446504023087, 0.17364817766693033, 0.1908089953765448,  0.20791169081775934, 
+			0.224951054343865,   0.24192189559966773, 0.25881904510252074, 0.27563735581699916, 
+			0.29237170472273677, 0.3090169943749474,  0.3255681544571567,  0.34202014332566871, 
+			0.35836794954530027, 0.37460659341591201, 0.39073112848927377, 0.40673664307580021, 
+			0.42261826174069944, 0.4383711467890774,  0.45399049973954675, 0.46947156278589081, 
+			0.48480962024633706, 0.49999999999999994, 0.51503807491005416, 0.5299192642332049, 
+			0.54463903501502708, 0.5591929034707469,  0.57357643635104605, 0.58778525229247314, 
+			0.60181502315204827, 0.61566147532565829, 0.62932039104983739, 0.64278760968653925, 
+			0.65605902899050728, 0.66913060635885824, 0.68199836006249848, 0.69465837045899725, 
+			0.70710678118654746, 0.71933980033865108, 0.73135370161917046, 0.74314482547739424, 
+			0.75470958022277201, 0.76604444311897801, 0.7771459614569709,  0.78801075360672201, 
+			0.79863551004729283, 0.80901699437494745, 0.8191520442889918,  0.82903757255504174, 
+			0.83867056794542405, 0.84804809615642596, 0.85716730070211233, 0.8660254037844386, 
+			0.87461970713939574, 0.88294759285892688, 0.89100652418836779, 0.89879404629916704, 
+			0.90630778703664994, 0.91354545764260087, 0.92050485345244037, 0.92718385456678742, 
+			0.93358042649720174, 0.93969262078590832, 0.94551857559931674, 0.95105651629515353, 
+			0.95630475596303544, 0.96126169593831889, 0.96592582628906831, 0.97029572627599647, 
+			0.97437006478523525, 0.97814760073380558, 0.98162718344766398, 0.98480775301220802, 
+			0.98768834059513777, 0.99026806874157036, 0.99254615164132198, 0.99452189536827329, 
+			0.99619469809174555, 0.9975640502598242,  0.99862953475457383, 0.99939082701909576, 
+			0.99984769515639127};
+  ofloat xc[1+4*N_QUAD], yc[1+4*N_QUAD];
+
+  /* error checks */
+  if (err->error) return;
+  
+  /* By quadrant */
+  j = 0;
+  for (i=0; i<ns; i++) {xc[j] = x + sc[i]*radius;    yc[j] = y + sc[n1-i]*radius; j++;}
+  for (i=0; i<ns; i++) {xc[j] = x + sc[n1-i]*radius; yc[j] = y - sc[i]*radius;    j++;}
+  for (i=0; i<ns; i++) {xc[j] = x - sc[i]*radius;    yc[j] = y - sc[n1-i]*radius; j++;}
+  for (i=0; i<ns; i++) {xc[j] = x - sc[n1-i]*radius; yc[j] = y + sc[i]*radius;    j++;}
+  xc[j] = xc[0]; yc[j] = yc[0]; j++; /* Close */
+
+  /* Plot */
+  ObitPlotDrawCurve (in, j, xc, yc, err);
+} /* end ObitPlotDrawCircle */
 
 /**
  * Initialize global ClassInfo Structure.

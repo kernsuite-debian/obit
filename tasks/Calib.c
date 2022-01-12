@@ -1,7 +1,7 @@
-/* $Id: Calib.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit Radio interferometry calibration software                     */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2017                                         */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -109,8 +109,10 @@ int main ( int argc, char **argv )
     NULL};
   gchar        *solverParms[] = {  /* Calibration parameters */
     "solInt", "solnVer", "solType", "solMode", "avgPol", "avgIF", "doMGM", "elevMGM",
-    "refAnt", "ampScalar", "minSNR",  "minNo", "prtLv",
+    "WtUV", "refAnt", "refAnts", "doTwo", "ampScalar", "minSNR",  "minNo", "prtLv",
     NULL};
+  gchar        *solverRenameIn[]  = {"UVRange", NULL};
+  gchar        *solverRenameOut[] = {"UVR_Full", NULL};
 
   /* Startup - parse command line */
   err = newObitErr();
@@ -178,6 +180,8 @@ int main ( int argc, char **argv )
 
   /* Copy calibration control to solver */
   ObitInfoListCopyList (myInput, solver->info, solverParms);
+  /* Rename parms */
+  ObitInfoListCopyListRename (myInput, solver->info, solverRenameIn, solverRenameOut);
 
   /* Do solution */
   solnClass = (ObitUVGSolveClassInfo*)solver->ClassInfo;
@@ -233,6 +237,7 @@ ObitInfoList* CalibIn (int argc, char **argv, ObitErr *err)
 
   /* Make default inputs InfoList */
   list = defaultInputs(err);
+  myOutput = defaultOutputs(err);
 
   /* command line arguments */
   /* fprintf (stderr,"DEBUG arg %d %s\n",argc,argv[0]); DEBUG */
@@ -337,7 +342,6 @@ ObitInfoList* CalibIn (int argc, char **argv, ObitErr *err)
   }
 
   /* Initialize output */
-  myOutput = defaultOutputs(err);
   ObitReturnDumpRetCode (-999, outfile, myOutput, err);
   if (err->error) Obit_traceback_val (err, routine, "GetInput", list);
 
@@ -569,9 +573,9 @@ void digestInputs(ObitInfoList *myInput, ObitErr *err)
   gchar        *strTemp;
   ObitSkyModelMode modelMode;
   ObitSkyModelType modelType;
-  ofloat       modelFlux;
+  ofloat       modelFlux, refAnt, *refAnts;
   gboolean     doCalSelect;
-  oint         doCalib;
+  oint         doCalib, doBand;
   gchar *routine = "digestInputs";
 
   /* error checks */
@@ -607,9 +611,22 @@ void digestInputs(ObitInfoList *myInput, ObitErr *err)
   ObitInfoListGetTest(myInput, "doCalSelect",  &type, dim, &doCalSelect);
   doCalib = -1;
   ObitInfoListGetTest(myInput, "doCalib",  &type, dim, &doCalib);
-  doCalSelect = doCalSelect || (doCalib>0);
+  doBand = -1;
+  ObitInfoListGetTest(myInput, "doBand",  &type, dim, &doBand);
+  doCalSelect = doCalSelect || (doCalib>0) || (doBand>0);
   ObitInfoListAlwaysPut (myInput, "doCalSelect", OBIT_bool, dim, &doCalSelect);
- 
+
+  /* Copy first refAnts value to refAnt */
+   if (ObitInfoListGetP(myInput, "refAnts",  &type, dim, (gpointer)&refAnts)) {
+     refAnt = refAnts[0];
+   } else {
+     refAnt = 0;
+     /* For old inputs */
+     ObitInfoListGetTest(myInput, "refAnt", &type, dim, &refAnt);
+   }
+   dim[0] = dim[1] = dim[2] = 1;
+   ObitInfoListAlwaysPut (myInput, "refAnt", OBIT_long, dim, &refAnt);
+
   /* Initialize Threading */
   ObitThreadInit (myInput);
 
@@ -628,14 +645,14 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
 {
   ObitUV       *inData = NULL;
   ObitInfoType type;
-  olong         Aseq, disk, cno, nvis, nThreads;
+  olong         Aseq, disk, cno, nvis;
   gchar        *Type, *strTemp, inFile[129];
   gchar        Aname[13], Aclass[7], *Atype = "UV";
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   gchar        *dataParms[] = {  /* Parameters to calibrate/select data */
     "Sources", "Stokes", "timeRange", "BChan", "EChan",   "BIF", "EIF", "subA",
-    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", "doPol",
-    "Antennas", "Mode", "ModelType", "Alpha",
+    "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "flagVer", 
+    "doPol", "PDVer", "Antennas", "Mode", "ModelType", "Alpha",
      NULL};
   gchar *routine = "getInputData";
 
@@ -682,10 +699,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
     /* define object */
-    nvis = 1000;
-    nThreads = 1;
-    ObitInfoListGetTest(myInput, "nThreads", &type, dim, &nThreads);
-    nvis *= nThreads;
+    nvis = 1;
     ObitUVSetAIPS (inData, nvis, disk, cno, AIPSuser, err);
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
@@ -702,10 +716,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
 
     /* define object */
-    nvis = 1000;
-    nThreads = 1;
-    ObitInfoListGetTest(myInput, "nThreads", &type, dim, &nThreads);
-    nvis *= nThreads;
+    nvis = 1;
     ObitUVSetFITS (inData, nvis, disk, inFile,  err); 
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
@@ -722,6 +733,12 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
  /* Ensure inData fully instantiated and OK */
   ObitUVFullInstantiate (inData, TRUE, err);
   if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
+
+  /* Set number of vis per IO */
+  nvis = 1000;  /* How many vis per I/O? */
+  nvis =  ObitUVDescSetNVis (inData->myDesc, myInput, nvis);
+  dim[0] = dim[1] = dim[2] = dim[3] = 1;
+  ObitInfoListAlwaysPut (inData->info, "nVisPIO", OBIT_long, dim,  &nvis);
 
   return inData;
 } /* end getInputData */
@@ -742,19 +759,19 @@ ObitSkyModel* getInputSkyModel (ObitInfoList *myInput, ObitErr *err)
   ObitImage    **image=NULL;
   ObitCCCompType CCType;
   ObitInfoType type;
-  gboolean      do3D=TRUE;
-  olong         Aseq, disk, cno,i=0, ver, nmaps;
+  gboolean     do3D=TRUE;
+  olong        Aseq, disk, cno,i=0, ver, nmaps;
   gchar        *Type, *Type2, *strTemp, inFile[129], inRoot[129];
   gchar        Aname[13], Aclass[7], Aroot[7], *Atype = "MA";
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
-  olong         blc[IM_MAXDIM] = {1,1,1,1,1,1,1};
-  olong         trc[IM_MAXDIM] = {0,0,0,0,0,0,0};
-  ofloat       smodel[20], modptflx,  modptxof, modptyof, modptypm[4];
+  olong        blc[IM_MAXDIM] = {1,1,1,1,1,1,1};
+  olong        trc[IM_MAXDIM] = {0,0,0,0,0,0,0};
+  ofloat       smodel[20], modptflx,  modptxof, modptyof, modptypm[8];
   gchar        name[101];
   gchar        *dataParms[] = {  /* Control parameters */
     "CCVer",  "BComp",  "EComp",  "Flux", "PBCor", "antSize", "Factor", 
     "minFlux", "Mode", "ModelType", "REPLACE", "Stokes", 
-    "MODPTFLX", "MODPTXOF", "MODPTYOF", "MODPTYPM", 
+    "MODPTFLX", "MODPTXOF", "MODPTYOF", "MODPTYPM", "doGPU",
     NULL};
   gchar *routine = "getInputSkyModel";
 
@@ -771,20 +788,18 @@ ObitSkyModel* getInputSkyModel (ObitInfoList *myInput, ObitErr *err)
   ObitInfoListGetTest (myInput, "modelFlux", &type, dim, &smodel[0]);
   if ((smodel!=NULL) && (smodel[0]!=0.0)) {
     /* Model passed - get rest */
+    for (i=1; i<11; i++) smodel[i] = 0.0;
     ObitInfoListGetTest (myInput, "modelPos",  &type, dim, &smodel[1]);
     ObitInfoListGetTest (myInput, "modelParm", &type, dim, &smodel[3]);
     modptflx = smodel[0];
     modptxof = smodel[1] / 3600.0;
     modptyof = smodel[2] / 3600.0;
-    modptypm[0] = smodel[3];
-    modptypm[1] = smodel[4];
-    modptypm[2] = smodel[5];
-    modptypm[3] = smodel[6];
+    for (i=0; i<8; i++) modptypm[i] = smodel[3+i];
     dim[0] = dim[1] = 1;
     ObitInfoListAlwaysPut (myInput, "MODPTFLX", OBIT_float, dim, &modptflx);
     ObitInfoListAlwaysPut (myInput, "MODPTXOF", OBIT_float, dim, &modptxof);
     ObitInfoListAlwaysPut (myInput, "MODPTYOF", OBIT_float, dim, &modptyof);
-    dim[0] = 4;
+    dim[0] = 6;
     ObitInfoListAlwaysPut (myInput, "MODPTYPM", OBIT_float, dim, modptypm);
 
     /* Create Sky Model */
@@ -861,13 +876,13 @@ ObitSkyModel* getInputSkyModel (ObitInfoList *myInput, ObitErr *err)
 	ObitImageSetAIPS(image[i], OBIT_IO_byPlane, disk, cno, AIPSuser,  blc, trc, err);
 	if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
 	
+	/* Ensure image fully instantiated and OK */
+	ObitImageFullInstantiate (image[i], TRUE, err);
+
 	/* Attach Image */
 	ObitImageMosaicSetImage (mosaic, i, image[i], err);
 	if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
       } /* end loop over fields */
-      
-      /* get do3D from first image */
-      do3D = image[0]->myDesc->do3D;
       
     } else if (!strncmp (Type2, "FITS", 4)) {  /* FITS input */
       /* input FITS file name */
@@ -892,9 +907,12 @@ ObitSkyModel* getInputSkyModel (ObitInfoList *myInput, ObitErr *err)
 	ObitImageSetFITS(image[0], OBIT_IO_byPlane, disk, inFile, blc, trc, err);
 	if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
 	
-	  /* Attach Image */
-	  ObitImageMosaicSetImage (mosaic, 0, image[0], err);
-	  if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
+	/* Ensure image fully instantiated and OK */
+	ObitImageFullInstantiate (image[0], TRUE, err);
+
+	/* Attach Image */
+	ObitImageMosaicSetImage (mosaic, 0, image[0], err);
+	if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
      } else { /* Multiple fields */
 	
 	/* Loop over fields */
@@ -908,16 +926,16 @@ ObitSkyModel* getInputSkyModel (ObitInfoList *myInput, ObitErr *err)
 	  ObitImageSetFITS(image[i], OBIT_IO_byPlane, disk, inFile, blc, trc, err);
 	  if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
 	  
+	  /* Ensure image fully instantiated and OK */
+	  ObitImageFullInstantiate (image[i], TRUE, err);
+
 	  /* Attach Image */
 	  ObitImageMosaicSetImage (mosaic, i, image[i], err);
 	  if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
 	} /* end loop over fields */
       }
 
-      /* get do3D from first image */
-      do3D = image[0]->myDesc->do3D;
-      
-    } else { /* Unknown type - barf and bail */
+   } else { /* Unknown type - barf and bail */
       Obit_log_error(err, OBIT_Error, "%s: Unknown Data type %s", 
 		     pgmName, Type2);
       return skyModel;
@@ -926,7 +944,8 @@ ObitSkyModel* getInputSkyModel (ObitInfoList *myInput, ObitErr *err)
     /* Create Sky Model for appropriate type */
     ver = 0;
     ObitInfoListGetTest(myInput, "CCVer", &type, dim, &ver);
-    CCType   = ObitTableCCUtilGetType ((ObitData*)mosaic->images[0], ver, err);
+    if (ver>0) CCType = ObitTableCCUtilGetType ((ObitData*)mosaic->images[0], ver, err);
+    else       CCType = OBIT_CC_Unknown;
     if (err->error) Obit_traceback_val (err, routine, "myInput", skyModel);
     if ((CCType==OBIT_CC_PointModTSpec)|| (CCType==OBIT_CC_GaussModTSpec) ||
 	(CCType==OBIT_CC_CGaussModTSpec) || (CCType==OBIT_CC_USphereModTSpec)) {
@@ -950,6 +969,11 @@ ObitSkyModel* getInputSkyModel (ObitInfoList *myInput, ObitErr *err)
   ObitInfoListCopyList (myInput, skyModel->info, dataParms);
   if (err->error) Obit_traceback_val (err, routine, skyModel->name, skyModel);
   
+  /* get do3D from first image */
+  if ((skyModel->mosaic) && (skyModel->mosaic->images[0]))
+    do3D = skyModel->mosaic->images[0]->myDesc->do3D;
+  else do3D = FALSE;
+      
   /* Save do3D */
   dim[0] = 1; dim[1] = 1;
   ObitInfoListAlwaysPut (skyModel->info, "do3D", OBIT_bool, dim, &do3D);
@@ -1125,16 +1149,16 @@ void CalibHistory (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
   gchar        hicard[81];
   gchar        *hiEntries[] = {
     "DataType", "inFile",  "inDisk", "inName", "inClass", "inSeq", 
-    "Sources", "Qual", "souCode", "timeRange",  "subA",
-    "selBand", "selFreq", "FreqID", "BChan", "EChan", 
+    "Sources", "Qual", "souCode", "timeRange", "UVRange", "WtUV", 
+    "subA", "solnVer", "selBand", "selFreq", "FreqID", "BChan", "EChan", 
     "doCalSelect",  "doCalib",  "gainUse",  "doBand ",  "BPVer",  "flagVer", 
-    "doPol", "Antennas",  "refAnt", 
+    "doPol", "PDVer", "Antennas",  "refAnts", "doTwo",
     "DataType2", "in2File", "in2Disk", "in2Name", "in2Class", "in2Seq", 
     "nfield", "CCVer", "BComp", "EComp", "Cmethod", "Cmodel", "Flux",
-    "modelFlux", "modelPos", "modelParm", "Alpha",
+    "modelFlux", "modelPos", "modelParm", "Alpha", "PBCor", "antSize", "solnVer", 
     "solInt", "solType", "solMode", "avgPol", "avgIF", "noNeg", "doMGM", "minSNR",
     "minNo", "prtLv",
-    "nThreads",
+    "nThreads", "doGPU",
    NULL};
   gchar *routine = "CalibHistory";
 

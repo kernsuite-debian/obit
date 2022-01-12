@@ -1,7 +1,7 @@
-/* $Id:  $  */
+/* $Id$  */
 /* Baseline dependent averaging of  UV data          .                */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2009,2010                                          */
+/*;  Copyright (C) 2009-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -112,6 +112,11 @@ int main ( int argc, char **argv )
 
   /* Average */
   outData = ObitUVUtilBlAvgTF(inData, FALSE, outData, err);
+  if (err->error) ierr = 1; ObitErrLog(err); if (ierr!=0) goto exit;
+
+  /* Index output */
+  Obit_log_error(err, OBIT_InfoErr, "iNdeXing output UV data");
+  ObitUVUtilIndex (outData, err);
   if (err->error) ierr = 1; ObitErrLog(err); if (ierr!=0) goto exit;
 
   /* History */
@@ -571,7 +576,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     "Sources", "souCode", "Qual", "Stokes", "timeRange", 
     "BChan", "EChan", "BIF", "EIF", "FreqID",
     "doCalSelect", "doCalib", "gainUse", "doBand", "BPVer", "Smooth", 
-    "flagVer", "doPol", "Antennas",  "subA", "Sources", "souCode", "Qual", 
+    "flagVer", "doPol", "PDVer", "Antennas",  "subA", "Sources", "souCode", "Qual", 
     "FOV", "maxInt", "maxFact", "avgFreq",  "chAvg", "ChanSel", 
      NULL};
   gchar *routine = "getInputData";
@@ -651,7 +656,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   ObitInfoListGetTest(myInput, "doCalSelect",  &type, dim, &doCalSelect);
   ObitInfoListAlwaysPut (myInput, "doCalSelect", OBIT_bool, dim, &doCalSelect);
 
-  /* Rearrange frequency averaging info */
+ /* Rearrange frequency averaging info */
   avgFreq = 0;
   ObitInfoListGetTest(myInput, "avgFreq",  &type, dim, &avgFreq);
   nchAvg = 1;
@@ -828,8 +833,8 @@ void UVBlAvgHistory (ObitInfoList* myInput, ObitUV* inData, ObitUV* outData,
     "inFile",  "inDisk", "inName", "inClass", "inSeq",
     "FreqID", "BChan", "EChan", "BIF", "EIF",  "Stokes", 
     "Sources",  "Qual", "souCode", "subA", "Antennas", 
-    "doCalib", "gainUse", "doBand", "BPVer", "Smooth", "flagVer", "doPol", 
-    "FOV", "maxInt", "maxFact",  "avgFreq", "chAvg", "ChanSel", 
+    "doCalib", "gainUse", "doBand", "BPVer", "Smooth", "flagVer", 
+    "doPol", "PDVer", "FOV", "maxInt", "maxFact",  "avgFreq", "chAvg", "ChanSel", 
     "outFile",  "outDisk",  "outName", "outClass", "outSeq", "Compress",
     NULL};
   gchar *routine = "UVBlAvgHistory";

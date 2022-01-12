@@ -1,8 +1,8 @@
-/* $Id: ObitPBUtil.c 159 2010-02-26 17:54:34Z bill.cotton $  */
+/* $Id$  */
 /* this version        2008-10-01 20:20:00  juan.uson      */
 /* J1 extended with large angle approximation              */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2004-2009                                          */
+/*;  Copyright (C) 2004-2014                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -40,6 +40,9 @@
  * Antenna primary beam shape utility class.
  */
 
+/** AIPSish Primary beam calculation */
+ofloat pbfact (olong pbtype, olong nfreq, odouble *pbfreq, ofloat pbfsiz, 
+	       olong ifreq, ofloat radius);
 /*----------------------Public functions---------------------------*/
 
 /**
@@ -56,7 +59,8 @@ ofloat ObitPBUtilPoly (odouble Angle, odouble Freq, ofloat pbmin)
   olong  i;
   odouble x, bm[7], bmult;
   static ofloat  table[8][3] = {
-    {-0.897e-3,  2.71e-7 , -0.242e-10},
+    /* {-0.897e-3,  2.71e-7 , -0.242e-10}, Rick's value */
+    {-1.051e-3,  4.276e-7, -5.380e-11}, /* Fitted to VLSS fields */
     {-0.935e-3,  3.23e-7 , -0.378e-10},
     {-1.343e-3,  6.579e-7, -1.186e-10},
     {-1.372e-3,  6.940e-7, -1.309e-10},
@@ -64,11 +68,15 @@ ofloat ObitPBUtilPoly (odouble Angle, odouble Freq, ofloat pbmin)
     {-1.305e-3,  6.155e-7, -1.030e-10},
     {-1.417e-3,  7.332e-7, -1.352e-10},
     {-1.321e-3,  6.185e-7, -0.983e-10}};
+
+  /* Hack - use old AIPSish routine 
+  bmfact = pbfact (2, 1, &Freq, 24.5, 0, (float)Angle);
+  return bmfact;*/
   
   bmfact = 0.0;
   /* which VLA band */
   bmult = Freq * 60.0e-9;
-  if (Freq < 0.15) {
+  if (Freq < 0.15e9) {
     i = 0;
   } else if (Freq < 1.1e9) {
     i = 1;
@@ -167,13 +175,14 @@ ofloat ObitPBUtilJinc (odouble Angle, odouble Freq, ofloat antSize,
   if (asize <= 0.0) asize = 25.0;
 
   /* beam scale size at 1.47 GHz */
-  scale = vscale * 25.0 / asize;
+  scale = vscale * asize / 25.0;
 
   x = scale * Angle * Freq;
   if (x  <  xmax) {
     u = x * x / 9.0;
     pb = 0.5 + u*(c1 + u*(c2 + u*(c3 + u*(c4 + u*(c5 + u*c6)))));
   } else {
+    x = MIN (x, 5*xmax);
     xx = x / 3.0;
     u = 3.0 / x;
     f = d1 + xx*(d2 + xx*(d3 + xx*(d4 + xx*(d5 + xx*(d6 + xx*d7)))));
@@ -191,6 +200,49 @@ ofloat ObitPBUtilJinc (odouble Angle, odouble Freq, ofloat antSize,
 
   return bmfact;
 } /*  end ObitPBUtilJinc */
+
+/**
+ * Compute KAT-7 beam shape from a fitted polynomial
+ * \param Angle  Angle from the pointing position (deg)
+ * \param Freq   Frequency (Hz) of observations
+ * \param pbmin  Minimum antenna gain 0=>0.05
+ * \return Fractional antenna power [pbmin, 1]
+ */
+ofloat ObitPBUtilKAT7 (odouble Angle, odouble Freq, ofloat pbmin)
+{
+  ofloat bmfact;
+  olong  i;
+  odouble x, bm[7], bmult;
+  static ofloat  table[1][5] = {
+     /* 1822 MHz Fitted to KAT holography to 15% */
+    {-2.28198367e-01,2.60701387e-01,-2.30688241e-02,1.64530193e-03,-5.98086197e-05}
+  };
+ 
+  bmfact = 0.0;
+  /* Get frequency with scaling to amin/GHz */
+  bmult = Freq * 60.0e-9;
+  if (Freq < 2.0e9) {
+    i = 0;
+  } else  {
+    i = 0;
+   } 
+  bm[0] = table[i][0]*1.0e-3;
+  bm[1] = table[i][1]*1.0e-7;
+  bm[2] = table[i][2]*1.0e-10;
+  bm[3] = table[i][3]*1.0e-13;
+  bm[4] = table[i][4]*1.0e-16;
+
+  x = (Angle * bmult) * (Angle * bmult);
+
+  bmfact = 1.0 + (bm[0] + (bm[1] + (bm[2] + (bm[3] + bm[4] * x) * x) * x) * x) * x;
+  
+  /* here, make some "reasonable" estimate on the rumbling around 
+     in far sidelobes, and the depths of the nulls... */
+  if (pbmin<=0.0) pbmin = 0.05;
+  bmfact = MIN (1.0, MAX (bmfact, pbmin));
+
+  return bmfact;
+} /*  end ObitPBUtilKAT7 */
 
 /**
  * Calculates the relative gain at a reference frequency (refFreq) 
@@ -529,5 +581,82 @@ ObitFArray* ObitPBUtilImageCor(ObitImage *inImage, olong *inPlane,
   return outFA;
 } /* end ObitPBUtilImageCor */
 
+/**
+ * Calculates the relative gain (normalized to unity at the pointing
+ * position) of the primary beam at angular offset RADIUS (deg)
+ * from the pointing position and for observing frequency FREQ (Hz).
+ * The power pattern (2 * J1(X) / X) ** 2 of a uniformly illuminated 
+ * circular aperture is used, since it fits the observations better
+ * than the standard PBCOR beam does.  If the relative gain is less
+ * than pbmin = 0.05, it is set to pbmin.
+ *    vscale is a measured constant inversely proportional to the
+ * VLA primary beamwidth, which is assumed to scale as 1./freq.
+ * vscale = 4.487E-9 corresponds to a 29.4 arcmin fwhm at 1.47 GHz.
+ * The actual scale is determined from the antenna size (pbfsiz).
+ * xmax = value of x yielding pb = pbmin = 0.05, beyond which the 
+ * series approximation loses accuracy.
+ *    NOTE: This routine is probably only useful for the VLA but might
+ * be OK for a homogenous array of uniformly illuminated antennas where
+ * the beam scales from the VLA beam by the ratio of antenna diameters.
+ * Translated from the AIPSISH PBUTIL.FOR:PBFACT
+ * \param  pbtype    Primary Beam correction type 1= rel(default), 2=abs
+ * \param  nfreq     Number of frequencies in pbfreq 
+ * \param  pbfreq    Frequencies (Hz) going into the average.
+ * \param  pbfsiz    Antenna diameter (m)
+ * \param  ifreq     0-rel Index in pbfreq of current frequency
+ * \param  radius    Distance from pointing center in deg.
+ * \return  Relative or absolute gain
+ */
+ofloat pbfact (olong pbtype, olong nfreq, odouble *pbfreq, ofloat pbfsiz, 
+	       olong ifreq, ofloat radius) {
+  ofloat pbf = 1.0;
+  olong   i;
+  ofloat      *p=NULL, sum, x, u, scale, pb, asize;
+  /* Coefficients C from Abramowitz  and Stegun, eq. 9.4.4 */
+  static odouble c1=-0.56249985, c2=0.21093573, c3=-0.03954289;
+  static odouble c4=0.00443319, c5=-0.00031761, c6=0.00001109;
+  static ofloat pbmin=0.05, vscale=4.487e-9, xmax=3.00751;
+
+  asize = pbfsiz;
+  if (asize <= 0.0) asize = 25.0;
+  /* Beam scale size at 1.47 GHz */
+  scale = vscale * asize / 25.0;
+  sum = 0.0;
+  if (pbtype == 2) {
+    /* Absolute gain */
+    x = scale * radius * pbfreq[ifreq];
+    if (x  <  xmax) {
+      u = x * x / 9.;
+      pb = 0.5 + u*(c1 + u*(c2 + u*(c3 + u*(c4 + u*(c5 + u*c6)))));
+      pbf = 4.* pb * pb;
+    } else {
+      pbf = pbmin;
+    } 
+  } else {
+    /* Gain relative to avg. freq 
+       Compute antenna power gains */
+    p = g_malloc0(nfreq*sizeof(ofloat));
+    for (i=0; i<nfreq; i++) {
+      x = scale * radius * pbfreq[i];
+      if (x  <  xmax) {
+	u = x * x / 9.;
+	pb = 0.5 + u*(c1 + u*(c2 + u*(c3 + u*(c4 + u*(c5 + u*c6)))));
+	pb = 4.* pb * pb;
+      } else {
+	pb = pbmin;
+      } 
+      p[i] = pb;
+      sum = sum + p[i-1];
+    } /* end loop over frequency */
+    /* Compute relative gain */
+    if (sum <= 0.0) {
+      pbf = 1.0;
+    } else {
+      pbf = nfreq * p[ifreq] / sum;
+    } 
+    if (p) g_free(p);
+  } /* end rel gain */
+  return pbf;
+} /* end of routine pbfact */ 
 
 

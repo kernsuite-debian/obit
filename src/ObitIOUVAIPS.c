@@ -1,6 +1,6 @@
-/* $Id: ObitIOUVAIPS.c 195 2010-06-01 11:39:41Z bill.cotton $      */
+/* $Id$      */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2010                                          */
+/*;  Copyright (C) 2003-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -289,7 +289,7 @@ void ObitIOUVAIPSZap (ObitIOUVAIPS *in, ObitErr *err)
       if (err->error) Obit_traceback_msg (err, routine, in->name);
     } /* End loop deleting tables */
   } /* end if tableList exists */
-  while (tableList) tableList = ObitTableUnref(tableList);  /* Get table list */
+  /* while (tableList) tableList = ObitTableUnref(tableList);  now just a copy Get table list */
   in->tableList = NULL;
 
   /* more complete validity test */
@@ -473,6 +473,7 @@ ObitIOCode ObitIOUVAIPSOpen (ObitIOUVAIPS *in, ObitIOAccess access,
 ObitIOCode ObitIOUVAIPSClose (ObitIOUVAIPS *in, ObitErr *err)
 {
   ObitIOCode retCode = OBIT_IO_SpecErr;
+  olong bsize=1024;
   gchar *routine = "ObitIOUVAIPSClose";
 
   /* error checks */
@@ -487,6 +488,12 @@ ObitIOCode ObitIOUVAIPSClose (ObitIOUVAIPS *in, ObitErr *err)
   /* don't bother if it's not open */
   if ((in->myStatus!=OBIT_Modified) && (in->myStatus!=OBIT_Active)) 
     return OBIT_IO_OK;
+
+  /* Pad to multiple of 1024 if modified */
+  if (in->myStatus==OBIT_Modified) {
+    retCode = ObitFilePadFile (in->myFile, bsize, err);
+    if (err->error) Obit_traceback_val (err, routine, in->name, retCode);
+  }
 
   if (ObitFileClose (in->myFile, err) || (err->error)) 
     /* add traceback on error */
@@ -1670,6 +1677,10 @@ ObitIOCode ObitIOUVAIPSFlush (ObitIOUVAIPS *in, ObitErr *err)
   check (in, err);
   if (err->error) Obit_traceback_val (err, routine, in->name, retCode);
 
+  retCode = ObitFileFlush(in->myFile, err);
+  if ((retCode!=OBIT_IO_OK) || (err->error)) 
+    Obit_traceback_val (err, routine, in->name, retCode);
+  
   /* Wonky padding at end of file if needed */
   wantPos = ObitAIPSUVWonkyPad (in->myFile->filePos);
   if (wantPos > in->myFile->filePos) {
@@ -1681,8 +1692,6 @@ ObitIOCode ObitIOUVAIPSFlush (ObitIOUVAIPS *in, ObitErr *err)
       Obit_traceback_val (err, routine, in->name, retCode);
     in->filePos = in->myFile->filePos; /* remember current file position */
   }
-
-  retCode = ObitFileFlush(in->myFile, err);
 
   return retCode;
 } /* end ObitIOUVAIPSFlush */
@@ -1696,9 +1705,9 @@ ObitIOCode ObitIOUVAIPSFlush (ObitIOUVAIPS *in, ObitErr *err)
  * \param err ObitErr for reporting errors.
  */
 void 
-ObitIOUVAIPSCreateBuffer (ofloat **data, olong *size, 
-			     ObitIOUVAIPS *in, ObitInfoList *info, 
-			     ObitErr *err)
+ObitIOUVAIPSCreateBuffer (ofloat **data, ollong *size, 
+			  ObitIOUVAIPS *in, ObitInfoList *info, 
+			  ObitErr *err)
 {
   gchar *name;
   

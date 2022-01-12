@@ -1,6 +1,6 @@
-/* $Id:  $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2009                                               */
+/*;  Copyright (C) 2009-2017                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -40,14 +40,14 @@ ofloat maxResid;
 ofloat begVMModelTime;
 /** Dimension of Rgain...  */
 olong dimGain;
-/** Array of time/spatially variable R component gain, real, imag */
+/** Array of time/spatially variable R/X component gain, real, imag */
 ofloat *Rgain, *Rgaini;
-/** Array of time/spatially variable L component gain, real, imag */
+/** Array of time/spatially variable L/Y component gain, real, imag */
 ofloat *Lgain, *Lgaini;
-/** Array of time/spatially variable Stokes Q component gain, real, imag */
-ofloat *Qgain, *Qgaini;
-/** Array of time/spatially variable Stokes U component gain, real, imag */
-ofloat *Ugain, *Ugaini;
+/** Array of time/spatially variable Stokes RL/XY component gain, real, imag */
+ofloat *RLgain, *RLgaini;
+/** Array of time/spatially variable Stokes LR/YX component gain, real, imag */
+ofloat *LRgain, *LRgaini;
 /** Array booleans, TRUE if corresponding antenna (0-rel) is EVLA */
 gboolean *isEVLA;
 /** Number of subarrays */
@@ -56,22 +56,24 @@ olong numAntList;
 ObitAntennaList **AntList;
 /** Current source */
 ObitSource *curSource;
-/** I Beam image */
-ObitImageInterp *IBeam;
-/** V Beam image */
-ObitImageInterp *VBeam;
-/** Q Beam image if doCrossPol */
-ObitImageInterp *QBeam;
-/** U Beam image if doCrossPol */
-ObitImageInterp *UBeam;
-/** I Beam phase image - NULL if not given */
-ObitImageInterp *IBeamPh;
-/** V Beam phase image  - NULL if not given **/
-ObitImageInterp *VBeamPh;
-/** Q Beam phase image if doCrossPol  - NULL if not given **/
-ObitImageInterp *QBeamPh;
-/** U Beam phase image if doCrossPol  - NULL if not given **/
-ObitImageInterp *UBeamPh;
+/**  Beam Shape */
+ObitBeamShape *BeamShape;
+/** R/X Beam image interpolator*/
+ObitImageInterp *RXBeam;
+/** L/Y Beam image interpolator*/
+ObitImageInterp *LYBeam;
+/** RL Beam image interpolatorif doCrossPol */
+ObitImageInterp *RLBeam;
+/** LR Beam image interpolatorif doCrossPol */
+ObitImageInterp *LRBeam;
+/** R/X Beam phase image interpolator- NULL if not given */
+ObitImageInterp *RXBeamPh;
+/** L/Y Beam phase image interpolator - NULL if not given **/
+ObitImageInterp *LYBeamPh;
+/** RL Beam phase image interpolator if doCrossPol  - NULL if not given **/
+ObitImageInterp *RLBeamPh;
+/** LR Beam phase image interpolator if doCrossPol  - NULL if not given **/
+ObitImageInterp *LRBeamPh;
 /** Array booleans, TRUE if corresponding antenna (0-rel) is EVLA */
 gboolean doCrossPol;
 /** Number of Beam planes */
@@ -86,3 +88,5 @@ gchar saveStokes[8];
 gboolean saveDoCalSelect;
 /** Save doCalib */
 olong saveDoCalib;
+/** Is this model calculation in a CLEAN? */
+gboolean doBeamCorClean;

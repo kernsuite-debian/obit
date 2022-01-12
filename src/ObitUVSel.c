@@ -1,6 +1,6 @@
-/* $Id: ObitUVSel.c 136 2009-10-16 15:33:46Z bill.cotton $       */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2009                                          */
+/*;  Copyright (C) 2003-2015                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;  This program is free software; you can redistribute it and/or    */
 /*;  modify it under the terms of the GNU General Public License as   */
@@ -119,7 +119,7 @@ ObitUVSel* ObitUVSelCopy (ObitUVSel* in, ObitUVSel* out,
   const ObitClassInfo *ParentClass;
   gboolean oldExist;
   gchar *outName;
-  olong i;
+  olong i, n;
 
   /* error checks */
   g_assert (ObitErrIsA(err));
@@ -152,9 +152,11 @@ ObitUVSel* ObitUVSelCopy (ObitUVSel* in, ObitUVSel* out,
   out->jincs       = in->jincs;
   out->startChann  = in->startChann;
   out->numberChann = in->numberChann;
+  out->channInc    = in->channInc;
   out->jincf       = in->jincf;
   out->startIF     = in->startIF;
   out->numberIF    = in->numberIF;
+  out->IFInc       = in->IFInc;
   out->jincif      = in->jincif;
   out->doCalSelect = in->doCalSelect;
   out->transPol    = in->transPol;
@@ -179,8 +181,27 @@ ObitUVSel* ObitUVSelCopy (ObitUVSel* in, ObitUVSel* out,
   out->FGversion   = in->FGversion;
   out->passAll     = in->passAll;
   out->alpha       = in->alpha;
+  out->ifsel1     = in->ifsel1;
   for (i=0; i<5; i++) out->Stokes[i] = in->Stokes[i];
   for (i=0; i<3; i++) out->smooth[i] = in->smooth[i];
+  /* Selected IFs */
+  if (out->IFSel && (out->nifsel!=in->nifsel)) 
+    {g_free(out->IFSel); out->IFSel=NULL;}
+  if (out->IFSel==NULL) {
+    out->nifsel = in->nifsel;
+    out->IFSel = g_malloc0(out->nifsel*sizeof(gboolean));
+  }
+  for (i=0; i<MIN(in->nifsel, out->nifsel); i++) 
+	 out->IFSel[i] = in->IFSel[i];
+
+  /* Deselected IFs */
+  n = 0;
+  if (in->IFDrop) {
+    i = 0;
+    while(in->IFDrop[n]>0) n++;
+    out->IFDrop = g_malloc0((n+1)*sizeof(olong));
+    for (i=0; i<n; i++) out->IFDrop[i] = in->IFDrop[i];
+  }
 
   /* (de)Selected antenna list */
   out->selectAnts = in->selectAnts;
@@ -212,10 +233,9 @@ ObitUVSel* ObitUVSelCopy (ObitUVSel* in, ObitUVSel* out,
  * \param sel UV selector.
  * \return size in floats needed for I/O.
  */
-olong ObitUVSelBufferSize (ObitUVDesc* desc, 
-			       ObitUVSel* sel)
+ollong ObitUVSelBufferSize (ObitUVDesc* desc, ObitUVSel* sel)
 {
-  olong size = 0;
+  ollong size = 0;
 
   /* error checks */
   if (desc==NULL) return size; 
@@ -226,42 +246,68 @@ olong ObitUVSelBufferSize (ObitUVDesc* desc,
   ObitUVSelDefault (desc, sel);
 
   /* size of uncompressed vis * number of vis */
-  size = sel->lrecUC * sel->nVisPIO;
+  size = sel->lrecUC;
+  size *= sel->nVisPIO;
 
   return size;
 } /* end ObitUVSelBufferSize */
 
 /**
- * 
+ * Enforce defaults (RA in range (0,360)
  * Also indexes structure.
  * \param in Pointer to descriptor.
  * \param sel UV selector, output vis descriptor changed if needed.
  */
 void ObitUVSelDefault (ObitUVDesc* in, ObitUVSel* sel)
 {
+  olong i, nif;
 
   /* error checks */
   g_assert (ObitIsA(in, ObitUVDescGetClass()));
   g_assert (ObitIsA(sel, &myClassInfo));
 
-
+  /* Selected IFs if needed */
+  /* resize? */
+  if (in->jlocif>=0) nif = in->inaxes[in->jlocif];
+  else               nif = 1;
+  if (nif!=sel->nifsel) {g_free(sel->IFSel); sel->IFSel=NULL;}
+  if (sel->IFSel==NULL) {
+    sel->ifsel1 = 0;   /* first selected */
+    if (in->jlocif>=0) sel->nifsel = nif;
+    else               sel->nifsel = 1;
+    sel->IFSel = g_malloc0(sel->nifsel*sizeof(gboolean));
+    for (i=0; i<sel->nifsel; i++) sel->IFSel[i] = TRUE;
+  }
   /* Index as well */
   ObitUVDescIndex(in);
+
+  /* Patch AIPS++ Bugs */
+  if (in->jlocr>=0) {
+    if (in->crval[in->jlocr]<0.0) in->crval[in->jlocr] += 360.0;
+  }
+  if (in->obsra<0.0) in->obsra += 360.0;
 } /* end ObitUVSelDefault */
 
 /**
  * Derive the descriptor for data being written; 
  * also updates defaults on sel.
+ * Some of this is also done in ObitUVCalSelectInit:
  * \param in Pointer to input descriptor, this describes the data
  *           as they appear in memory.
  * \param sel UV selector, blc, trc members changed if needed.
  * \param out Pointer to output descriptor, describing form on disk.
+ *                on input, info member "KeepSou":
+ * \li "KeepSou"  OBIT_bool (1,1,1) If present and True keep multisource input
+ *                as multisource output even if only one source selected
  * \param err Obit error stack
  */
 void ObitUVSelGetDesc (ObitUVDesc* in, ObitUVSel* sel,
 		       ObitUVDesc* out, ObitErr *err)
 {
-
+  gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitInfoType type;
+  gboolean KeepSou=FALSE;
+ 
   /* error checks */
   g_assert (ObitErrIsA(err));
   if (err->error) return;
@@ -282,8 +328,10 @@ void ObitUVSelGetDesc (ObitUVDesc* in, ObitUVSel* sel,
   sel->lrecUC   = out->lrec;
 
   /* If only one source selected make sure no "SOURCE" 
-     random parameter is written */
-  if ((sel->numberSourcesList==1) && (out->ilocsu>=0) )
+     random parameter is written   
+     This can be overriden by outDesc->info member KeepSou */
+  ObitInfoListGetTest(out->info, "KeepSou", &type, dim, &KeepSou);
+  if ((sel->numberSourcesList==1) && (out->ilocsu>=0)  && !KeepSou)
     strncpy (out->ptype[out->ilocsu], "REMOVED ", UVLEN_KEYWORD); 
 
   /* compress iff sel->Compress */
@@ -316,11 +364,19 @@ void ObitUVSelGetDesc (ObitUVDesc* in, ObitUVSel* sel,
  * \param out Pointer to output descriptor, this describes the data 
  *            after any processing when read, or before any compression
  *            on output.
+ *                on input, info member "KeepSou":
+ * \li "KeepSou"  OBIT_bool (1,1,1) If present and True keep multisource input
+ *                as multisource output even if only one source selected
  * \param err Obit error stack
  */
 void ObitUVSelSetDesc (ObitUVDesc* in, ObitUVSel* sel,
-			  ObitUVDesc* out, ObitErr *err)
+		       ObitUVDesc* out, ObitErr *err)
 {
+  olong i;
+  gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
+  ObitInfoType type;
+  gboolean KeepSou=FALSE;
+  gchar *routine = "ObitUVSelSetDesc";
 
   /* error checks */
   g_assert (ObitErrIsA(err));
@@ -335,8 +391,7 @@ void ObitUVSelSetDesc (ObitUVDesc* in, ObitUVSel* sel,
   /* copy most values */
   ObitUVDescCopy (in, out, err);
   if (err->error) /* add traceback, return on error */
-      Obit_traceback_msg (err, "ObitUVSelSetDesc", 
-			  in->name);
+      Obit_traceback_msg (err, routine, in->name);
 
   /* if reading compressed data it will be uncompressed. */
   if ((in->access==OBIT_IO_ReadOnly) ||  (in->access==OBIT_IO_ReadWrite) 
@@ -368,16 +423,37 @@ void ObitUVSelSetDesc (ObitUVDesc* in, ObitUVSel* sel,
   sel->jincif = in->incif;
 
   /* Selection */
-  if (sel->numberChann<=0) sel->numberChann = in->inaxes[in->jlocf];
+  if (sel->channInc<=0) sel->channInc = 1;
+  if (sel->numberChann<=0) 
+    sel->numberChann = in->inaxes[in->jlocf] /sel->channInc;
   if (sel->startChann<=0)  sel->startChann = 1;
   sel->numberChann = MIN (sel->numberChann, in->inaxes[in->jlocf]);
 
-  if ((sel->numberIF<=0) && (in->jlocif>=0)) 
-    sel->numberIF = in->inaxes[in->jlocif];
-  if (sel->numberIF<=0) sel->numberIF = 1;
+
+  /* Count number of selected IF */
   if (sel->startIF<=0)  sel->startIF = 1;
+  if (sel->IFInc<=0) sel->IFInc = 1;
+  if (in->jlocif>=0) {
+    sel->numberIF = 0;
+    for (i=0; i<in->inaxes[in->jlocif]; i++) {
+      if (sel->IFSel[i]) sel->numberIF++;
+    }
+  } else {sel->numberIF = 1;}
+  if (sel->numberIF<=0) sel->numberIF = 1;
   if (in->jlocif>=0) 
     sel->numberIF = MIN (sel->numberIF, in->inaxes[in->jlocif]);
+
+  /* If poln calibrating data from linear feeds then the output will be
+     as though the feeds were circular */
+  if (sel->doPolCal && (out->crval[out->jlocs]==-5.0)) 
+    out->crval[in->jlocs] = -1.0;
+
+  /* If only one source selected make sure no "SOURCE" 
+     random parameter is written    
+     This can be overriden by outDesc->info member KeepSou */
+  ObitInfoListGetTest(out->info, "KeepSou", &type, dim, &KeepSou);
+  if ((sel->numberSourcesList==1) && (out->ilocsu>=0) && !KeepSou)
+    strncpy (out->ptype[out->ilocsu], "REMOVED ", UVLEN_KEYWORD); 
 
 } /* end ObitUVSelSetDesc */
 
@@ -484,8 +560,8 @@ gboolean ObitUVSelNext (ObitUVSel *in, ObitUVDesc *desc, ObitErr *err)
       
 	/* Save info if scan found */
       if (gotIt) {
-	in->scanFirstVis = row->StartVis;
-	in->scanLastVis  = row->EndVis;
+	in->scanFirstVis = row->StartVis; 
+	in->scanLastVis  = MAX (row->EndVis, row->StartVis); /* Trap AIPS bug */
 	desc->firstVis   = in->scanFirstVis; /* beginning of scan */
 	/* Suggest subscan length */
 	SuggestSubScan(in, row->TimeI);
@@ -839,9 +915,15 @@ void ObitUVSelInit  (gpointer inn)
   in->numberPoln    = 1;
   in->startChann    = 1;
   in->numberChann   = 1;
+  in->channInc      = 1;
   in->jincf         = 3;
   in->startIF       = 1;
   in->numberIF      = 1;
+  in->IFInc         = 1;
+  in->IFDrop        = NULL;
+  in->IFSel         = NULL;
+  in->nifsel        = 0;
+  in->ifsel1        = 0;
   in->jincif        = 3;
   in->selectAnts    = TRUE;
   in->ants          = NULL;
@@ -870,6 +952,7 @@ void ObitUVSelInit  (gpointer inn)
   in->NXTableRow    = NULL;
   in->numRow        = -1;
   in->LastRowRead   = 0;
+  in->LastRowRead   = 0;
 } /* end ObitUVSelInit */
 
 /**
@@ -888,6 +971,8 @@ void ObitUVSelClear (gpointer inn)
   /* free this class members */
   if (in->ants) g_free(in->ants);       in->ants    = NULL;
   if (in->sources) g_free(in->sources); in->sources = NULL;
+  if (in->IFDrop)  g_free(in->IFDrop);  in->IFDrop  = NULL;
+  if (in->IFSel)   g_free(in->IFSel);   in->IFSel   = NULL;
   in->NXTable    = ObitTableNXUnref(in->NXTable);
   in->NXTableRow = ObitTableNXRowUnref(in->NXTableRow);
   

@@ -1,7 +1,7 @@
-/* $Id: IonCal.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit Ionospheric calibration of uv data              */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2010                                          */
+/*;  Copyright (C) 2006-2011                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -81,7 +81,7 @@ int main ( int argc, char **argv )
   ObitIonCal *ioncal=NULL;
   /* Controls for uv data */
   gchar *UVParms[] = {"dispURL", "Niter", "minFlux", "gain", "autoWindow",
-		      "MinPeak", "Catalog", "OutlierDist",
+		      "MinPeak", "Catalog", "CatDisk", "OutlierDist",
 		      "WtBox", "WtFunc", "UVTaper", "WtPower", "xCells", "yCells",
 		      "OutlierFlux", "OutlierSI", "OutlierSize", "solInt", "nZern", 
 		      "MaxQual", "timeRange", "subA", "Stokes", "doCalib", 
@@ -614,7 +614,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   ObitUV       *inData = NULL;
   ObitInfoType type;
   ObitIOType   IOType;
-  olong         Aseq, disk, cno, nvis, nThreads;
+  olong         Aseq, disk, cno, nvis;
   gchar        *Type, *strTemp, inFile[129];
   gchar        Aname[13], Aclass[7], Tname[13], Tclass[7], *Atype = "UV";
   gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
@@ -666,10 +666,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
     /* define object */
-    nvis = 1000;
-    nThreads = 1;
-    ObitInfoListGetTest(myInput, "nThreads", &type, dim, &nThreads);
-    nvis *= nThreads;
+    nvis = 1;
     ObitUVSetAIPS (inData, nvis, disk, cno, AIPSuser, err);
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
@@ -688,10 +685,7 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
     ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
 
     /* define object */
-    nvis = 1000;
-    nThreads = 1;
-    ObitInfoListGetTest(myInput, "nThreads", &type, dim, &nThreads);
-    nvis *= nThreads;
+    nvis = 1;
     ObitUVSetFITS (inData, nvis, disk, inFile,  err); 
     if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
     
@@ -718,7 +712,13 @@ ObitUV* getInputData (ObitInfoList *myInput, ObitErr *err)
   ObitUVFullInstantiate (inData, TRUE, err);
   if (err->error) Obit_traceback_val (err, routine, "myInput", inData);
 
-  return inData;
+   /* Set number of vis per IO */
+  nvis = 1000;  /* How many vis per I/O? */
+  nvis =  ObitUVDescSetNVis (inData->myDesc, myInput, nvis);
+  dim[0] = dim[1] = dim[2] = dim[3] = 1;
+  ObitInfoListAlwaysPut (inData->info, "nVisPIO", OBIT_long, dim,  &nvis);
+
+ return inData;
 } /* end getInputData */
 
 /*----------------------------------------------------------------------- */
@@ -738,7 +738,7 @@ void IonCalHistory (ObitInfoList* myInput, ObitUV* inData, ObitErr* err)
     "timeRange",  "subA", "doCalib",  "gainUse",  "doBand ",  "BPVer",  
     "flagVer", "Niter", "minFlux", "gain", 
     "xCells", "yCells", "Robust",  "UVTaper", "UVRange", "WtBox", "WtFunc", 
-    "Catalog", "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize", 
+    "Catalog", "CatDisk","OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize", 
     "solInt", "nZern", "MinPeak", "MaxQual", "autoWindow", "MinPeak", 
     "MaxRMS", "FitDist", "MinRat", "doINEdit",
     NULL};

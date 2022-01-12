@@ -1,6 +1,6 @@
-/* $Id: ObitUVImagerWB.c 129 2009-09-27 22:00:59Z bill.cotton $        */
+/* $Id$       */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2010                                               */
+/*;  Copyright (C) 2010,2011                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -253,7 +253,7 @@ void ObitUVImagerWBClone  (ObitUVImager *inn, ObitUVImager *outt, ObitErr *err)
  * \li Catalog  =    AIPSVZ format catalog for defining outliers, 
  *                   'None'=don't use [default]
  *                   'Default' = use default catalog.
- *                   Assumed in FITSdata disk 1.
+ * \li CatDisk  =    FITS disk for Catalog [def 1]
  * \li OutlierDist = Maximum distance (deg) from center to include outlier fields
  *                   from Catalog. [default 1 deg]
  * \li OutlierFlux = Minimum estimated flux density include outlier fields
@@ -439,7 +439,7 @@ void ObitUVImagerWBImage (ObitUVImager *inn,  olong *field, gboolean doWeight,
 
   /* Multiple (including beams) - do in parallel */
 
-  NumPar = ObitUVImagerWBGetNumPar(inn, err); /* How many to do? */
+  NumPar = ObitUVImagerWBGetNumPar(inn, doBeam, err); /* How many to do? */
 
   /* Get list of images */
   imageList = g_malloc0(in->mosaic->numberImages*sizeof(ObitImage*));
@@ -594,7 +594,7 @@ void ObitUVImagerWBGetInfo (ObitUVImager *inn, gchar *prefix, ObitInfoList *outL
   gchar *parm[] = 
     {"do3D", "FOV", "doFull", "NField", "xCells", "yCells", "nx", "ny", 
      "RAShift", "DecShift", "Sources", 
-     "Catalog",  "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
+     "Catalog", "CatDisk", "OutlierDist", "OutlierFlux", "OutlierSI", "OutlierSize",
      "nuGrid", "nvGrid", "WtBox", "WtFunc", "UVTaper", "Robust", "WtPower",
      NULL};
   gchar *routine = "ObitUVImagerWBGetInfo";
@@ -668,15 +668,19 @@ void ObitUVImagerWBGetInfo (ObitUVImager *inn, gchar *prefix, ObitInfoList *outL
 
 /**
  * Get number of parallel images
- * Target memory usage is 1 GByte.
+ * Target memory usage is 0.75 GByte if 32 bit, 3 GByte if 64.
  * \param inn     Object of interest.
- * \return the number of parallel images.
+  * \param doBeam    If True calculate dirty beams first
+ * \param err       Obit error stack object.
+* \return the number of parallel images.
  */
-olong ObitUVImagerWBGetNumPar (ObitUVImager *inn, ObitErr *err)
+olong ObitUVImagerWBGetNumPar (ObitUVImager *inn, gboolean doBeam, ObitErr *err)
 {
   ObitUVImagerWB *in  = (ObitUVImagerWB*)inn;
   olong out=8;
-  odouble lenVis, numVis, imSize, bufSize;
+  odouble lenVis, numVis, imSize, bufSize, tSize;
+  ObitImage *beam;
+  gchar *routine="ObitUVImagerWBGetNumPar";
 
   if (err->error) return out;
   g_assert(ObitUVImagerWBIsA(in));
@@ -684,13 +688,26 @@ olong ObitUVImagerWBGetNumPar (ObitUVImager *inn, ObitErr *err)
   /* How big are things? */
   numVis = (odouble)ObitImageUtilBufSize (in->uvdata);  /* Size of buffer */
   lenVis = (odouble)in->uvdata->myDesc->lrec;
-  imSize = 2.0 * in->mosaic->images[0]->myDesc->inaxes[0] * 
+  imSize =  in->mosaic->images[0]->myDesc->inaxes[0] * 
     in->mosaic->images[0]->myDesc->inaxes[1];  /* Image plane size */
+  if (doBeam) {
+    /* Beam size */
+    beam = (ObitImage*)in->mosaic->images[0]->myBeam;
+    if (beam!=NULL) imSize += beam->myDesc->inaxes[0] * beam->myDesc->inaxes[1];
+    else imSize *= 4;  /* Assume 4X as large */
+  }
 
   bufSize = numVis*lenVis + imSize;  /* Approx memory (words) per parallel image */
   bufSize *= sizeof(ofloat);         /* to bytes */
 
-  out = 1.0e9 / bufSize;  /* How many fit in a gByte? */
+  if (sizeof(olong*)==4)      tSize = 0.75e9;  /* Use sizeof a pointer type to get 32/64 bit */
+  else if (sizeof(olong*)==8) tSize = 3.0e9;
+  else                        tSize = 1.0e9;  /* Shouldn't happen */
+  out = tSize / bufSize;  /* How many fit in a tSize? */
+
+  /* Better be at least 1 */
+  Obit_retval_if_fail((out>=1), err, out,
+		      "%s: Insufficient memory to make images", routine);
 
   return out;
 } /*  end ObitUVImagerWBGetNumPar */

@@ -1,4 +1,4 @@
-% $Id: OBITdoc.tex 199 2010-06-15 11:39:58Z bill.cotton $ 
+% $Id$ 
 %
 %  OBIT class definitions
 %
@@ -21,7 +21,7 @@
 \vskip 1cm
 \centerline{\ttlfont Merx mollis mortibus nuper}
 \vskip 3cm
-\centerline{\secfont Version: 1.2 \today}
+\centerline{\secfont Version: 1.3 \today}
 \vskip 1cm
 \centerline{\secfont W. D. Cotton}
 \clearpage
@@ -414,7 +414,7 @@ ClassInfo pointer for class with name, base and function pointers.
 \item gint ReferenceCount;\\
  Reference count for object (numbers of pointers attaching).
 \item gchar *name;\\
- Name of object [Optional], this is used in error and informative messages.
+ Name of object [OPTIONAL], this is used in error and informative messages.
 \end{enumerate}
 
 The Obit virtual class structure contains the following members:
@@ -1557,6 +1557,13 @@ ObitTableDesc.
 }
 % Table keyword description
 \begin{keywords}
+\tablekey[{"REVISION"}{J}{revision}{10}{}
+{Revision number of the table definition.}
+]
+% Must be position 2 to index
+\tablekey[{"NO\_IF  "}{J}{numIF}{0}{()}
+{The number of IFs}
+]
 \tablekey[{"ARRAYX  "}{D}{ArrayX}{0.0}{}
 {Array center X coord. (meters, earth center)}
 ]
@@ -1579,12 +1586,12 @@ ObitTableDesc.
 {Reference date as "YYYYMMDD"}
 ]
 \tablekey[{"POLARX  "}{E}{PolarX}{0.0}{}
-{Polar position X (meters) on ref. date}
+{Polar position X (arcsec) on ref. date}
 ]
 \tablekey[{"POLARY  "}{E}{PolarY}{0.0}{}
-{Polar position Y (meters) on ref. date}
+{Polar position Y (arcsec) on ref. date}
 ]
-\tablekey[{"UT1UTC  "}{E}{ut1Utc}{}{}
+\tablekey[{"UT1UTC  "}{E}{ut1Utc}{0.0}{}
 {UT1-UTC  (time sec.)  }
 ]
 \tablekey[{"DATUTC  "}{E}{dataUtc}{0.0}{}
@@ -1593,14 +1600,20 @@ ObitTableDesc.
 \tablekey[{"TIMSYS"}{A}{TimeSys}{"IAT"}{}
 {Time system, 'IAT' or 'UTC'}
 ]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
+\tablekey[{"ARRNAM  "}{A}{ArrName}{"unknown"}{}
 {Array name}
+]
+\tablekey[{"XYZHAND"}{A}{XYZHand}{"RIGHT"}{}
+{Handedness of coordinate system'}
+]
+\tablekey[{"FRAME"}{A}{FRAME}{"UNKNOWN "}{}
+{Reference frame of coordinate system'}
 ]
 \tablekey[{"NUMORB  "}{J}{numOrb}{0}{()}
 {Number of orbital parameters}
 ]
 \tablekey[{"NOPCAL "}{J}{numPCal}{4}{()}
-{Number of polarization calibration constants}
+{Number of polarization calibration constants per IF}
 ]
 \tablekey[{"FREQID  "}{J}{FreqID}{0}{}
 {Denotes the FQ ID for which the AN poln. parms have been modified.}
@@ -1660,13 +1673,19 @@ ObitTableDesc.
 \tablecol[{"STAXOF  "}{"METERS " }{E}{(1)}{staXof}
 {Axis offset}
 ] 
+\tablecol[{"DIAMETER"}{"METERS " }{E}{(1)}{diameter}
+{[OPTIONAL] Diameter of dish}
+] 
+\tablecol[{"BEAMFWHM"}{"DEG/M  " }{E}{(numIF)}{BeamFWHM}
+{[OPTIONAL] FWHM (degrees/meter) of single dish each IF, scales as wavelength}
+] 
 \tablecol[{"POLTYA  "}{"       " }{A}{(4)}{polTypeA}
 {Feed A feed poln. type 'R','L','X','Y', actually only one valid character.}
 ] 
 \tablecol[{"POLAA   "}{"DEGREES " }{E}{(1)}{PolAngA}
 {Feed A feed position angle}
 ] 
-\tablecol[{"POLCALA"}{"       " }{E}{(numPCal)}{PolCalA}
+\tablecol[{"POLCALA"}{"       " }{E}{(numPCal,numIF)}{PolCalA}
 {Feed A poln. cal parameter. }
 ] 
 \tablecol[{"POLTYB "}{"       " }{A}{(4)}{polTypeB}
@@ -1675,7 +1694,7 @@ ObitTableDesc.
 \tablecol[{"POLAB  "}{"DEGREES " }{E}{(1)}{PolAngB}
 {Feed B feed position angle}
 ] 
-\tablecol[{"POLCALB"}{"       " }{E}{(numPCal)}{PolCalB}
+\tablecol[{"POLCALB"}{"       " }{E}{(numPCal,numIF)}{PolCalB}
 {Feed B poln. cal parameter}
 ] 
 \end{columns}
@@ -1683,6 +1702,9 @@ ObitTableDesc.
 % Table modification history
 \begin{history}
 \modhistory[{W. D. Cotton}{02/03/2003}{Revision 1: Copied from AIPS}]
+\modhistory[{W. D. Cotton}{28/07/2010}{Add keywords NO\_IF, XYZHAND,
+FRAME,  columns DIAMETER, BEAMFWHM, redefine numPCal}]
+\modhistory[{W. D. Cotton}{10/03/2016}{Polar X,Y units to arcsec}]
 \end{history}
 \clearpage
 %%%%%%%%%%%%%%% ObitTableAT Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1832,7 +1854,7 @@ ObitTableDesc.
 }
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations.
 }
 ]
@@ -1913,13 +1935,13 @@ ObitTableDesc.
 {The number of antennas}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL "}{J}{numPol}{1}{(1,2)}
 {The number of antennas}
 ]
-\tablekey[{"NO\_IF  "}{J}{numIF}{}{()}
+\tablekey[{"NO\_IF  "}{J}{numIF}{1}{()}
 {The number of IFs}
 ]
-\tablekey[{"NO\_CHAN"}{J}{numChan}{}{()}
+\tablekey[{"NO\_CHAN"}{J}{numChan}{1}{()}
 {Number of frequency channels}
 ]
 \tablekey[{"STRT\_CHN"}{J}{startChan}{1}{}
@@ -2020,14 +2042,13 @@ For non--point components, there are extra parameters:
 of powers of $ln(\nu/\nu_0)$
 \item type + 20 $=>$ following parameters are tabulated spectra
 \end{itemize}
-\item param[4] spectral index (if type$>$10, $<=19$)
-\item param[5] spectral curvature (if type$>$10, $<=19$)
-\item param[6] spectral curvature square (if type$>$10, $<=19$)
-\item param[3+i] spectral channel i (1-rel) (if type$>$20, $<=29$)
+\item param[4] spectral index (if type$>=$10, $<=19$)
+\item param[5] spectral curvature (if type$>=$10, $<=19$)
+\item param[6] spectral curvature square (if type$>=$10, $<=19$)
+\item param[3+i] spectral channel i (1-rel) (if type$>=$20, $<=29$)
 \end{enumerate}
 }
 % Table keyword description
-No Keywords in table.
 \begin{keywords}
 \tablekey[{"NO\_PARMS"}{J}{noParms}{0}{(0,5)}
 {Number of parameters for non point components, usually 0 or 4+}
@@ -2045,6 +2066,9 @@ No Keywords in table.
 \tablecol[{"DELTAY  "}{"DEGREE  "}{E}{(1)}{DeltaY}
 {Component Y position.}
 ] 
+\tablecol[{"DELTAZ  "}{"DEGREE  "}{E}{(1)}{DeltaZ}
+{[OPTIONAL]Component Z position.}
+] 
 \tablecol[{"PARMS   "}{"        "}{E}{(noParms)}{parms}
 {[OPTIONAL] Component parameters;}
 ] 
@@ -2055,6 +2079,73 @@ No Keywords in table.
 \modhistory[{W. D. Cotton}{15/11/2004}{Revision 1: Copied from AIPS}]
 \end{history}
 
+\clearpage
+%%%%%%%%%%%%%%% ObitTableCD Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+%
+\ClassName[{ObitTableCD}]
+ObitTableCD Class
+\tabletitle{ ASDM CalDevice table for uv data}
+% table name
+\tablename{CD}
+\tableintro[
+{This class contains tabular data and allows access.
+"AIPS CD" contains EVLA switched power measurements.TCal measurements
+An ObitTableTY is the front end to a persistent disk resident structure.
+Both FITS and AIPS cataloged data are supported.
+This class is derived from the ObitTable class. }
+]
+\tableover{
+In memory tables are stored in a fashion similar to how they are 
+stored on disk - in large blocks in memory rather than structures.
+Due to the word alignment requirements of some machines, they are 
+stored by order of the decreasing element size: 
+double, float long, int, short, char rather than the logical order.
+The details of the storage in the buffer are kept in the 
+ObitTableDesc.
+}
+% Table keyword description
+\begin{keywords}
+\tablekey[{"NO\_IF"}{J}{nIF}{}{()}
+{The number of IFs}
+]
+% Must be position 2 to index
+\tablekey[{"NO\_POL "}{J}{nPol}{}{(1,2)}
+{The number of polarizations.}
+]
+\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
+{Reference date as "YYYYMMDD"}
+]
+\tablekey[{"REVISION"}{J}{revision}{1}{}
+{Revision number of the table definition.}
+]
+\end{keywords}
+%
+% Table column description
+\begin{columns}
+\tablecol[{"ANTENNA NO."}{"        " }{J}{(1)}{antennaNo}
+{Antenna number}
+]
+\tablecol[{"SUBARRAY   "}{"        " }{J}{(1)}{SubA}
+{Subarray number}
+] 
+\tablecol[{"FREQ ID  "}{"        " }{J}{(1)}{FreqID}
+{Frequency id of scan}
+] 
+\tablecol[{"TCAL\#NO\_POL"}{"KELVIN  " }{E}{(nIF)}{TCal}
+{Cal. equivalent temp  Poln \# NPOL, invalid data fblanked}
+]
+\tablecol[{"SOLCAL\#NO\_POL"}{"KELVIN  " }{E}{(nIF)}{SolCal}
+{Solar Cal. equivalent temp  Poln \# NPOL, invalid data fblanked}
+] 
+\end{columns}
+%
+% Table modification history
+\begin{history}
+\modhistory[{W. D. Cotton}{09/07/2010}{Revision 1: From EVLA memo}]
+\modhistory[{W. D. Cotton}{04/03/2017}{Add SOLCAL1, SOLCAL2}]
+\end{history}
+%
 \clearpage
 %%%%%%%%%%%%%%% ObitTableCL Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -2086,13 +2177,13 @@ ObitTableDesc.
 {Revision number of the table definition}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL  "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations}
 ]
-\tablekey[{"NO\_IF  "}{J}{numIF}{}{()}
+\tablekey[{"NO\_IF  "}{J}{numIF}{1}{()}
 {The number of IFs}
 ]
-\tablekey[{"NO\_ANT  "}{J}{numAnt}{}{}
+\tablekey[{"NO\_ANT  "}{J}{numAnt}{1}{}
 {The number of antennas in table}
 ]
 \tablekey[{"NO\_TERM"}{J}{numTerm}{0}{()}
@@ -2268,6 +2359,72 @@ ObitTableDesc.
 %
 %
 \clearpage
+%%%%%%%%%%%%%%% ObitTableCP Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+%
+\ClassName[{ObitTableCP}]
+ObitTableCP Class
+\tabletitle{AIPS Source polarization spectrum table}
+% table name
+\tablename{CP}
+\tableintro[
+{This class contains tabular data and allows access.
+"AIPS CP" table contains source polarization information
+An ObitTableCP is the front end to a persistent disk resident structure.
+Both FITS and AIPS cataloged data are supported.
+This class is derived from the ObitTable class. }
+]
+\tableover{
+In memory tables are stored in a fashion similar to how they are 
+stored on disk - in large blocks in memory rather than structures.
+Due to the word alignment requirements of some machines, they are 
+stored by order of the decreasing element size: 
+double, float long, int, short, char rather than the logical order.
+The details of the storage in the buffer are kept in the 
+ObitTableDesc.
+}
+% Table keyword description
+\begin{keywords}
+\tablekey[{"TABREV"}{J}{revision}{1}{}
+{Revision number of the table definition}
+]
+\tablekey[{"NO\_IF"}{J}{numIF}{}{()}
+{The number of IFs}
+]
+\tablekey[{"NO\_CHAN"}{J}{numChan}{}{()}
+{Number of frequency channels}
+]
+\tablekey[{"FREQID  "}{J}{FreqID}{0}{}
+{The Frequency ID for which the source parameters are relevant.}
+]
+\end{keywords}
+%
+% Table column description
+\begin{columns}
+\tablecol[{"SOURCE ID"}{"        "}{J}{(1)}{SourID}
+{Source Identifier number }
+] 
+\tablecol[{"I       "}{"Jy      " }{E}{(numChan,numIF)}{IPol}
+{Stokes I flux density  per channel/IF, channel varing fastest.}
+] 
+\tablecol[{"Q       "}{"Jy      " }{E}{(numChan,numIF)}{QPol}
+{Stokes Q flux density  per channel/IF, channel varing fastest.}
+] 
+\tablecol[{"U       "}{"Jy      " }{E}{(numChan,numIF)}{UPol}
+{Stokes U flux density  per channel/IF, channel varing fastest.}
+] 
+\tablecol[{"V       "}{"Jy      " }{E}{(numChan,numIF)}{VPol}
+{Stokes V flux density  per channel/IF, channel varing fastest.}
+] 
+\end{columns}
+%
+% Table modification history
+\begin{history}
+\modhistory[{W. D. Cotton}{08/16/2010}{Revision 1: Copied from AIPS}]
+\end{history}
+%
+%
+\clearpage
 %%%%%%%%%%%%%%% ObitTableCT Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 
 %
@@ -2397,6 +2554,9 @@ ObitTableDesc.
 \tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
 {The center time.}
 ] 
+\tablecol[{"TIME INT"}{"DAYS   " }{D}{(2)}{TimeI}
+{Start and end of validity}
+] 
 \tablecol[{"UT1-UTC"}{"SECONDS " }{D}{(1)}{ut1utc}
 {UT1-UTC}
 ] 
@@ -2409,7 +2569,7 @@ ObitTableDesc.
 \tablecol[{"UT1 TYPE"}{"        " }{A}{(1)}{ut1Type}
 {UT1 TYPE}
 ] 
-\tablecol[{"WOBXY "}{"MILLIARC" }{D}{(2)}{wobXY}
+\tablecol[{"WOBXY "}{"ARCSEC" }{D}{(2)}{wobXY}
 {Earth pole wobble}
 ] 
 \tablecol[{"WOB TYPE"}{"        " }{A}{(1)}{wobType}
@@ -2432,6 +2592,8 @@ ObitTableDesc.
 % Table modification history
 \begin{history}
 \modhistory[{W. D. Cotton}{02/22/2006}{Revision 1: Copied from AIPS}]
+\modhistory[{W. D. Cotton}{10/03/2016}{wobXY units to arcsec}]
+\modhistory[{W. D. Cotton}{02/07/2018}{Add column TIME INT}]
 \end{history}
 %
 
@@ -2477,7 +2639,7 @@ No Keywords in table.
 {Frequency ID number}
 ] 
 \tablecol[{"ANTS   "}{"       " }{J}{(2)}{ants}
-{first and secong antenna  numbers for a baseline, 0=$>$all}
+{first and second antenna  numbers for a baseline, 0=$>$all}
 ] 
 \tablecol[{"TIME RANGE "}{"DAYS    " }{E}{(2)}{TimeRange}
 {Start and end time of data to be flagged }
@@ -2559,11 +2721,14 @@ ObitTableDesc.
 \tablecol[{"SIDEBAND "}{"       " }{J}{(numIF)}{sideBand}
 {Sideband of the IF (-1 =$>$ lower, +1 =$>$ upper), now always written and read as +1}
 ] 
+\tablecol[{"RXCODE  "}{"       " }{A}{(numIF,8)}{RxCode}
+{[OPTIONAL] Band code}
 \end{columns}
 %
 % Table modification history
 \begin{history}
 \modhistory[{W. D. Cotton}{02/03/2002}{Revision 1: Copied from AIPS}]
+\modhistory[{W. D. Cotton}{05/16/2012}{Added RXCODE}]
 \end{history}
 %
 \clearpage
@@ -2597,10 +2762,10 @@ ObitTableDesc.
 {The number of Bands(?).}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL"}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL"}{J}{numPol}{1}{(1,2)}
 {The number of polarizations.}
 ]
-\tablekey[{"NO\_TABS"}{J}{numTabs}{}{()}
+\tablekey[{"NO\_TABS"}{J}{numTabs}{1}{()}
 {The number of ??.}
 ]
 \tablekey[{"TABREV"}{J}{revision}{3}{}
@@ -2682,7 +2847,7 @@ ObitTableDesc.
 {Reference date as "YYYYMMDD"}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations.}
 ]
 \tablekey[{"OBSCODE"}{A}{obscode}{"AA000"}{}
@@ -2704,7 +2869,10 @@ ObitTableDesc.
 {Channel bandwidth.}
 ]
 \tablekey[{"REF\_PIXL "}{E}{refPixl}{}{}
-{Reference Pixel..}
+{Reference frequency Pixel.}
+]
+\tablekey[{"STK\_1   "}{E}{stk1}{-1.0}{}
+{[OPTIONAL]Reference frequency Pixel.}
 ]
 \tablekey[{"NPOLY "}{J}{npoly}{}{()}
 {The number of polynomial terms.}
@@ -2712,7 +2880,7 @@ ObitTableDesc.
 \tablekey[{"TABREV"}{J}{tabrev}{2}{}
 {Revision number of the table definition.}
 ]
-\tablekey[{"REVISION"}{E}{revision}{1.0}{}
+\tablekey[{"REVISION"}{E}{revision}{2.0}{}
 {Revision number of the table definition.}
 ]
 \end{keywords}
@@ -2766,6 +2934,7 @@ ObitTableDesc.
 % Table modification history
 \begin{history}
 \modhistory[{W. D. Cotton}{02/22/2006}{Revision 1: Copied from AIPS}]
+\modhistory[{W. D. Cotton}{10/15/2014}{Revision 2: Add STK\_1}]
 \end{history}
 %
 \clearpage
@@ -2874,7 +3043,7 @@ ObitTableDesc.
 {Observation code}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL"}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL"}{J}{numPol}{1}{(1,2)}
 {The number of polarizations.}
 ]
 \tablekey[{"RDATE   "}{A}{RefDate}{"YYYYMMDD"}{}
@@ -3091,7 +3260,7 @@ ObitTableDesc.
 \tablecol[{"D0 MINOR"}{"DEGREE  "}{E}{(1)}{D0Minor}
 {Deconvolved best minor axis}
 ] 
-\tablecol[{"D0 POSAN"}{"DEGREE  "}{E}{(1)}{D0PosAngle}
+\tablecol[{"D0 POSANG"}{"DEGREE  "}{E}{(1)}{D0PosAngle}
 {Deconvolved best PA}
 ] 
 \tablecol[{"D- MAJOR"}{"DEGREE  "}{E}{(1)}{DmMajor}
@@ -3372,13 +3541,13 @@ ObitTableDesc.
 {Revision number of the table definition.}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL"}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL"}{J}{numPol}{1}{(1,2)}
 {The number of polarizations.}
 ]
-\tablekey[{"NO\_BAND "}{J}{numBand}{}{()}
+\tablekey[{"NO\_BAND "}{J}{numBand}{1}{()}
 {The number of Bands(?).}
 ]
-\tablekey[{"NO\_TONES"}{J}{numTones}{}{()}
+\tablekey[{"NO\_TONES"}{J}{numTones}{1}{()}
 {The number of Tones.}
 ]
 \end{keywords}
@@ -3427,7 +3596,152 @@ ObitTableDesc.
 
 \clearpage
 %
-%%%%%%%%%%%%%%% ObitTablePS Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% ObitTablePD Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+%
+\ClassName[{ObitTablePD}]
+{AIPS Antenna polarization spectrum table for UV data.}
+%\ClassEnum[{obitObjType}
+%{Type of underlying data structures}]
+%\begin{ObitEnum}
+%\ObitEnumItem[{OBITTYPE\_FITS}{FITS file}]
+%\ObitEnumItem[{OBITTYPE\_AIPS}{AIPS catalog data}]
+%\end{ObitEnum}
+
+\tabletitle{AIPS Antenna polarization spectrum table for UV data}
+% table name
+\tablename{PD}
+\tableintro[
+{This class contains tabular data and allows access.
+"AIPS PD" tables contain instrumental polarization parameters for each channel
+An ObitTablePD is the front end to a persistent disk resident structure.
+Both FITS and AIPS cataloged data are supported.
+This class is derived from the ObitTable class. }
+]
+\tableover{
+In memory tables are stored in a fashion similar to how they are 
+stored on disk - in large blocks in memory rather than structures.
+Due to the word alignment requirements of some machines, they are 
+stored by order of the decreasing element size: 
+double, float long, int, short, char rather than the logical order.
+The details of the storage in the buffer are kept in the 
+ObitTableDesc.
+}
+% Table keyword description
+\begin{keywords}
+\tablekey[{"REVISION"}{J}{revision}{1}{}
+{Revision number of the table definition.}
+]
+% Must be position 2 to index
+\tablekey[{"NO\_POL  "}{J}{numPol}{2}{(1,2)}
+{The number of orthogonal polarizations.}
+]
+\tablekey[{"NO\_IF  "}{J}{numIF}{1}{()}
+{The number of IFs}
+]
+\tablekey[{"NO\_CHAN"}{J}{numChan}{}{()}
+{Number of frequency channels}
+]
+\tablekey[{"NO\_ANT  "}{J}{numAnt}{1}{}
+{The number of antennas in table.}
+]
+\tablekey[{"POLTYPE "}{A}{polType}{"        "}{}
+{Polarization parameterazation type, 'ORI-ELP', 'APPROX', 'VLBI',
+'X-Y LIN }
+]
+\end{keywords}
+%
+% Table column description
+\begin{columns}
+\tablecol[{"ANTENNA"}{"       " }{J}{(1)}{antNo}
+{Antenna number }
+] 
+\tablecol[{"SUBARRAY"}{"        "}{J}{(1)}{SubA}
+{Subarray number.}
+] 
+\tablecol[{"FREQ ID"}{"        "}{J}{(1)}{FreqID}
+{Frequency ID}
+] 
+\tablecol[{"REFANT"}{"        "}{J}{(1)}{RefAnt}
+{Reference antenna Poln \# NO\_POL }
+] 
+\tablecol[{"P\_DIFF"}{"DEGREE  "}{E}{(numChan,numIF)}{RLPhase}
+{ Right-left phase difference per channel/IF, channel varing fastest.}
+] 
+\tablecol[{"REAL \#NO\_POL"}{"       " }{E}{(numChan,numIF)}{Real}
+{First parameter, real or ellipticity per channel/IF for poln  \# NO\_POL, 
+channel varing fastest.}
+] 
+\tablecol[{"IMAG \#NO\_POL"}{"        "}{E}{(numChan,numIF)}{Imag}
+{Second parameter, imaginary or orientation per channel/IF for poln  \# NO\_POL, 
+channel varing fastest.}
+] 
+\end{columns}
+%
+% Table modification history
+\begin{history}
+\modhistory[{W. D. Cotton}{08/16/2010}{Revision 1: Copied from AIPS}]
+\end{history}
+%
+\clearpage
+%%%%%%%%%%%%%%% ObitTablePO Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+%
+\ClassName[{ObitTablePO}]
+ObitTablePO Class
+\tabletitle{Planetary position table for uv data}
+% table name
+\tablename{PO}
+\tableintro[
+{This class contains tabular data and allows access.
+"AIPS PO" contains position information for solar system objects.
+An ObitTablePC is the front end to a persistent disk resident structure.
+Both FITS and AIPS cataloged data are supported.
+This class is derived from the ObitTable class. }
+]
+\tableover{
+In memory tables are stored in a fashion similar to how they are 
+stored on disk - in large blocks in memory rather than structures.
+Due to the word alignment requirements of some machines, they are 
+stored by order of the decreasing element size: 
+double, float long, int, short, char rather than the logical order.
+The details of the storage in the buffer are kept in the 
+ObitTableDesc.
+}
+% Table keyword description
+\begin{keywords}
+\tablekey[{"TABREV"}{J}{revision}{1}{}
+{Revision number of the table definition.}
+]
+\tablekey[{"RDATE   "}{A}{RefDate}{"YYYYMMDD"}{}
+{Reference date as "YYYYMMDD"}
+]
+\end{keywords}
+%
+% Table column description
+\begin{columns}
+\tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
+{The center time.}
+] 
+\tablecol[{"SOURCE\_ID  "}{"        " }{J}{(1)}{SourID}
+{Source ID number}
+] 
+\tablecol[{"SOURCE RA"}{"DEGREES " }{D}{(1)}{RA}
+{Right ascension at mean EPOCH (actually equinox) }
+] 
+\tablecol[{"SOURCE DEC"}{"DEGREES " }{D}{(1)}{Dec}
+{Declination at mean EPOCH (actually equinox) }
+] 
+\tablecol[{"SOURCE DISTANCE"}{"AU      " }{D}{(1)}{Dist}
+{Declination at mean EPOCH (actually equinox) }
+] 
+\end{columns}
+%
+% Table modification history
+\begin{history}
+\modhistory[{W. D. Cotton}{02/25/2015}{Revision 1: Copied from AIPS}]
+\end{history}
+%%%%%%%%%%%%%%% ObitTablePO Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 
 %
 \ClassName[{ObitTablePS}]
@@ -3509,8 +3823,113 @@ ObitTableDesc.
 %
 \clearpage
 
+\clearpage
+%%%%%%%%%%%%%%% ObitTablePT Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+%
+\ClassName[{ObitTablePT}]
+ObitTablePT Class
+\tabletitle{Antenna PoinTing table for uv data}
+% table name
+\tablename{PT}
+\tableintro[
+{This class contains tabular data and allows access.
+"AIPS PT" contains a series of antenna pointing records.
+Generated from ALMA documentation which is error filled and vague.
+An ObitTablePT is the front end to a persistent disk resident structure.
+Both FITS and AIPS cataloged data are supported.
+This class is derived from the ObitTable class. }
+]
+\tableover{
+In memory tables are stored in a fashion similar to how they are 
+stored on disk - in large blocks in memory rather than structures.
+Due to the word alignment requirements of some machines, they are 
+stored by order of the decreasing element size: 
+double, float long, int, short, char rather than the logical order.
+The details of the storage in the buffer are kept in the 
+ObitTableDesc.
+}
+% Table keyword description
+\begin{keywords}
+\tablekey[{"TABREV"}{J}{revision}{1}{}
+{Revision number of the table definition.}
+]
+\tablekey[{"NO\_TERM"}{J}{numTerm}{0}{()}
+{The number of terms in model polynomial}
+]
+\tablekey[{"RDATE   "}{A}{RefDate}{"YYYYMMDD"}{}
+{Reference date as "YYYYMMDD"}
+]
+\end{keywords}
+%
+% Table column description
+\begin{columns}
+\tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
+{The center time wrt RefDate}
+] 
+\tablecol[{"TIME INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
+{Interval over which pointing valid.}
+] 
+\tablecol[{"ANTENNA NO."}{"        " }{J}{(1)}{antNo}
+{Antenna number}
+]
+\tablecol[{"ENCODER"}{"DEGREES " }{E}{(2)}{Encoder}
+{Encoder values in Az,El}
+] 
+\tablecol[{"POINTINGTRACKING"}{"       " }{L}{(1)}{pointingTracking}
+{The antenna was in tracking mode?}
+] 
+\tablecol[{"USEPOLYNOMIALS"}{"       " }{L}{(1)}{usePolynomials}
+{Use polynomials expansions?}
+] 
+\tablecol[{"TIMEORIGIN"}{"DAYS    " }{D}{(1)}{timeOrigin}
+{The value used as origin in the polynomials expansions}
+] 
+\tablecol[{"POINTINGDIRECTION"}{"DEGREES "}{D}{(2,numTerm)}{PointingDirection}
+{The commanded pointing direction in Az,El per term}
+] 
+\tablecol[{"TARGET"}{"DEGREES " }{D}{(2,numTerm)}{target}
+{The direction of the field center in Az,El per term. }
+] 
+\tablecol[{"OFFSET"}{"DEGREES " }{D}{(2,numTerm)}{offset}
+{The offset of the pointing direction at the time of the visibility 
+dump (center time, optimally) from the field direction.}
+] 
+\tablecol[{"POINTINGMODELID"}{" " }{J}{(1)}{pointingModelId}
+{Refers to a collection of rows in PointingModelTable.}
+] 
+\tablecol[{"OVERTHETOP"}{" " }{L}{(1)}{overTheTop}
+{[OPTIONAL] Pointing at elevations larger than 90 degrees (true) or lower (false). }
+] 
+\tablecol[{"SOURCEOFFSET"}{" " }{D}{(2,numTerm)}{SourceOffset}
+{[OPTIONAL] Sources offset in Az,El per term of the polynomia). }
+] 
+\tablecol[{"SOURCEREFERENCECODEOFF"}{" " }{J}{(1)}{SourceReferenceCodeOffset}
+{[OPTIONAL] The direction reference code associated to the source offset.}
+] 
+\tablecol[{"SOURCEEQUINOXOFFSET"}{"DAYS   " }{D}{(1)}{sourceEquinoxOffset}
+{[OPTIONAL] The equinox information (if needed by sourceReferenceCode). }
+] 
+\tablecol[{"SAMPLEDTIMEINTERVAL"}{"DAYS   " }{D}{(2)}{sampledTimeInterval}
+{[OPTIONAL] An array of start, end of interval which must be given explicitly if
+the data are irregularily sampled.}
+] 
+\tablecol[{"ATMOSPHERICCORRECTION"}{"DEGREES " }{E}{(2)}{AtmosphericCorrection}
+{[OPTIONAL] This is the correction applied to the commanded position in Az,El to take 
+into account refraction and any other atmospheric effects.  This term will always 
+be zero if there is no atmosphere. For ALMA this is the atmospheric refraction 
+correction and will result in a correction in just the elevation axis. }
+] 
+\end{columns}
+%
+% Table modification history
+\begin{history}
+\modhistory[{W. D. Cotton}{06/01/2016}{Revision 1: Invented from ASDM usage}]
+\end{history}
+
+\clearpage
 %%%%%%%%%%%%%%% ObitTableSN Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Obit base class
+% 
 %
 \ClassName[{ObitTableSN}]
 {SolutioN table for UV data.}
@@ -3549,7 +3968,7 @@ ObitTableDesc.
 }
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL  "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations.
 }
 ]
@@ -3557,7 +3976,7 @@ ObitTableDesc.
 {The number of IFs
 }
 ]
-\tablekey[{"NO\_ANT  "}{J}{numAnt}{}{}
+\tablekey[{"NO\_ANT  "}{J}{numAnt}{1}{}
 {The number of antennas in table.
 }
 ]
@@ -3632,6 +4051,7 @@ ObitTableDesc.
 % Table modification history
 \begin{history}
 \modhistory[{W. D. Cotton}{28/02/2002}{Revision 1: Copied from AIPS}]
+\modhistory[{W. D. Cotton(from M. Kettenis)}{26/10/2015}{Revision 11: Add dispersive delay}]
 \end{history}
 %
 \clearpage
@@ -3722,6 +4142,12 @@ ObitTableDesc.
 \tablecol[{"DECAPP  "}{"DEGREES " }{D}{(1)}{DecApp}
 {Apparent Declination}
 ] 
+\tablecol[{"RAOBS   "}{"DEGREES " }{D}{(1)}{RAObs}
+{[OPTIONAL] Observed Right ascension }
+] 
+\tablecol[{"DECOBS  "}{"DEGREES " }{D}{(1)}{DecObs}
+{[OPTIONAL] Observed Declination}
+] 
 \tablecol[{"LSRVEL "}{"M/SEC    " }{D}{(numIF)}{LSRVel}
 {LSR velocity per IF }
 ] 
@@ -3739,8 +4165,92 @@ ObitTableDesc.
 % Table modification history
 \begin{history}
 \modhistory[{W. D. Cotton}{09/03/2003}{Revision 1: Copied from AIPS}]
+\modhistory[{W. D. Cotton}{08/29/2012}{Revision 2: Add RAOBS, DECOBS}]
 \end{history}
 %
+%
+\clearpage
+%%%%%%%%%%%%%%% ObitTableSY Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+%
+\ClassName[{ObitTableSY}]
+ObitTableSY Class
+\tabletitle{ SysPower table for uv data}
+% table name
+\tablename{SY}
+\tableintro[
+{This class contains tabular data and allows access.
+"AIPS SY" contains EVLA switched power measurements.
+An ObitTableSY is the front end to a persistent disk resident structure.
+Both FITS and AIPS cataloged data are supported.
+This class is derived from the ObitTable class. }
+]
+\tableover{
+In memory tables are stored in a fashion similar to how they are 
+stored on disk - in large blocks in memory rather than structures.
+Due to the word alignment requirements of some machines, they are 
+stored by order of the decreasing element size: 
+double, float long, int, short, char rather than the logical order.
+The details of the storage in the buffer are kept in the 
+ObitTableDesc.
+}
+% Table keyword description
+\begin{keywords}
+\tablekey[{"NO\_IF"}{J}{nIF}{}{()}
+{The number of IFs}
+]
+% Must be position 2 to index
+\tablekey[{"NO\_POL "}{J}{nPol}{}{(1,2)}
+{The number of polarizations.}
+]
+\tablekey[{"NO\_ANT  "}{J}{nAnt}{}{}
+{The number of antennas in table (max. ant. number in file).
+}
+]
+\tablekey[{"REVISION"}{J}{revision}{1}{}
+{Revision number of the table definition.}
+]
+\end{keywords}
+%
+% Table column description
+\begin{columns}
+\tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
+{The center time.}
+] 
+\tablecol[{"TIME INTERVAL "}{"DAYS   " }{E}{(1)}{TimeI}
+{Time interval of record }
+] 
+\tablecol[{"CAL TYPE "}{"        " }{J}{(1)}{CalType}
+{[OPTIONAL] Calibration type 0=NOISE\_TUBE, 1=SOLAR\_FILTER, 2=Other}
+]
+\tablecol[{"SOURCE ID  "}{"        " }{J}{(1)}{SourID}
+{Source ID number}
+] 
+\tablecol[{"ANTENNA NO."}{"        " }{J}{(1)}{antennaNo}
+{Antenna number}
+]
+\tablecol[{"SUBARRAY   "}{"        " }{J}{(1)}{SubA}
+{Subarray number}
+] 
+\tablecol[{"FREQ ID  "}{"        " }{J}{(1)}{FreqID}
+{Frequency id of scan}
+] 
+\tablecol[{"POWER DIF\#NO\_POL"}{"    " }{E}{(nIF)}{PwrDif}
+{ (P\_on-P\_off)*G  Poln \# NPOL ), invalid data fblanked}
+] 
+\tablecol[{"POWER SUM\#NO\_POL"}{"    " }{E}{(nIF)}{PwrSum}
+{(P\_on+P\_off)*G  Poln \# NPOL ), invalid data fblanked}
+] 
+\tablecol[{"POST GAIN\#NO\_POL"}{"     "}{E}{(nIF)}{Gain}
+{Post switched power gain Poln \# NPOL), invalid data fblanked}
+] 
+\end{columns}
+%
+% Table modification history
+\begin{history}
+\modhistory[{W. D. Cotton}{09/07/2010}{Revision 1: From EVLA memo}]
+\modhistory[{W. D. Cotton}{06/01/2017}{Add optional column ``CAL TYPE''}]
+\end{history}
 %
 \clearpage
 %%%%%%%%%%%%%%% ObitTableTY Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -3773,7 +4283,7 @@ ObitTableDesc.
 {The number of IFs}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations.}
 ]
 \tablekey[{"REVISION"}{J}{revision}{10}{}
@@ -3846,16 +4356,16 @@ ObitTableDesc.
 \tablekey[{"REVISION"}{J}{revision}{1}{}
 {Revision number of the table definition}
 ]
-\tablekey[{"BM\_MAJOR"}{E}{BeamMajor}{}{}
+\tablekey[{"BM\_MAJOR"}{E}{BeamMajor}{0.0125}{}
 {Restoring beam major axis in deg.}
 ]
-\tablekey[{"BM\_MINOR"}{E}{BeamMinor}{}{}
+\tablekey[{"BM\_MINOR"}{E}{BeamMinor}{0.0125}{}
 {Restoring beam minor axis in deg.}
 ]
-\tablekey[{"BM\_PA"}{E}{BeamPA}{}{}
+\tablekey[{"BM\_PA"}{E}{BeamPA}{0.0}{}
 {Restoring beam position angle of major axis in deg.}
 ]
-\tablekey[{"SORTORT"}{J}{SortOrder}{}{}
+\tablekey[{"SORTORT"}{J}{SortOrder}{0}{}
 {Column number for sort (neg -> descending)}
 ]
 \tablekey[{"NUM\_INDE"}{J}{numIndexed}{1}{}
@@ -3867,7 +4377,7 @@ ObitTableDesc.
 \tablekey[{"INDEX01"}{J}{index01}{1}{}
 {First entry for RA=01 h}
 ]
-\tablekey[{"INDEX02"}{J}{index02}1{}{}
+\tablekey[{"INDEX02"}{J}{index02}{1}{}
 {First entry for RA=02 h}
 ]
 \tablekey[{"INDEX03"}{J}{index03}{1}{}
@@ -4086,9 +4596,6 @@ ObitTableDesc.
 \begin{keywords}
 \tablekey[{"TABREV"}{J}{revision}{3}{}
 {Revision number of the table definition.}
-]
-\tablekey[{"OBSCODE"}{A}{obscode}{"AA000"}{}
-{Observation code}
 ]
 \tablekey[{"RDATE   "}{A}{RefDate}{"YYYYMMDD"}{}
 {Reference date as "YYYYMMDD"}
@@ -4425,20 +4932,29 @@ ObitTableDesc.
 {Table format revision number}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL  "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations}
+]
+\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
+{[OPTIONAL] Number of frequency bands }
+]
+\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
+{[OPTIONAL] Number of frequency channels}
+]
+\tablekey[{"NO\_ANT  "}{J}{numAnt}{2}{()}
+{The maximum antenna number}
+]
+\tablekey[{"NO\_BACH "}{J}{numBach}{1}{()}
+{The number of spectral channels tabulated}
+]
+\tablekey[{"STRT\_CHN"}{J}{strtChn}{1}{()}
+{Data channel number (1-rel) of first channel in the table}
 ]
 \tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
 {Number of Stokes parameters}
 ]
 \tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
 {First Stokes parameter}
-]
-\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
-]
-\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
-{Number of frequency channels}
 ]
 \tablekey[{"REF\_FREQ"}{D}{ref\_freq}{1.0}{}
 {Reference frequency (Hz)}
@@ -4452,21 +4968,6 @@ ObitTableDesc.
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
 ]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
-]
-\tablekey[{"NO\_ANT  "}{J}{numAnt}{}{()}
-{The maximum antenna number}
-]
-\tablekey[{"NO\_BACH "}{J}{numBach}{}{()}
-{The number of spectral channels tabulated}
-]
-\tablekey[{"STRT\_CHN"}{J}{strtChn}{}{()}
-{Data channel number (1-rel) of first channel in the table}
-]
 \end{keywords}
 %
 % Table column description
@@ -4474,7 +4975,7 @@ ObitTableDesc.
 \tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
 {The center time}
 ] 
-\tablecol[{"TIME INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
+\tablecol[{"TIME\_INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
 {Time interval.}
 ] 
 \tablecol[{"SOURCE\_ID"}{"        "}{J}{(1)}{SourID}
@@ -4543,17 +5044,20 @@ ObitTableDesc.
 {Table format revision number}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL  "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations}
+]
+\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
+{[OPTIONAL] Number of frequency bands }
+]
+\tablekey[{"NO\_ANT  "}{J}{numAnt}{}{()}
+{The maximum antenna number}
 ]
 \tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
 {Number of Stokes parameters}
 ]
 \tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
 {First Stokes parameter}
-]
-\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
 ]
 \tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
 {Number of frequency channels}
@@ -4570,15 +5074,6 @@ ObitTableDesc.
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
 ]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
-]
-\tablekey[{"NO\_ANT  "}{J}{numAnt}{}{()}
-{The maximum antenna number}
-]
 \end{keywords}
 %
 % Table column description
@@ -4586,7 +5081,7 @@ ObitTableDesc.
 \tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
 {The center time}
 ] 
-\tablecol[{"TIME INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
+\tablecol[{"TIME\_INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
 {Time interval.}
 ] 
 \tablecol[{"SOURCE\_ID"}{"        "}{J}{(1)}{SourID}
@@ -4670,14 +5165,14 @@ ObitTableDesc.
 \tablekey[{"TABREV  "}{J}{tabrev}{1}{}
 {Table format revision number}
 ]
+\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
+{[OPTIONAL] Number of frequency bands }
+]
 \tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
 {Number of Stokes parameters}
 ]
 \tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
 {First Stokes parameter}
-]
-\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
 ]
 \tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
 {Number of frequency channels}
@@ -4693,12 +5188,6 @@ ObitTableDesc.
 ]
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
-]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
 ]
 \end{keywords}
 %
@@ -4866,19 +5355,22 @@ ObitTableDesc.
 ]
 % Must be position 2 to index
 \tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
-{The number of polarizations}
+{[OPTIONAL] The number of polarizations}
+]
+\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
+{[OPTIONAL] Number of frequency bands }
+]
+\tablekey[{"NO\_TABS"}{J}{numTabs}{}{()}
+{The number of tabulated terms}
+]
+\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
+{Number of frequency channels}
 ]
 \tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
 {Number of Stokes parameters}
 ]
 \tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
 {First Stokes parameter}
-]
-\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
-]
-\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
-{Number of frequency channels}
 ]
 \tablekey[{"REF\_FREQ"}{D}{ref\_freq}{1.0}{}
 {Reference frequency (Hz)}
@@ -4891,15 +5383,6 @@ ObitTableDesc.
 ]
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
-]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
-]
-\tablekey[{"NO\_TABS"}{J}{numTabs}{}{()}
-{The number of tabulated terms}
 ]
 \end{keywords}
 %
@@ -4977,8 +5460,8 @@ ObitTableDesc.
 {Table format revision number}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
-{The number of polarizations}
+\tablekey[{"NO\_POL  "}{J}{numPol}{1}{(1,2)}
+{[OPTIONAL] The number of polarizations}
 ]
 \tablekey[{"NPOLY "}{J}{npoly}{1}{()}
 {Number of polynomial parameters}
@@ -4990,7 +5473,7 @@ ObitTableDesc.
 {First Stokes parameter}
 ]
 \tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
+{[OPTIONAL] Number of frequency bands }
 ]
 \tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
 {Number of frequency channels}
@@ -5001,17 +5484,11 @@ ObitTableDesc.
 \tablekey[{"CHAN\_BW "}{D}{chan\_bw}{1.0}{}
 {Channel bandwidth (Hz)}
 ]
-\tablekey[{"REF\_PIXL"}{J}{ref\_pixl}{1.0}{}
+\tablekey[{"REF\_PIXL"}{D}{ref\_pixl}{1.0}{}
 {Reference frequency bin}
 ]
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
-]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
 ]
 \end{keywords}
 %
@@ -5068,10 +5545,10 @@ ObitTableDesc.
 %
 \clearpage
 
-%%%%%%%%%%%%%%% ObitTableIDI\_PHASE_CAL Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% ObitTableIDI\_PHASE-CAL Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 
 %
-\ClassName[{ObitTableIDI\_PHASE\_CAL}]
+\ClassName[{ObitTableIDI\_PHASE-CAL}]
 
 \tabletitle{IDI UV data Interferometer Model Table}
 % table name
@@ -5079,7 +5556,7 @@ ObitTableDesc.
 \tableintro[
 {This class contains tabular data and allows access.
 This table is part of the IDI uv data format.
-"IDI\_PHASE\_CAL" contains instrumental phase calibration data
+"IDI\_PHASE-CAL" contains instrumental phase calibration data
 Only FITS cataloged data are supported.
 This class is derived from the ObitTable class.}
 ]
@@ -5098,20 +5575,23 @@ ObitTableDesc.
 {Table format revision number}
 ]
 % Must be position 2 to index
-\tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
+\tablekey[{"NO\_POL  "}{J}{numPol}{1}{(1,2)}
 {The number of polarizations}
+]
+\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
+{[OPTIONAL] Number of frequency bands }
+]
+\tablekey[{"NO\_TABS "}{J}{numTones}{1}{()}
+{Number of tones used}
+]
+\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
+{Number of frequency channels}
 ]
 \tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
 {Number of Stokes parameters}
 ]
 \tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
 {First Stokes parameter}
-]
-\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
-]
-\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
-{Number of frequency channels}
 ]
 \tablekey[{"REF\_FREQ"}{D}{ref\_freq}{1.0}{}
 {Reference frequency (Hz)}
@@ -5124,15 +5604,6 @@ ObitTableDesc.
 ]
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
-]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
-]
-\tablekey[{"NO\_TABS "}{J}{numTones}{1}{()}
-{Number of tones used}
 ]
 \end{keywords}
 %
@@ -5213,17 +5684,17 @@ ObitTableDesc.
 \tablekey[{"TABREV  "}{J}{tabrev}{1}{}
 {Table format revision number}
 ]
+\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
+{[OPTIONAL] Number of frequency bands }
+]
+\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
+{Number of frequency channels}
+]
 \tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
 {Number of Stokes parameters}
 ]
 \tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
 {First Stokes parameter}
-]
-\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
-]
-\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
-{Number of frequency channels}
 ]
 \tablekey[{"REF\_FREQ"}{D}{ref\_freq}{1.0}{}
 {Reference frequency (Hz)}
@@ -5237,15 +5708,15 @@ ObitTableDesc.
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
 ]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
-]
 \end{keywords}
 %
 % Table column description
 \begin{columns}
 \tablecol[{"SOURCE\_ID"}{"       " }{J}{(1)}{SourID}
-{Source ID}
+{[OPTIONAL] Source ID}
+] 
+\tablecol[{"ID\_NO."}{"       " }{J}{(1)}{VLBAID}
+{[OPTIONAL] Non conforming VLBA version of Source ID}
 ] 
 \tablecol[{"SOURCE  "}{"       " }{A}{(16)}{Source}
 {Source name }
@@ -5284,7 +5755,10 @@ ObitTableDesc.
 {Declination at mean EPOCH (actually equinox) }
 ] 
 \tablecol[{"EQUINOX  "}{"       " }{A}{(8)}{Equinox}
-{Mean Epoch (really equinox) for position in yr. since year 0.0}
+{[OPTIONAL] Mean Epoch (really equinox) for position in yr. since year 0.0}
+] 
+\tablecol[{ "EPOCH   "}{"       " }{A}{(8)}{VLBAEquinox}
+{[OPTIONAL] VLBA screwup Mean Epoch (really equinox) for position in yr. since year 0.0}
 ] 
 \tablecol[{"RAAPP   "}{"DEGREES " }{D}{(1)}{RAApp}
 {Apparent Right ascension }
@@ -5358,19 +5832,19 @@ ObitTableDesc.
 ]
 % Must be position 2 to index
 \tablekey[{"NO\_POL  "}{J}{numPol}{}{(1,2)}
-{The number of polarizations}
+{[OPTIONAL] The number of polarizations}
+]
+\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
+{[OPTIONAL] Number of frequency bands }
+]
+\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
+{Number of frequency channels}
 ]
 \tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
 {Number of Stokes parameters}
 ]
 \tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
 {First Stokes parameter}
-]
-\tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
-{Number of frequency bands }
-]
-\tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
-{Number of frequency channels}
 ]
 \tablekey[{"REF\_FREQ"}{D}{ref\_freq}{1.0}{}
 {Reference frequency (Hz)}
@@ -5384,12 +5858,6 @@ ObitTableDesc.
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
 ]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
-]
 \end{keywords}
 %
 % Table column description
@@ -5397,7 +5865,7 @@ ObitTableDesc.
 \tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
 {The center time}
 ] 
-\tablecol[{"TIME INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
+\tablecol[{"TIME\_INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
 {Time interval.}
 ] 
 \tablecol[{"SOURCE\_ID"}{"        "}{J}{(1)}{SourID}
@@ -5663,13 +6131,31 @@ ObitTableDesc.
 % Table column description
 \begin{columns}
 \tablecol[{"UU      "}{"SECONDS " }{E}{(1)}{uu}
-{U component of baseline.}
+{[OPTIONAL] U component of baseline. Unspecified projection}
 ] 
 \tablecol[{"VV      "}{"SECONDS " }{E}{(1)}{vv}
-{V component of baseline.}
+{[OPTIONAL] V component of baseline. Unspecified projection}
 ] 
 \tablecol[{"WW      "}{"SECONDS " }{E}{(1)}{ww}
-{W component of baseline.}
+{[OPTIONAL] W component of baseline. Unspecified projection}
+] 
+\tablecol[{"UU---SIN"}{"SECONDS " }{E}{(1)}{uusin}
+{[OPTIONAL] U component of baseline. Sine projection}
+] 
+\tablecol[{"VV---SIN"}{"SECONDS " }{E}{(1)}{vvsin}
+{[OPTIONAL] V component of baseline. Sine projection}
+] 
+\tablecol[{"WW---SIN"}{"SECONDS " }{E}{(1)}{wwsin}
+{[OPTIONAL] W component of baseline. Sine projection}
+] 
+\tablecol[{"UU---NCP"}{"SECONDS " }{E}{(1)}{uuncp}
+{[OPTIONAL] U component of baseline. NCP projection}
+] 
+\tablecol[{"VV---NCP"}{"SECONDS " }{E}{(1)}{vvncp}
+{[OPTIONAL] V component of baseline. NCP projection}
+] 
+\tablecol[{"WW---NCP"}{"SECONDS " }{E}{(1)}{wwncp}
+{[OPTIONAL] W component of baseline. NCP projection}
 ] 
 \tablecol[{"DATE    "}{"DAYS    " }{D}{(1)}{date}
 {Julian Date}
@@ -5681,13 +6167,16 @@ ObitTableDesc.
 {Interferometer baseline as ant 1*256+ant1 (1-rel).}
 ] 
 \tablecol[{"ARRAY   "}{"        " }{J}{(1)}{Array}
-{Array number (1-rel)}
+{[OPTIONAL] Array number (1-rel)}
 ] 
 \tablecol[{"FILTER  "}{"        " }{J}{(1)}{Filter}
 {[OPTIONAL]  VLBA Filter number.}
 ] 
 \tablecol[{"SOURCE\_ID"}{"        " }{J}{(1)}{Source}
 {[OPTIONAL] Source ID, index into SOURCE table.}
+] 
+\tablecol[{"SOURCE"}{"        " }{J}{(1)}{VLBASource}
+{[OPTIONAL] Hack for nonstandard VLBA usage Source ID, index into SOURCE table.}
 ] 
 \tablecol[{"FREQID  "}{"        " }{J}{(1)}{FreqID}
 {[OPTIONAL] Frequency group ID.}
@@ -5745,17 +6234,20 @@ ObitTableDesc.
 \tablekey[{"TABREV  "}{J}{tabrev}{2}{}
 {Table format revision number}
 ]
-\tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
-{Number of Stokes parameters}
-]
-\tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
-{First Stokes parameter}
+\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
+{Reference date as "YYYY-MM-DD"}
 ]
 \tablekey[{"NO\_BAND "}{J}{no\_band}{1}{()}
 {Number of frequency bands }
 ]
 \tablekey[{"NO\_CHAN "}{J}{no\_chan}{1}{}
 {Number of frequency channels}
+]
+\tablekey[{"NO\_STKD "}{J}{no\_stkd}{1}{}
+{Number of Stokes parameters}
+]
+\tablekey[{"STK\_1   "}{J}{stk\_1}{-1}{}
+{First Stokes parameter}
 ]
 \tablekey[{"REF\_FREQ"}{D}{ref\_freq}{1.0}{}
 {Reference frequency (Hz)}
@@ -5769,12 +6261,6 @@ ObitTableDesc.
 \tablekey[{"OBSCODE "}{A}{obscode}{"    "}{}
 {Observation project code}
 ]
-\tablekey[{"ARRNAM  "}{A}{ArrName}{}{}
-{Array name}
-]
-\tablekey[{"RDATE   "}{A}{RefDate}{"YYYY-MM-DD"}{}
-{Reference date as "YYYY-MM-DD"}
-]
 \end{keywords}
 %
 % Table column description
@@ -5782,7 +6268,7 @@ ObitTableDesc.
 \tablecol[{"TIME    "}{"DAYS   " }{D}{(1)}{Time}
 {The center time}
 ] 
-\tablecol[{"TIME INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
+\tablecol[{"TIME\_INTERVAL"}{"DAYS    "}{E}{(1)}{TimeI}
 {Time interval.}
 ] 
 \tablecol[{"ANTENNA\_NO"}{"       " }{J}{(1)}{antNo}
@@ -5814,6 +6300,221 @@ ObitTableDesc.
 % Table modification history
 \begin{history}
 \modhistory[{W. D. Cotton}{02/09/2009}{Revision 1: Initial definition}]
+\end{history}
+%
+\clearpage
+%%%%%%%%%%%%%%% ObitTableFS Class %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+\ClassName[{ObitTableFS}]
+ObitTableFS Class 
+\tabletitle{Spectral source catalog file}
+% table name
+\tablename{FS}
+\tableintro[
+{This class contains tabular data and allows access.
+"AIPS FS" contains a catalog of sources allowing spectral information.
+The table contains an index in the INDEX?? keywords that give the
+first table row number (1-rel) for a given hour of RA.
+An ObitTableFS is the front end to a persistent disk resident structure.
+Both FITS and AIPS cataloged data are supported.
+This class is derived from the ObitTable class. }
+]
+\tableover{
+In memory tables are stored in a fashion similar to how they are 
+stored on disk - in large blocks in memory rather than structures.
+Due to the word alignment requirements of some machines, they are 
+stored by order of the decreasing element size: 
+double, float long, int, short, char rather than the logical order.
+The details of the storage in the buffer are kept in the 
+ObitTableDesc.
+}
+% Table keyword description
+\begin{keywords}
+\tablekey[{"REVISION"}{J}{revision}{1}{}
+{Revision number of the table definition}
+]
+\tablekey[{"NO\_CH"}{J}{numCh}{}{()}
+{The number of spectral channels}
+]
+\tablekey[{"BM\_MAJOR"}{E}{BeamMajor}{}{}
+{Restoring beam major axis in deg.}
+]
+\tablekey[{"BM\_MINOR"}{E}{BeamMinor}{}{}
+{Restoring beam minor axis in deg.}
+]
+\tablekey[{"BM\_PA"}{E}{BeamPA}{}{}
+{Restoring beam position angle of major axis in deg.}
+]
+\tablekey[{"VEL\_REF"}{E}{VelRef}{}{}
+{Velocity at reference channel (m/s).}
+]
+\tablekey[{"VEL\_RPIX"}{E}{VelRPix}{}{}
+{Velocity reference channel (1=rel).}
+]
+\tablekey[{"VEL\_DEL"}{E}{VelDelt}{}{}
+{Velocity channel width (m/s).}
+]
+\tablekey[{"SORTORT"}{J}{SortOrder}{}{}
+{Column number for sort (neg -> descending)}
+]
+\tablekey[{"NUM\_INDE"}{J}{numIndexed}{1}{}
+{Number of rows in table when indexed}
+]
+\tablekey[{"INDEX00"}{J}{index00}{1}{}
+{First entry for RA=00 h}
+]
+\tablekey[{"INDEX01"}{J}{index01}{1}{}
+{First entry for RA=01 h}
+]
+\tablekey[{"INDEX02"}{J}{index02}1{}{}
+{First entry for RA=02 h}
+]
+\tablekey[{"INDEX03"}{J}{index03}{1}{}
+{First entry for RA=03 h}
+]
+\tablekey[{"INDEX04"}{J}{index04}{1}{}
+{First entry for RA=04 h}
+]
+\tablekey[{"INDEX05"}{J}{index05}{1}{}
+{First entry for RA=05 h}
+]
+\tablekey[{"INDEX06"}{J}{index06}{1}{}
+{First entry for RA=06 h}
+]
+\tablekey[{"INDEX07"}{J}{index07}{1}{}
+{First entry for RA=07 h}
+]
+\tablekey[{"INDEX08"}{J}{index08}{1}{}
+{First entry for RA=08 h}
+]
+\tablekey[{"INDEX09"}{J}{index09}{1}{}
+{First entry for RA=09 h}
+]
+\tablekey[{"INDEX10"}{J}{index10}{1}{}
+{First entry for RA=10 h}
+]
+\tablekey[{"INDEX11"}{J}{index11}{1}{}
+{First entry for RA=11 h}
+]
+\tablekey[{"INDEX12"}{J}{index12}{1}{}
+{First entry for RA=12 h}
+]
+\tablekey[{"INDEX13"}{J}{index13}{1}{}
+{First entry for RA=13 h}
+]
+\tablekey[{"INDEX14"}{J}{index14}{1}{}
+{First entry for RA=14 h}
+]
+\tablekey[{"INDEX15"}{J}{index15}{1}{}
+{First entry for RA=15 h}
+]
+\tablekey[{"INDEX16"}{J}{index16}{1}{}
+{First entry for RA=16 h}
+]
+\tablekey[{"INDEX17"}{J}{index17}{1}{}
+{First entry for RA=17 h}
+]
+\tablekey[{"INDEX18"}{J}{index18}{1}{}
+{First entry for RA=18 h}
+]
+\tablekey[{"INDEX19"}{J}{index19}{1}{}
+{First entry for RA=19 h}
+]
+\tablekey[{"INDEX20"}{J}{index20}{1}{}
+{First entry for RA=20 h}
+]
+\tablekey[{"INDEX21"}{J}{index21}{1}{}
+{First entry for RA=21 h}
+]
+\tablekey[{"INDEX22"}{J}{index22}{1}{}
+{First entry for RA=22 h}
+]
+\tablekey[{"INDEX23"}{J}{index23}{1}{}
+{First entry for RA=23 h}
+]
+\end{keywords}
+%
+% Table column description
+\begin{columns}
+%] 
+\tablecol[{"RA(2000)"}{"DEGREE  " }{D}{(1)}{Ra2000}
+{RA (J2000)}
+] 
+\tablecol[{"DEC(2000)"}{"DEGREE  " }{D}{(1)}{Dec2000}
+{Dec (J2000)}
+] 
+\tablecol[{"VELOCITY"}{"M/S     " }{D}{(1)}{Velocity}
+{Overall LSR velocity}
+] 
+\tablecol[{"VEL WID "}{"M/S     " }{E}{(1)}{VelWidth}
+{Velocity width}
+] 
+\tablecol[{"PEAK INT  "}{"JY/BEAM " }{E}{(1)}{PeakInt}
+{Peak Ipol }
+] 
+\tablecol[{"MAJOR AX"}{"DEGREE  " }{E}{(1)}{MajorAxis}
+{Fitted major axis size}
+] 
+\tablecol[{"MINOR AX"}{"DEGREE  " }{E}{(1)}{MinorAxis}
+{Fitted minor axis siz}
+] 
+\tablecol[{"POSANGLE"}{"DEGREE  " }{E}{(1)}{PosAngle}
+{Fitted PA}
+] 
+\tablecol[{"Q CENTER"}{"JY/BEAM " }{E}{(1)}{QCenter}
+{Center Q flux density}
+] 
+\tablecol[{"U CENTER"}{"JY/BEAM " }{E}{(1)}{UCenter}
+{enter U flux density}
+] 
+\tablecol[{"P FLUX"}{"JY      " }{E}{(1)}{PFlux}
+{Integrated polarized flux density}
+] 
+\tablecol[{"I RMS "}{"JY/BEAM " }{E}{(1)}{IRMS}
+{Ipol RMS uncertainty }
+] 
+\tablecol[{"POL RMS "}{"JY/BEAM " }{E}{(1)}{PolRMS}
+{RMS (sigma) in Qpol and Upol}
+] 
+\tablecol[{"RES RMS"}{"JY/BEAM " }{E}{(1)}{ResRMS}
+{RMS of Ipol residual}
+] 
+\tablecol[{"RES PEAK"}{"JY/BEAM " }{E}{(1)}{ResPeak}
+{Peak in Ipol residual}
+] 
+\tablecol[{"RES FLUX"}{"JY      " }{E}{(1)}{ResFlux}
+{Integrated Ipol residual}
+] 
+\tablecol[{"CENTER X"}{"PIXEL   " }{E}{(1)}{CenterX}
+{Center x position in pixels in FIELD}
+] 
+\tablecol[{"CENTER Y"}{"PIXEL   " }{E}{(1)}{CenterY}
+{Center y position in pixels in FIELD}
+] 
+\tablecol[{"CENTER Z"}{"PIXEL   " }{E}{(1)}{CenterZ}
+{Center velocity position in pixels in FIELD}
+] 
+\tablecol[{"SPECTRUM"}{"JY/BEAM " }{E}{(numCh)}{Spectrum}
+{Spectrum at Center X, Center Y}
+] 
+\tablecol[{"RMSCH"}{"JY/BEAM " }{E}{(numCh)}{RMSCh}
+{RMS in each channel}
+] 
+\tablecol[{"PEAKCH"}{"JY/BEAM " }{E}{(numCh)}{PEAKCh}
+{Peak in each channel}
+] 
+\tablecol[{"FIELD  "}{"       " }{A}{(8)}{Field}
+{Name of survey field}
+] 
+\tablecol[{"JD PROCESSED"}{"DAYS    " }{J}{(1)}{JDProcess}
+{Julian date on which entry was derived from image.}
+] 
+\end{columns}
+%
+% Table modification history
+\begin{history}
+\modhistory[{W. D. Cotton}{04/02/2012}{Revision 1: Make up}]
+\modhistory[{W. D. Cotton}{10/02/2014}{Revision 2: Add velocity axis labeling}]
 \end{history}
 %
 \clearpage

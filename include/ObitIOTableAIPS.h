@@ -1,4 +1,4 @@
-/* $Id: ObitIOTableAIPS.h 52 2008-11-11 21:40:09Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2003-2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

@@ -1,7 +1,7 @@
-/* $Id: SubImage.c 199 2010-06-15 11:39:58Z bill.cotton $  */
+/* $Id$  */
 /* Obit task - SubImage copy a subregion of an image                  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005-2010                                          */
+/*;  Copyright (C) 2005-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -582,6 +582,8 @@ ObitImage* getInputImage (ObitInfoList *myInput, ObitErr *err)
     } else { 
       strncpy (inFile, "No_Filename_Given", 128);
     }
+    inFile[128] = 0;
+    ObitTrimTrail(inFile);  /* remove trailing blanks */
     
     /* input FITS disk */
     ObitInfoListGet(myInput, "inDisk", &type, dim, &disk, err);
@@ -611,6 +613,8 @@ ObitImage* getInputImage (ObitInfoList *myInput, ObitErr *err)
     blc[i] = MAX (1,  blc[i]);
     if (trc[i]<=0) trc[i] = ((ObitImageDesc*)inImage->myIO->myDesc)->inaxes[i];
     trc[i] = MIN (trc[i], ((ObitImageDesc*)inImage->myIO->myDesc)->inaxes[i]);
+    /* if inc!=1 then force to range */
+    if (inc[i]>1) trc[i] = blc[i] + 2*((trc[i]-blc[i]+1)/2) - 1;
   }
 
   /* Save blc, trc */
@@ -720,6 +724,7 @@ ObitImage* getOutputImage (ObitInfoList *myInput, ObitErr *err)
       g_snprintf (outFile, 129, "SubImage%s", strTemp2);
     }
     
+    outFile[128] = 0;
     ObitTrimTrail(outFile);  /* remove trailing blanks */
 
     /* output FITS disk default = inDisk */
@@ -779,6 +784,7 @@ void SubImageHistory (ObitInfoList* myInput, ObitImage* inImage,
   /* If FITS copy header */
   if (inHistory->FileType==OBIT_IO_FITS) {
     ObitHistoryCopyHeader (inHistory, outHistory, err);
+    ObitHistoryCopy (inHistory, outHistory, err);
   } else { /* simply copy history */
      ObitHistoryCopy (inHistory, outHistory, err);
   }
@@ -879,20 +885,22 @@ void SubImageCopy (ObitInfoList* myInput, ObitImage* inImage,
       noParms = 0;
       inCC = newObitTableCCValue ("inCC", (ObitData*)inImage, &inVer, OBIT_IO_ReadOnly, 
 				  noParms, err);
-      /* Open/close to get header */
-      ObitTableCCOpen(inCC, OBIT_IO_ReadOnly, err);
-      ObitTableCCClose(inCC, err);
-      /* Find one? */
-      if (inCC==NULL) continue;
-      noParms = inCC->noParms;
-      outVer = inVer-blc[2]+1;
-      outCC = newObitTableCCValue ("outCC", (ObitData*)outImage, &outVer, OBIT_IO_WriteOnly, 
-				   noParms, err);
-      if (err->error) Obit_traceback_msg (err, routine, outImage->name);
-      outCC = ObitTableCCCopy (inCC, outCC, err);
-      if (err->error) Obit_traceback_msg (err, routine, outImage->name);
-      inCC = ObitTableCCUnref(inCC);
-      outCC = ObitTableCCUnref(outCC);
+      if (inCC) {
+	/* Open/close to get header */
+	ObitTableCCOpen(inCC, OBIT_IO_ReadOnly, err);
+	ObitTableCCClose(inCC, err);
+	/* Find one? */
+	if (inCC==NULL) continue;
+	noParms = inCC->noParms;
+	outVer = inVer-blc[2]+1;
+	outCC = newObitTableCCValue ("outCC", (ObitData*)outImage, &outVer, OBIT_IO_WriteOnly, 
+				     noParms, err);
+	if (err->error) Obit_traceback_msg (err, routine, outImage->name);
+	outCC = ObitTableCCCopy (inCC, outCC, err);
+	if (err->error) Obit_traceback_msg (err, routine, outImage->name);
+	inCC = ObitTableCCUnref(inCC);
+	outCC = ObitTableCCUnref(outCC);
+      } /* end if exists */
     } /* end loop over tables */
   } /* end of select tables */
 

@@ -1,6 +1,6 @@
-/* $Id: ObitIOImageFITS.c 195 2010-06-01 11:39:41Z bill.cotton $    */
+/* $Id$    */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2003-2010                                          */
+/*;  Copyright (C) 2003-2020                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -312,7 +312,7 @@ void ObitIOImageFITSZap (ObitIOImageFITS *in, ObitErr *err)
   }
 
   /* FITS tables are in the same file - delete table list */
-  in->tableList = ObitTableListUnref(in->tableList);
+  /*in->tableList = ObitTableListUnref(in->tableList); now just a copy */
 
   return;
 } /* end ObitIOImageFITSZap */
@@ -630,8 +630,12 @@ ObitIOCode ObitIOImageFITSOpen (ObitIOImageFITS *in, ObitIOAccess access,
   /* ???  desc->minval =  1.0e20;*/
 
   /* initialize location in image */
-  desc->row   = 0;
-  desc->plane = 0;
+  desc->row    = 0;
+  desc->plane  = 0;
+  desc->plane4 = 0;
+  desc->plane5 = 0;
+  desc->plane6 = 0;
+  desc->plane7 = 0;
 
   retCode = OBIT_IO_OK;
   return retCode;
@@ -682,6 +686,7 @@ ObitIOCode ObitIOImageFITSSet (ObitIOImageFITS *in, ObitInfoList *info,
 {
   ObitIOCode retCode = OBIT_IO_OK;
   int hdutype, status = 0;
+  ObitImageSel* sel=(ObitImageSel*)in->mySel;
 
   /* Position to HDU 1 */
   fits_movabs_hdu (in->myFptr, 1, &hdutype, &status);
@@ -696,8 +701,12 @@ ObitIOCode ObitIOImageFITSSet (ObitIOImageFITS *in, ObitInfoList *info,
   }
 
   /* Reset values in descriptor */
-  ((ObitImageDesc*)in->myDesc)->plane = 0;
-  ((ObitImageDesc*)in->myDesc)->row   = 0;
+  ((ObitImageDesc*)in->myDesc)->plane  = sel->blc[2]-1;
+  ((ObitImageDesc*)in->myDesc)->plane4 = sel->blc[3]-1;
+  ((ObitImageDesc*)in->myDesc)->plane5 = sel->blc[4]-1;
+  ((ObitImageDesc*)in->myDesc)->plane6 = sel->blc[5]-1;
+  ((ObitImageDesc*)in->myDesc)->plane7 = sel->blc[6]-1;
+  ((ObitImageDesc*)in->myDesc)->row    = sel->blc[1]-1;
 
   return retCode;
 } /* end ObitIOImageFITSSet */
@@ -717,7 +726,7 @@ ObitIOCode ObitIOImageFITSRead (ObitIOImageFITS *in, ofloat *data,
 				ObitErr *err)
 {
   ObitIOCode retCode = OBIT_IO_SpecErr;
-  olong row, plane;
+  olong row, plane, plane4, plane5, plane6, plane7;
   long bblc[IM_MAXDIM], ttrc[IM_MAXDIM], incs[IM_MAXDIM]={1,1,1,1,1,1,1};
   long inaxes[10];
   int group=0, i, anyf, status = 0;
@@ -739,12 +748,15 @@ ObitIOCode ObitIOImageFITSRead (ObitIOImageFITS *in, ofloat *data,
   desc = in->myDesc; /* descriptor pointer */
   sel  = in->mySel;  /* selector pointer */
 
-  row   = MAX (desc->row, sel->blc[1]-1);
-  plane = MAX (desc->plane, sel->blc[2]-1);
+  row    = MAX (desc->row,    sel->blc[1]-1);
+  plane  = MAX (desc->plane,  sel->blc[2]-1);
+  plane4 = MAX (desc->plane4, sel->blc[3]);
+  plane5 = MAX (desc->plane5, sel->blc[4]);
+  plane6 = MAX (desc->plane6, sel->blc[5]);
+  plane7 = MAX (desc->plane7, sel->blc[6]);
   /* set current request by desc->IOsize */
   if (desc->IOsize==OBIT_IO_byRow) {
-
-    plane = MAX(plane, sel->blc[2]);
+    plane = MAX (sel->blc[2], plane);
     /* increment row */
     row++;
     if (row>sel->trc[1]) { /* next plane */
@@ -767,22 +779,43 @@ ObitIOCode ObitIOImageFITSRead (ObitIOImageFITS *in, ofloat *data,
     ttrc[0] = sel->trc[0];
     ttrc[1] = sel->trc[1];
   }
-  desc->row   = row;
-  desc->plane = plane;
+  if (plane>sel->trc[2]) { /* next plane4 */
+    plane4++;
+    plane = sel->blc[2];
+  }
+  if (plane4>sel->trc[3]) { /* next plane5 */
+    plane5++;
+    plane4 = sel->blc[3];
+  }
+  if (plane5>sel->trc[4]) { /* next plane6 */
+    plane6++;
+    plane5 = sel->blc[4];
+  }
+  if (plane6>sel->trc[5]) { /* next plane7 */
+    plane7++;
+    plane6 = sel->blc[5];
+  }
+  desc->row    = row;
+  desc->plane  = plane;
+  desc->plane4 = plane4;
+  desc->plane5 = plane5;
+  desc->plane6 = plane6;
+  desc->plane7 = plane7;
 
   /* check if done - starting on the plane past the highest. */
-  if (plane > sel->trc[2]) {
+  if ((plane>sel->trc[2]) || (plane4>sel->trc[3]) || (plane5>sel->trc[4]) ||
+      (plane5>sel->trc[5]) || (plane7>sel->trc[6])) {
     /* ObitIOImageFITSClose (in, err); Close */
     return OBIT_IO_EOF;
   }
 
   /* set plane */
-  bblc[2] = plane;
-  ttrc[2] = plane;
-  for (i=3;i<desc->naxis;i++) {
-    ttrc[i] = (long)sel->trc[i]; 
-    bblc[i] = (long)sel->blc[i];
-  }
+  bblc[2] = ttrc[2] = MAX(1, plane);
+  bblc[3] = ttrc[3] = MAX(1, plane4);
+  bblc[4] = ttrc[4] = MAX(1, plane5);
+  bblc[5] = ttrc[5] = MAX(1, plane6);
+  bblc[6] = ttrc[6] = MAX(1, plane7);
+
   for (i=0; i<desc->naxis; i++) inaxes[i] = (long)desc->inaxes[i];
 
   /*  Read selected portion of input */
@@ -825,7 +858,8 @@ ObitIOCode ObitIOImageFITSWrite (ObitIOImageFITS *in, ofloat *data,
   ObitImageDesc* desc;
   ObitImageSel* sel;
   long size, fpixel[IM_MAXDIM]={1,1,1,1,1,1,1};
-  olong i, offset, len=0, iRow, nRows=0, row, plane;
+  olong i, offset, len=0, iRow, nRows=0;
+  olong row, plane, plane4, plane5, plane6, plane7;
   int status = 0;
   ofloat val, fblank = ObitMagicF();
   gboolean windowed;
@@ -855,8 +889,12 @@ ObitIOCode ObitIOImageFITSWrite (ObitIOImageFITS *in, ofloat *data,
     (sel->trc[1]!=desc->inaxes[1]);
 
   /* set cfitsio request parameters */
-  row   = MAX (desc->row,   sel->blc[1]-1);
-  plane = MAX (desc->plane, sel->blc[2]-1);
+  row    = MAX (desc->row,    sel->blc[1]-1);
+  plane  = MAX (desc->plane,  sel->blc[2]-1);
+  plane4 = MAX (desc->plane4, sel->blc[3]);
+  plane5 = MAX (desc->plane5, sel->blc[4]);
+  plane6 = MAX (desc->plane6, sel->blc[5]);
+  plane7 = MAX (desc->plane7, sel->blc[6]);
 
   /* set current request by desc->IOsize */
   if (desc->IOsize==OBIT_IO_byRow) {
@@ -878,32 +916,44 @@ ObitIOCode ObitIOImageFITSWrite (ObitIOImageFITS *in, ofloat *data,
 
      if (windowed) {
       nRows = sel->trc[1] - sel->blc[1] + 1;
-      len = sel->trc[0] - sel->blc[0]+1;   /* size of a transfer (row) */
+      len   = sel->trc[0] - sel->blc[0]+1;   /* size of a transfer (row) */
     } else {   /* all at once */
       nRows = 1;
       len = desc->inaxes[0] * desc->inaxes[1]; /* whole plane */
     }
    }
 
+  if (plane>sel->trc[2]) { /* next plane4 */
+    plane4++;
+    plane = sel->blc[2];
+  }
+  if (plane4>sel->trc[3]) { /* next plane5 */
+    plane5++;
+    plane4 = sel->blc[3];
+  }
+  if (plane5>sel->trc[4]) { /* next plane6 */
+    plane6++;
+    plane5 = sel->blc[4];
+  }
+  if (plane6>sel->trc[5]) { /* next plane7 */
+    plane7++;
+    plane6 = sel->blc[5];
+  }
+  desc->row    = row;
+  desc->plane  = plane;
+  desc->plane4 = plane4;
+  desc->plane5 = plane5;
+  desc->plane6 = plane6;
+  desc->plane7 = plane7;
+
   /* Set first pixel, size */
   fpixel[0] = sel->blc[0];
   fpixel[1] = row;
-  fpixel[2] = plane;
-  if (fpixel[2]>desc->inaxes[2]) {
-    fpixel[3] = MAX (1, 1 + (fpixel[2]-1)/desc->inaxes[2]);
-    fpixel[2] = MAX (1, 1 + (fpixel[2]-1)%desc->inaxes[2]);
-  }
-  if (fpixel[3]>desc->inaxes[3]) {
-    fpixel[4] = MAX (1, 1 + (fpixel[3]-1)/desc->inaxes[3]);
-    fpixel[3] = MAX (1, 1 + (fpixel[3]-1)%desc->inaxes[3]);
-  }
-  if (fpixel[4]>desc->inaxes[4]) {
-    fpixel[5] = MAX (1, 1 + (fpixel[4]-1)/desc->inaxes[4]);
-    fpixel[4] = MAX (1, 1 + (fpixel[4]-1)%desc->inaxes[4]);
-  }
-
-  desc->row   = row;
-  desc->plane = plane;
+  fpixel[2] = MAX(1,plane);
+  fpixel[3] = MAX(1,plane4);
+  fpixel[4] = MAX(1,plane5);
+  fpixel[5] = MAX(1,plane6);
+  fpixel[6] = MAX(1,plane7);
 
    /* check if done - starting on the plane past the highest. */
   if ((fpixel[2]>sel->trc[2]) || (fpixel[3]>sel->trc[3]) 
@@ -1084,7 +1134,7 @@ ObitIOCode ObitIOImageFITSReadDescriptor (ObitIOImageFITS *in, ObitErr *err)
   fits_read_keys_str (in->myFptr, "CTYPE", 1, IM_MAXDIM, cdum, &nfound, 
 		      &status);
     if (status==0) {
-      for (i=0; i<nfound; i++) strncpy (desc->ctype[i], cdata[i], IMLEN_KEYWORD-1); desc->ctype[i][IMLEN_VALUE-1] = 0;
+      for (i=0; i<nfound; i++) strncpy (desc->ctype[i], cdata[i], IMLEN_KEYWORD-1); desc->ctype[i][IMLEN_KEYWORD-1] = 0;
     }
   if (status==KEY_NO_EXIST) status = 0;
 
@@ -1217,7 +1267,8 @@ ObitIOImageFITSWriteDescriptor (ObitIOImageFITS *in, ObitErr *err)
 {
   ObitIOCode retCode = OBIT_IO_SpecErr;
   gchar keywrd[FLEN_KEYWORD], commnt[FLEN_COMMENT+1];
-  int i, status = 0;
+  int i, j, n, status = 0;
+  gboolean bad;
   long ltemp;
   ObitImageDesc* desc;
   ObitImageSel* sel;
@@ -1318,7 +1369,7 @@ ObitIOImageFITSWriteDescriptor (ObitIOImageFITS *in, ObitErr *err)
   fits_update_key_flt (in->myFptr, "EPOCH", (float)desc->epoch, 6,  (char*)commnt, 
 		       &status);
   strncpy (commnt, "Celestial coordiate equinox", FLEN_COMMENT);
-  fits_update_key_flt (in->myFptr, "EQUINOX", (float)desc->epoch, 6,  (char*)commnt, 
+  fits_update_key_flt (in->myFptr, "EQUINOX", (float)desc->equinox, 6,  (char*)commnt, 
 		       &status);
   strncpy (commnt, "Maximum in data array", FLEN_COMMENT);
   fits_update_key_flt (in->myFptr, "DATAMAX", (float)desc->maxval, 8,  (char*)commnt, 
@@ -1381,6 +1432,14 @@ ObitIOImageFITSWriteDescriptor (ObitIOImageFITS *in, ObitErr *err)
     /* Copy, possibly truncating name */
     strncpy (keyName, keyNameP, FLEN_KEYWORD); keyName[FLEN_KEYWORD-1] = 0;
     if (err->error)  Obit_traceback_val (err, routine, in->name, retCode);
+
+    /* Check for trash characters */
+    n = strlen(keyName);
+    bad = FALSE;
+    for (j=0; j<n; j++) 
+      if ((keyName[j]!='_') && (!g_ascii_isalnum (keyName[j]))) bad = TRUE;
+    if (bad) continue;
+
     /* write by type */
     if (keyType==OBIT_double) {
       fits_update_key_dbl (in->myFptr, (char*)keyName, (double)blob.d, 12, (char*)commnt, 
@@ -1735,13 +1794,23 @@ void ObitIOImageFITSGetFileInfo (ObitIO *in, ObitInfoList *myInfo, gchar *prefix
   dim[0] = strlen(DataType);
   ObitInfoListAlwaysPut (outList, keyword, OBIT_string, dim, DataType);
   g_free(keyword);
+  if (prefix && !strncmp(prefix,"out",3)) {
+    /* another form may be required */
+    keyword =  g_strconcat (prefix, "DType", NULL);
+    ObitInfoListAlwaysPut (outList, keyword, OBIT_string, dim, DataType);
+ }
   
   /* Filename */
   if (!ObitInfoListGet(myInfo, "FileName", &type, dim, tempStr, err)) 
       Obit_traceback_msg (err, routine, in->name);
   if (prefix) keyword =  g_strconcat (prefix, "FileName", NULL);
   else keyword =  g_strdup ("FileName");
-  ObitInfoListAlwaysPut (outList, keyword, type, dim, tempStr);
+  ObitInfoListAlwaysPut (outList, keyword, OBIT_string, dim, tempStr);
+  g_free(keyword);
+  /* Also prefix+'File' */
+  if (prefix) keyword =  g_strconcat (prefix, "File", NULL);
+  else keyword =  g_strdup ("File");
+  ObitInfoListAlwaysPut (outList, keyword, OBIT_string, dim, tempStr);
   g_free(keyword);
 
   /* Disk number */
@@ -1919,7 +1988,7 @@ void ObitIOImageFITSClear (gpointer inn)
  */
 void  ObitIOImageAIPSCLEANRead(ObitIOImageFITS *in, olong *lstatus)
 {
-  gchar commnt[FLEN_COMMENT], card[FLEN_COMMENT], temp[FLEN_COMMENT];
+  gchar commnt[FLEN_COMMENT], card[128], temp[128];
   int i, j, k, keys, morekeys, status=0;
   long ltemp;
   float ftemp;
@@ -1951,6 +2020,27 @@ void  ObitIOImageAIPSCLEANRead(ObitIOImageFITS *in, olong *lstatus)
   gotBeam = gotBeam || (status != KEY_NO_EXIST);
   if (status==KEY_NO_EXIST) status = 0;
   desc->beamPA = (ofloat)ftemp;
+
+  /* If Beam not found try CASA usage */
+  if (!gotBeam) {
+    ftemp = -1.0;
+    fits_read_key_flt (in->myFptr, "BMAJ", &ftemp, (char*)commnt, &status);
+    gotBeam = gotBeam || (status != KEY_NO_EXIST);
+    if (status==KEY_NO_EXIST) status = 0;
+    desc->beamMaj = (ofloat)ftemp;
+    
+    ftemp = -1.0;
+    fits_read_key_flt (in->myFptr, "BMIN", &ftemp, (char*)commnt, &status);
+    gotBeam = gotBeam || (status != KEY_NO_EXIST);
+    if (status==KEY_NO_EXIST) status = 0;
+    desc->beamMin = (ofloat)ftemp;
+    
+    ftemp = -1.0;
+    fits_read_key_flt (in->myFptr, "BPA", &ftemp, (char*)commnt, &status);
+    gotBeam = gotBeam || (status != KEY_NO_EXIST);
+    if (status==KEY_NO_EXIST) status = 0;
+    desc->beamPA = (ofloat)ftemp;
+  } /* end search for CASA beams */
 
   ltemp = -1;
   fits_read_key_lng (in->myFptr, "CLEANNIT", &ltemp, (char*)commnt, &status);
@@ -2156,9 +2246,9 @@ void  ObitIOImageKeysOtherRead(ObitIOImageFITS *in, olong *lstatus,
   if (*lstatus) return;  /* existing error? */
   status = (int)(*lstatus);
 
-  /* delete old InfoList and restart */
+  /* delete old InfoList and restart - BAD IDEA 
   ((ObitImageDesc*)in->myDesc)->info = ObitInfoListUnref (((ObitImageDesc*)in->myDesc)->info);
-  ((ObitImageDesc*)in->myDesc)->info = (gpointer)newObitInfoList ();
+  ((ObitImageDesc*)in->myDesc)->info = (gpointer)newObitInfoList (); */
   desc = in->myDesc; /* set descriptor */
 
   /* get number and length of exclusion strings */
@@ -2195,8 +2285,8 @@ void  ObitIOImageKeysOtherRead(ObitIOImageFITS *in, olong *lstatus,
 	  svalue[last-first+1] = 0; /* null terminate */
 	  /* add to InfoList */
 	  dim[0] = strlen(svalue);
-	  ObitInfoListPut(desc->info, (char*)keywrd, OBIT_string, dim, 
-			  (gconstpointer)svalue, err);
+	  ObitInfoListAlwaysPut(desc->info, (char*)keywrd, OBIT_string, dim, 
+				(gconstpointer)svalue);
 	  
 	  break;
 	case 'L':  /* logical 'T', 'F' */
@@ -2206,15 +2296,15 @@ void  ObitIOImageKeysOtherRead(ObitIOImageFITS *in, olong *lstatus,
 	  if (aT!=NULL) bvalue = TRUE;
 	  /* add to InfoList */
 	  dim[0] = 1;
-	  ObitInfoListPut(desc->info, (char*)keywrd, OBIT_bool, dim, 
-			  (gconstpointer)&bvalue, err);
+	  ObitInfoListAlwaysPut(desc->info, (char*)keywrd, OBIT_bool, dim, 
+				(gconstpointer)&bvalue);
 	  break;
 	case 'I':  /* Integer */
 	  ivalue = strtol(value, NULL, 10);
 	  /* add to InfoList */
 	  dim[0] = 1;
-	  ObitInfoListPut(desc->info, (char*)keywrd, OBIT_long, dim, 
-			  (gconstpointer)&ivalue, err);
+	  ObitInfoListAlwaysPut(desc->info, (char*)keywrd, OBIT_long, dim, 
+			  (gconstpointer)&ivalue);
 	  break;
 	case 'F':  /* Float - use double */
 	  /* AIPS uses 'D' for double exponent */
@@ -2222,8 +2312,8 @@ void  ObitIOImageKeysOtherRead(ObitIOImageFITS *in, olong *lstatus,
 	  dvalue = strtod(value, &last);
 	  /* add to InfoList */
 	  dim[0] = 1;
-	  ObitInfoListPut(desc->info, (char*)keywrd, OBIT_double, dim, 
-			  (gconstpointer)&dvalue, err);
+	  ObitInfoListAlwaysPut(desc->info, (char*)keywrd, OBIT_double, dim, 
+			  (gconstpointer)&dvalue);
 	  break;
 	case 'X':  /* Complex - can't handle */
 	default:
@@ -2376,9 +2466,9 @@ static gpointer WriteQuantInit (ObitIOImageFITS *in, olong size,
     out = g_malloc0(size*sizeof(gshort));
   } else if (desc->bitpix==32) {  /* 32-bit integer */
     itemp[0] = (int)in->magic;
-    memcpy (outBlank, &itemp, sizeof(olong));
+    memcpy (outBlank, &itemp, sizeof(long)); /* for 64 bit */
     *outType = TINT32BIT;
-    out = g_malloc0(size*sizeof(olong));
+    out = g_malloc0(size*sizeof(long));  /* for 64 bit OS */
   } else  {  /* Shouldn't happen - pretend float */
     memcpy (outBlank, &fblank, sizeof(ofloat));
     *outType = TFLOAT;
@@ -2408,7 +2498,7 @@ static void WriteQuantCopy (ObitIOImageFITS *in, olong size, gpointer *wbuff,
   ofloat val, zero, iscale=1.0, fblank = ObitMagicF();
   gchar  cblank, *cbuff = (gchar*)*wbuff;
   gshort sblank, *sbuff = (gshort*)*wbuff;
-  olong  lblank, *lbuff = (olong*)*wbuff;
+  long  lblank, *lbuff = (long*)*wbuff;  /* for 64 bit */
   ObitImageDesc *desc = (ObitImageDesc*)in->myDesc;
 
   if (in->bscale!=0) iscale = 1.0 / in->bscale;
@@ -3022,7 +3112,7 @@ static void eqstd (odouble ra0, odouble dec0, odouble ra, odouble dec,
 static void fixIRAF (ObitImageDesc *desc, ObitErr *err)
 {
   ofloat rot1, rot2, det, sdet;
-  odouble cd1[2], cd2[2];
+  odouble cd1[2], cd2[2], PA;
   ObitInfoType type;
   gint32 dim[MAXINFOELEMDIM];
   gchar *routine = "fixIRAF";
@@ -3040,7 +3130,7 @@ static void fixIRAF (ObitImageDesc *desc, ObitErr *err)
   desc->cdelt[desc->jlocr] = sqrt (cd1[0]*cd1[0] + cd2[0]*cd2[0]);
   desc->cdelt[desc->jlocd] = sqrt (cd1[1]*cd1[1] + cd2[1]*cd2[1]);
 
-  /* Work out signs*/
+  /* Work out signs */
   det = cd1[0]*cd2[1] - cd1[1]*cd2[0];
   if (det>0.0) sdet = 1.0; /* sign function */
   else {
@@ -3048,13 +3138,22 @@ static void fixIRAF (ObitImageDesc *desc, ObitErr *err)
     /*   if negative, it must be RA*/
     desc->cdelt[desc->jlocr] = -desc->cdelt[desc->jlocr];
   }
+  
+  /* Rotation - use 'PA      " if given else try to work it out from the CD */
+  if (ObitInfoListGetTest(desc->info, "PA", &type, dim, &PA)) {
+    desc->crota[desc->jlocr] = 0.0;
+    desc->crota[desc->jlocd] = -(ofloat)PA;
+  } else {
+    
+    /*  rotation, average over skew -  not sure how robust this all is */
+    if ((cd1[1]!=0.0) && (cd2[0]!=0.0)) {
+      rot1 = 57.296 * atan2 ( sdet*cd1[1],  cd2[1]);
+      rot2 = 57.296 * atan2 ( sdet*cd2[0], -cd1[0]);
+    } else {rot1 = rot2 = 0.0;}
 
-  /*  rotation, average over skew */
-  rot1 = 57.296 * atan2 ( sdet*cd1[1], cd2[1]);
-  rot2 = 57.296 * atan2 (-sdet*cd2[0], cd1[0]);
-
-  /* coordinate rotation */
-  desc->crota[desc->jlocr] = 0.0;
-  desc->crota[desc->jlocd] = -0.5 * (rot1+rot2);
+    /* coordinate rotation */
+    desc->crota[desc->jlocr] = 0.0;
+    desc->crota[desc->jlocd] = 0.5 * (rot1+rot2);
+  } /* end if PA not present */
 } /* end of fixIRAF */
 

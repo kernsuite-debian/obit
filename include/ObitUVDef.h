@@ -1,4 +1,4 @@
-/* $Id: ObitUVDef.h 69 2009-01-21 16:00:01Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2003-2009                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
@@ -38,7 +38,7 @@ ObitUVSel* mySel;
 /** uvdata buffer */
 ofloat *buffer;
 /** uv data buffer size in floats */
-olong bufferSize;
+ollong bufferSize;
 /** Number of parallel buffers */
 olong nParallel;
 /** Array of IOs for parallel buffers */

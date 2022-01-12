@@ -1,4 +1,4 @@
-/* $Id: ObitRPCClassDef.h 17 2008-08-20 13:17:40Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2005,2008                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */

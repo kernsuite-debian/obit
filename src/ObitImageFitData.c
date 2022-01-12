@@ -1,6 +1,6 @@
-/* $Id: ObitImageFitData.c 111 2009-06-12 16:52:57Z bill.cotton $ */
+/* $Id$ */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2006-2008                                          */
+/*;  Copyright (C) 2006-2019                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -106,17 +106,23 @@ gconstpointer ObitImageFitDataGetClass (void)
 
 /**
  * Creates an ObitImageFitData from an ObitFitRegion
+ * NB: setting pf the indicate the parameter is not to be fitted doesn't work
+ * instead set upper and lower limits to the desired value.
  * \param name   An optional name for the object.
  * \param reg    ObitFitRegion to copy
  * \param bounds InfoList giving bounds
  * \li "PosGuard" OBIT_double (1,1,1) Distance from edge to allow center
  *                [def no bound]
  * \li "FluxLow"  OBIT_double (1,1,1) Lower bounds on Flux density [no bound]
+ * \li "FixFlux"  OBIT_bool   (1,1,1) Fix fluxes to input [FALSE]
+ * \li "FixPos"   OBIT_bool   (1,1,1) Fix positions to input [FALSE]
+ * \li "FixSize"  OBIT_bool   (1,1,1) Fix size to input [FALSE]
  * \li "GMajUp"   OBIT_double (1,1,1) Major axis upper bound [no bound]
  * \li "GMajLow"  OBIT_double (1,1,1) Major axis lower bound [no bound]
  * \li "GMinUp"   OBIT_double (1,1,1) Minor axis upper bound [no bound]
  * \li "GMinLow"  OBIT_double (1,1,1) Minor axis lower bound [no bound]
  * \param image  Image with pixel data, (with selection used for reg)
+ * \li "Blank"  OBIT_float (1,1,1) Blanking level, default=0=no blank
  * \param err    Obit Error/mesage stack
  * \return the new object.
  */
@@ -125,13 +131,15 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
 			ObitInfoList *bounds, ObitImage *image, ObitErr *err)
 {
   ObitImageFitData* out=NULL;
-  gint32       dim[MAXINFOELEMDIM];
+  gint32       dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitInfoType type;
-  olong blc[2], trc[2],pos[2] ;
-  ofloat cells, rmax, rmin, fblank=ObitMagicF();
+  olong blc[2], trc[2],pos[2], tcount ;
+  ofloat cells, rmax, rms, Blank=0.0, fblank=ObitMagicF();
   odouble dblank;
   gboolean doPosGuard, doFluxLow, doGMajUp, doGMajLow, doGMinUp, doGMinLow;
-  odouble PosGuard, FluxLow, GMajUp, GMajLow, GMinUp, GMinLow;
+  gboolean FixFlux=FALSE, FixPos=FALSE, FixSize=FALSE,  doFixFlux, doFixPos,doFixSize ;
+  gboolean *fixPSize = NULL;
+  odouble PosGuard=0.0, FluxLow=0.0, GMajUp=0.0, GMajLow=0.0, GMinUp=0.0, GMinLow=0.0;
   olong i, j, k, nparm, nvar;
   gchar *routine = "ObitImageFitDataCreate";
 
@@ -140,13 +148,23 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
   g_assert (ObitFitRegionIsA(reg));
   g_assert (ObitImageIsA(image));
 
+
+  /* Blanking level */
+  ObitInfoListGetTest(image->info, "Blank", &type, dim, &Blank);
   /* Bounds info */
   doPosGuard = ObitInfoListGetTest(bounds, "PosGuard", &type, dim, &PosGuard);
   doFluxLow  = ObitInfoListGetTest(bounds, "FluxLow",  &type, dim, &FluxLow);
+  doFluxLow  = doFluxLow && (FluxLow>0.0);
   doGMajUp   = ObitInfoListGetTest(bounds, "GMajUp",   &type, dim, &GMajUp); 
   doGMajLow  = ObitInfoListGetTest(bounds, "GMajLow",  &type, dim, &GMajLow);
   doGMinUp   = ObitInfoListGetTest(bounds, "GMinUp",   &type, dim, &GMinUp);
   doGMinLow  = ObitInfoListGetTest(bounds, "GMinLow",  &type, dim, &GMinLow);
+  doFixFlux  = ObitInfoListGetTest(bounds, "FixFlux",  &type, dim, &FixFlux);
+  doFixFlux  = doFixFlux && FixFlux;
+  doFixPos   = ObitInfoListGetTest(bounds, "FixPos",   &type, dim, &FixPos);
+  doFixPos   = doFixPos && FixPos;
+  doFixSize  = ObitInfoListGetTest(bounds, "FixSize",  &type, dim, &FixSize);
+  doFixSize  = doFixSize && FixSize;
 
   /* Avoid crazy values */
   GMajLow = MAX(0.5, GMajLow); doGMajLow = TRUE;
@@ -170,7 +188,18 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
   trc[1] = reg->corner[1] + reg->dim[1] - 1;
   out->pixels = ObitFArraySubArr (image->image, blc, trc, err);
   out->resids = ObitFArraySubArr (image->image, blc, trc, err);
-  out->irms   = ObitFArrayRMS(image->image);
+  if (err->error) Obit_traceback_val (err, routine, image->name, out);
+  /* Blanking? */
+  if (Blank!=0.0) ObitFArrayClip(out->pixels, Blank, 1.0e30, fblank);
+  /* Get RMS if saved, else calculate */
+  rms = -1.0;
+  ObitInfoListGetTest(image->info, "RMS",  &type, dim, &rms);
+  if (rms>0.0) out->irms = rms;
+  else {
+    out->irms = ObitFArrayRMS(image->image);
+    dim[0] = dim[1] = dim[2] = 1;
+    ObitInfoListAlwaysPut(image->info, "RMS", OBIT_float, dim, &rms);
+  }
 
   /* Beam info */
   if (image->myDesc->beamMaj>0.0) {
@@ -183,32 +212,40 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
     out->beam[2] = 0.0;
   }
 
-
   /* Check that something to fit */
-  Obit_retval_if_fail((ObitFArrayRMS(out->pixels)>0.0), err, out,
-		       "%s: Nothing to fit, RMS=0",routine);
+  tcount = ObitFArrayCount(out->pixels);
+  Obit_retval_if_fail((tcount>2), err, out,"%s: Nothing to fit, count<2",routine);
 
   /* Restoring beam area in pixels */
   cells = sqrt (fabs(image->myDesc->cdelt[0]*image->myDesc->cdelt[1]));
   if (image->myDesc->beamMaj>0.0) {
-    out-> beamarea = 1.1331 * (image->myDesc->beamMaj/cells) * 
+    out->beamarea = 1.1331 * (image->myDesc->beamMaj/cells) * 
       (image->myDesc->beamMin/cells);
   } else out->beamarea = 1.0;
 
   /* Fiddling to get fitting to work better
      first scale such that peak value is 5.0 */
   rmax = ObitFArrayMax (out->pixels, pos);
-  rmin = ObitFArrayMin (out->pixels, pos);
   out->rscale = 5.0 / rmax;
   if (out->rscale==0.0) out->rscale = 1.0;
+  if (doFixFlux||doFluxLow) out->rscale = 1.0;  /* Causes trouble */
   ObitFArraySMul(out->pixels, out->rscale);
 
-  /* count things in reg - for now fit all - only do Gaussians */
+  /* count things in reg - for now fit all - only do Gaussians 
+     or points treated as Gaussians*/
+  fixPSize = g_malloc0(reg->nmodel*sizeof(gboolean*));
   nparm = 0;
   nvar = 0;
   for (i=0; i<reg->nmodel; i++) {
     if (reg->models[i]->type == OBIT_FitModel_GaussMod) nparm += 6;
     if (reg->models[i]->type == OBIT_FitModel_GaussMod) nvar += 6;
+    if (reg->models[i]->type == OBIT_FitModel_PointMod) nparm += 6;
+    if (reg->models[i]->type == OBIT_FitModel_PointMod) nvar += 6;
+    /* Treat point model as Gaussian with zero size */
+    if (reg->models[i]->type == OBIT_FitModel_PointMod) {
+      reg->models[i]->type = OBIT_FitModel_GaussMod;
+      fixPSize[i] = TRUE;
+    } else fixPSize[i] = FALSE;
   }
 
   /* Check that something to fit */
@@ -222,19 +259,19 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
   out->nvar   = nvar;
 
   /* Allocate arrays */
-  out->np    = g_malloc0(out->ncomp*sizeof(olong));
-  out->type  = g_malloc0(out->ncomp*sizeof(olong));
-  out->ptemp = g_malloc0(out->nparm*sizeof(odouble));
-  out->ivar  = g_malloc0(out->nparm*sizeof(olong));
-  out->jvar  = g_malloc0(out->nparm*sizeof(olong));
-  out->p     = g_malloc0(out->ncomp*sizeof(odouble*));
-  out->dp    = g_malloc0(out->ncomp*sizeof(odouble*));
-  out->pf    = g_malloc0(out->ncomp*sizeof(odouble*));
-  out->pu    = g_malloc0(out->ncomp*sizeof(odouble*));
-  out->pl    = g_malloc0(out->ncomp*sizeof(odouble*));
-  out->e     = g_malloc0(out->ncomp*sizeof(odouble*));
+  out->np       = g_malloc0(out->ncomp*sizeof(olong));
+  out->type     = g_malloc0(out->ncomp*sizeof(olong));
+  out->ptemp    = g_malloc0(out->nparm*sizeof(odouble));
+  out->ivar     = g_malloc0(out->nparm*sizeof(olong));
+  out->jvar     = g_malloc0(out->nparm*sizeof(olong));
+  out->p        = g_malloc0(out->ncomp*sizeof(odouble*));
+  out->dp       = g_malloc0(out->ncomp*sizeof(odouble*));
+  out->pf       = g_malloc0(out->ncomp*sizeof(odouble*));
+  out->pu       = g_malloc0(out->ncomp*sizeof(odouble*));
+  out->pl       = g_malloc0(out->ncomp*sizeof(gboolean*));
+  out->e        = g_malloc0(out->ncomp*sizeof(odouble*));
   for (i=0; i<out->ncomp; i++) {
-    if (reg->models[i]->type == OBIT_FitModel_GaussMod) out->np[i] = 6;
+    if      (reg->models[i]->type == OBIT_FitModel_GaussMod) out->np[i] = 6;
     else out->np[i] = 1;
     out->p[i]  = g_malloc0(out->np[i]*sizeof(odouble));
     out->dp[i] = g_malloc0(out->np[i]*sizeof(odouble));
@@ -243,7 +280,6 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
     out->pl[i] = g_malloc0(out->np[i]*sizeof(odouble));
     out->e[i]  = g_malloc0(out->np[i]*sizeof(odouble));
   }
-
   /* Initialize */
   k = 0;
   for (i=0; i<out->ncomp; i++) {
@@ -269,19 +305,32 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
       out->p[i][1]  = reg->models[i]->DeltaX;
       out->p[i][2]  = reg->models[i]->DeltaY;
       /* internal and external different maj, min */
-      out->p[i][4]  = reg->models[i]->parms[0];
-      out->p[i][3]  = reg->models[i]->parms[1]; /* break degeneracy */
-      out->p[i][5]  = reg->models[i]->parms[2];
+      if (!fixPSize[i]) { /* Gaussian */
+	out->p[i][4]  = reg->models[i]->parms[0];
+	out->p[i][3]  = reg->models[i]->parms[1]; /* break degeneracy */
+	out->p[i][5]  = reg->models[i]->parms[2];
+      } else { /* Point */
+	out->p[i][3]  = out->p[i][4]  = out->p[i][5]  = 0.0;
+	/* out->pf[i][3] = out->pf[i][4] = out->pf[i][5] = FALSE; problems*/
+      }
+      if (!fixPSize[i]) { /* Gaussian */
+	out->e[i][4]  = reg->models[i]->eparms[0];
+	out->e[i][3]  = reg->models[i]->eparms[1];
+	out->e[i][5]  = reg->models[i]->eparms[2];
+      } else { /* Point */
+	out->e[i][3] = out->e[i][4] = out->e[i][5] = 0.0;
+      }
       out->e[i][0]  = reg->models[i]->ePeak;
       out->e[i][1]  = reg->models[i]->eDeltaX;
       out->e[i][2]  = reg->models[i]->eDeltaY;
-      out->e[i][4]  = reg->models[i]->eparms[0];
-      out->e[i][3]  = reg->models[i]->eparms[1];
-      out->e[i][5]  = reg->models[i]->eparms[2];
       /* solution bounds */
       if (doFluxLow) {
 	out->pl[i][0] = out->rscale * FluxLow;
 	out->p[i][0]  = MAX (out->p[i][0], out->pl[i][0]+out->dp[i][0]);
+      }
+      if (doFixFlux) {
+	out->pl[i][0] = out->p[i][0];
+	out->pu[i][0] = out->p[i][0];
       }
       if (doPosGuard) {
 	out->pl[i][1]  = PosGuard;
@@ -289,23 +338,53 @@ ObitImageFitDataCreate (gchar* name, ObitFitRegion *reg,
 	out->pu[i][1]  = reg->dim[0] - 1 - PosGuard;
 	out->pu[i][2]  = reg->dim[1] - 1 - PosGuard;
       }
-      if (doGMajUp)  out->pu[i][3] = GMajUp;
+      if (doFixPos) {
+	out->pl[i][1]  = out->p[i][1];
+	out->pl[i][2]  = out->p[i][2];
+	out->pu[i][1]  = out->p[i][1];
+	out->pu[i][2]  = out->p[i][1];
+      }
+      /* Upper limit on size - value on fit model overrides */
+      if (doGMajUp) {
+	if (reg->models[i]->maxSize>=0.0) {
+	  out->pu[i][3] = reg->models[i]->maxSize;
+	  out->pu[i][4] = reg->models[i]->maxSize;
+	} else {
+	  out->pu[i][3] = GMajUp;
+	}
+      }
       if (doGMajLow) {
 	out->pl[i][3] = GMajLow;
 	out->p[i][3]  = MAX (out->p[i][3], out->pl[i][3]+out->dp[i][3]);
       }
-      if (doGMinUp)  out->pu[i][4] = GMinUp;
+      if (doGMinUp)  {
+	if (reg->models[i]->maxSize>=0.0) {
+	  out->pu[i][4] = reg->models[i]->maxSize;
+	} else {
+	  out->pu[i][4] = GMinUp;
+	}
+      }
       if (doGMinLow) {
 	out->pl[i][4] = GMinLow;
  	out->p[i][4]  = MAX (out->p[i][4], out->pl[i][4]+out->dp[i][4]);
-     }
-      /* Break possible axis degeneracy */
-      if (fabs(out->p[i][3]-out->p[i][4])<0.1*out->p[i][3]) {
-	out->p[i][3]  *= 1.1;
+      }
+      if (doFixSize || (fixPSize[i])) {  /* Fix size */
+	out->pl[i][3] = out->p[i][3];
+	out->pl[i][4] = out->p[i][4];
+	out->pl[i][5] = out->p[i][5];
+	out->pu[i][3] = out->p[i][3];
+	out->pu[i][4] = out->p[i][4];
+	out->pu[i][5] = out->p[i][5];
+      } else {
+	/* Break possible axis degeneracy */
+	if (fabs(out->p[i][3]-out->p[i][4])<0.05*out->p[i][3]) {
+	  out->p[i][3]  *= 1.05;
+	}
       }
     } /* end if Gaussian */
   } /* end loop over components */
 
+  g_free(fixPSize); /* Cleanup */
   return out;
 } /* end ObitImageFitDataCreate */
 /**
@@ -538,9 +617,9 @@ void ObitImageFitDataClear (gpointer inn)
   /* delete this class members */
   in->pixels = ObitFArrayUnref(in->pixels);
   in->resids = ObitFArrayUnref(in->resids);
-  if (in->ivar) g_free(in->ivar);
-  if (in->jvar) g_free(in->jvar);
-  if (in->ptemp) g_free(in->ptemp);
+  if (in->ivar) g_free(in->ivar); 
+  if (in->jvar) g_free(in->jvar); 
+  if (in->ptemp) g_free(in->ptemp); 
   if (in->np) g_free(in->np);
   if (in->p) {
     for (i=0; i<in->ncomp; i++) if (in->p[i]) g_free(in->p[i]);
@@ -548,7 +627,7 @@ void ObitImageFitDataClear (gpointer inn)
   }
   if (in->dp) {
     for (i=0; i<in->ncomp; i++) if (in->dp[i]) g_free(in->dp[i]);
-    if (in->dp) g_free(in->dp);
+    if (in->dp) g_free(in->dp); 
   }
   if (in->pf) {
     for (i=0; i<in->ncomp; i++) if (in->pf[i]) g_free(in->pf[i]);
@@ -582,7 +661,8 @@ void ObitImageFitDataClear (gpointer inn)
  * that P is to contain only the parameters which are being solved for  
  * --- not the parameters that are to be held fixed.  This subroutine is  
  * called by the minimization routine DVDMIN.  
- * Only OBIT_FitModel_GaussMod models currently handled.
+ * Only OBIT_FitModel_GaussMod (or point treated as degenerate Gaussian )
+ * models currently handled.
  *  
  * Additionally, the residuals (model minus data) are stored in the  
  * data object for use outside the minimization  routine proper.  
@@ -601,7 +681,7 @@ void ObitImageFitDataClear (gpointer inn)
  */
 static void fxdvd (gpointer ddata, odouble *p, odouble *f, odouble* grad, olong iflag) 
 {
-  olong   nk=0, npts, i, j, k, ix1, iy1, ntot, l;
+  olong   npts, i, j, k, ix1, iy1, l;
   ofloat sth2, cth2, s2th, c2th, mj, mn, va, vb, vc, vd, x, y, 
     x2, y2, xy, tworfv, twocon, fv, g4c, g5c, tmp, ex;
   olong pos[2];
@@ -638,7 +718,6 @@ static void fxdvd (gpointer ddata, odouble *p, odouble *f, odouble* grad, olong 
     else pixels[k] = fblank;
   } /* end loop  L10:  */
 
-  ntot = nk;
   for (i=0; i<nvar; i++) { /* loop 20 */
     /* Enforce hard limits */
     if (data->pl[data->ivar[i]][data->jvar[i]]!=dblank)

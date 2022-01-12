@@ -1,10 +1,10 @@
-; $Id: MFImage.TDF 144 2009-12-01 15:01:18Z bill.cotton $
+; $Id$
 ; MFImage 
 ;---------------------------------------------------------------
 ;! Obit wideband imaging
 ;# Task Obit Imaging calibration
 ;-----------------------------------------------------------------------
-;;  Copyright (C) 2010
+;;  Copyright (C) 2010-2020
 ;;  Associated Universities, Inc. Washington DC, USA.
 ;;
 ;;  This program is free software; you can redistribute it and/or
@@ -29,7 +29,7 @@
 ;;                         520 Edgemont Road
 ;;                         Charlottesville, VA 22903-2475 USA
 ;---------------------------------------------------------------
-MFImage     LLLLLLLLLLLLUUUUUUUUUUUU CCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+MFImage   LLLLLLLLLLLLUUUUUUUUUUUU CCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 MFImage:  Wideband imaging
 **PARAM** str 4
 DataType                            "FITS" or "AIPS" type of input
@@ -80,6 +80,9 @@ flagVer                             Flag table version
 **PARAM** boo 1 **DEF** F
 doPol                               Apply polarization cal?
 **PARAM** int 1 **DEF** 1
+PDVer                              PD table to apply
+                                   If >=0, per channel corrections
+**PARAM** int 1 **DEF** 1
 norder                              Maximum order of spectral terms 
 **PARAM** float 1  **DEF** 0.0
 Alpha           -20.       20.      Spectral Index to correct
@@ -92,7 +95,7 @@ BLchAvg                             If True, and BLFact >1.0 then also
                                     average channels.
 **PARAM** str 4
 outDType                            "FITS" or "AIPS" type of output
-**PARAM** str 48 **DEF** .fits
+**PARAM** str 128 **DEF** .fits
 outFile                             Output FITS image file ending
 **PARAM** str 12
 outName                             Output AIPS image name
@@ -106,7 +109,7 @@ outDisk                             Output image disk drive #
 saveBeam                            Keep beam image(s)?
 **PARAM** int 1
 CCVer                               Output CC table version number
-**PARAM** str 48 **DEF** .uvtab
+**PARAM** str 128 **DEF** .uvtab
 out2File                            Output FITS uvdata file ending
 **PARAM** str 12
 out2Name                            Output AIPS uvdata name
@@ -144,6 +147,8 @@ DecShift                           Declination shift (AIPS convention)
 
 **PARAM** float 3
 UVTaper         0.                 (U,V) Gaussian taper klambda
+**PARAM** float 1  **DEF** 0.8
+MFTaper                            Multi frequency Taper Factor
 **PARAM** float 2
 UVRange         0.                 Min & max baseline (klambda)
 **PARAM** float 1
@@ -156,6 +161,10 @@ WtBox           0.        128.     Additional rows and columns
 WtFunc                             Box function type when WtBox
                                    > 0.  0 -> 1 round pill box.
 **PARAM** boo 1 **DEF** T
+doLast                             Do last Clean after selfcal?
+**PARAM** boo 1 **DEF** F
+doComRes                           Force common resolution in frequency
+**PARAM** boo 1 **DEF** T
 doFull                             Make full field (flattened) image?
 **PARAM** boo 1  **DEF** T
 doRestore                          Restore CCs to images?
@@ -163,8 +172,10 @@ doRestore                          Restore CCs to images?
 doFit                              Fit spectrum to CLEANed planes??
 **PARAM** boo 1 **DEF** F
 do3D                               3D imaging, else 2D
-**PARAM** str 48  **DEF** NVSSVZ.FIT
+**PARAM** str 128  **DEF** NVSSVZ.FIT
 Catalog                            Outlier catalog name (NVSSVZ.FIT)
+**PARAM** int 1 **DEF** 1
+CatDisk                            Catalog FITS disk number
 **PARAM** float 1
 OutlierDist                        Maximum distance to add outliers (deg)
 **PARAM** float 1 **DEF** 0.01
@@ -173,6 +184,8 @@ OutlierFlux                        Minimum estimated outlier flux density (Jy)
 OutlierSI                          Spectral index to estimate flux density
 **PARAM** int 1  **DEF** 100
 OutlierSize                        Size of outlier field in pixels
+**PARAM** str 200
+CLEANFile                          Name of file with CLEAN window positions
 **PARAM** int 4 50
 CLEANBox        -2.0       8192.   Four coordinates for each box
 **PARAM** boo 1   **DEF** T
@@ -191,23 +204,25 @@ ccfLim   *                         Min. fraction of residual peak to CLEAN
 SDIGain  *                         SDI trigger, <=0 -> no SDI Clean
 **PARAM** float 3
 Beam     *      -999.9             Clean beam (maj, min, PA)
+**PARAM** float 3
+targBeam *      -999.9             Target Clean beam (maj, min, PA)
 **PARAM** float 1  **DEF** 10.0
 Reuse    *                         Factor * RMS to reuse each cycle
 **PARAM** float 1  **DEF** 1.0e20
 autoCen  *                         Auto center min flux density
-**PARAM** str 4
+**PARAM** str 4   **DEF** DFT
 Cmethod                            Modeling method:
                                    'DFT','GRID','    '
-**PARAM** boo 1   **DEF** F
+**PARAM** boo 1   **DEF** T
 PBCor                              Apply Frequency PB Corr?
-**PARAM** float 1  **DEF** 25.0
+**PARAM** float 1  **DEF** 24.5
 antSize                            Diameter of ant. for PBCor (m)
 **PARAM** float 2
 CCFilter                           Clean component filter
                                     [0] min. sum flux.
                                     [1] radius of search
-**PARAM** int 1  **DEF** 50000
-maxPixel           0.0    500000   Maximum pixels searched
+**PARAM** int 1  **DEF** 200000
+maxPixel           0.0   5000000   Maximum pixels searched
 
                                        Selfcal info
 **PARAM** int 1
@@ -238,7 +253,7 @@ WtUV              0.0              Weight outside full wt uvrange
 avgPol                             Avg. poln?
 **PARAM** boo 1 **DEF** F
 avgIF                              Avg. IFs?
-**PARAM** boo 1 **DEF** F
+**PARAM** boo 1 **DEF** T
 noNeg                              exclude negative summed CLEAN comps?
 **PARAM** boo 1  **DEF** F
 doMGM                              Apply mean gain modulus
@@ -270,17 +285,36 @@ PeelMinFlux                        Minimum Peel Clean component (Jy)
 PeelAvgPol                         Avg. poln in peel self cal?
 **PARAM** boo 1 **DEF** F
 PeelAvgIF                          Avg. IFs in peel self cal?
+                                       Multiresolution info
+**PARAM** int 1 
+nTaper            0                Number of additional tapers
+**PARAM** float 10
+Tapers            0                List of tapers (pixels)
+**PARAM** float 10
+MResKnob          0                Multiresolution controls 
+
+**PARAM** boo 1 **DEF** F
+doRestart                          Restarting CLEAN
+**PARAM** int 1 
+nTotal            0               Number of Facets in restart
+**PARAM** float 1
+reFlux           0                Min. restart CC flux density (Jy)
+
 **PARAM** int 1 
 prtLv             0                Print level in selfcal
-**PARAM** str 48 **DEF** ObitView
+**PARAM** str 128 **DEF** ObitView
 dispURL                            Display server URL
 **PARAM** int 1 **DEF** 1
 nThreads            0              Number of threads to use
+**PARAM** boo 1 **DEF** F
+doGPU            0                 Use GPU if available
 **PARAM** str 128
 taskLog                            Logfile to write task messages to
 **PARAM** int 10
 noScrat                            AIPS disk numbers for which
                                    scratch files are disallowed
+**PARAM** int 1
+nImaged  $                         Number of pointings imaged
 ----------------------------------------------------------------
 MFImage  Wideband imaging
 Type:  Task
@@ -306,6 +340,11 @@ In this case, the error messages will be displayed and the Status in
 the PS table set to "Failed  " rather than "Done    ".
    If BLFact > 1.0 then the input data will be subjected to a 
 baseline dependent time averaging.
+
+  The technique used in this program depends on at least approximately
+constant resolution with frequency.  There are a couple means of
+achieving this.  See the explain section "Frequency Dependent
+Resolution" for details
 
    Special parameters for this task: maxFBW, doFit and norder.
 
@@ -358,7 +397,7 @@ Adverbs:
   subA.......Sub-array number to use. 0=>all.
   doCalib....If >= 1, apply SN or CL table, 2=> calibrate weights also
   gainUse....CL/SN table version number to apply. 0=> highest.
-  doBand.....If true (>0) then correct the data for the shape of the
+  doBand.....If >0 then correct the data for the shape of the
              antenna bandpasses using the BP table specified by BPVer.
              The correction has five modes:
              (a) if doBand=1 all entries for an antenna in the table
@@ -379,7 +418,10 @@ Adverbs:
                 0 => highest numbered table.
                <0 => no bandpass correction to be applied.
   flagVer....AIPS FG table to use for editing. 0 => highest.
-  doPol......True => apply polarization calibration
+  doPol......If True => apply polarization calibration
+  PDVer......AIPS PD table to use for per channel instrumental
+             polarization corrections if doPol=True. 0=> highest
+             -1 => use IF corrections from AIPS AN table.
   norder.....Maximum spectral order to include, 
                 1 = spectral index
                 2 = spectral index + curvature
@@ -415,6 +457,9 @@ Adverbs:
   BLchAvg....If doing baseline dependent averaging then also average 
              selected channels by no more than will give bandwidth 
              smearing of BLFact.
+  doLast.....If True do last CLEAN deconvolution after finishing self-cal.
+  doComRes...If True attempt to force common resolution in frequency by
+             convolving the residuals down to the the target CLEAN resolution.
   doFull.....If True make full field (flattened) image
 
       Output files
@@ -423,42 +468,37 @@ Adverbs:
   outFile....Ending of output FITS image file name
              filename = source_name+Stokes+outFile
   outName....Ending of output AIPS Image Name, 
-             Name = source_name+Stokes+outName
-  outClass...Output image class.  Default = 'ICLEAN'
+             Name = source_name+outName
+  outClass...Output image class.  Default = 'I'
              Only the last 5 characters given are used and the
              first is replaced with the Stokes.
-             Output image name = pointing name (SOURCES)
+             Output image name = pointing name (Sources)
              The output CLEAN image will be used during
              execution as the residual image.
-  outSeq.....Output image sequence number.
-  outDisk....The disk drive # of output images.  0 => highest
-             with space (note: map and Beam go on same disk.
+  outSeq.....Output image sequence number. def new.
+  outDisk....The disk drive # of output images. no default
+             note: maps and beams go on same disk.
   saveBeam...If True then save all dirty beam spectral cubes.
-  outSeq.....Output sequence number.
+  outSeq.....Output sequence number. def new.
   CCVer......CC table version number for continuum data only.  
-             For line data the channel number is used for the 
-             version number.
   out2File...Ending of output FITS UV data file name
              filename = source_name+Stokes+out2File
-             Defaults to 'UV'
              This file will contain the last selected data 
              with any calibration tables.
   out2Name...Ending of output AIPS UV data Name, 
-             Name = source_name+Stokes+out2Name
-             Defaults to 'UV'
-             This file will contain the last selected data 
+             Name = source_name+out2Name
+             This file will contain the selected data 
              with any calibration tables.
-  out2Class..Output uv data class.  Default = 'IMAGER'
-  out2Seq....Output AIPS uv data sequence number.
-  out2Disk...The disk drive # of output uv date.  0 => highest
-             with space. default  = outDisk
+  out2Class..Output uv data class.  Default = 'MFImag'
+  out2Seq....Output AIPS uv data sequence number. def new.
+  out2Disk...The disk drive # of output uv date. no default
 
    The following control imaging:
   maxFBW.....Maximum allowed IF center fractional bandwidth.
              This parameter is used to divide the visibility 
              spectrum into image channels.  
-             Each IF will have an integral number of channels.
-  FOV........Radius of the desired field of view.
+             A value <0 =>use the IFs as the channelization.
+  FOV........Radius of the desired field of view (deg).
   NField.....Optional parameter to specify fields and overrides
              the FOV parameter.  Up to 64 may be specified as 
              parameters; you should have a good reason for doing
@@ -478,6 +518,7 @@ Adverbs:
              Default  NVSSVZ.FIT
              This must be in the form of an "AIPS VZ" table.
              'None' =. Use no outliers
+  CatDisk......FITS disk number for Catalog, 0=>cwd, 1=>$FITS
   OutlierDist..max. distance from pointing to include (deg)
                default = 10
   OutlierFlux..min. estimated flux density (Jy)
@@ -489,6 +530,11 @@ Adverbs:
                 the FOV or the program may die.
   UVTaper....(U,V) Gaussian taper (kilo-lambda) at 30% level
              as (major, minor axis, position angle)
+  MFTaper....Multi frequency taper factor to control the frequency 
+             dependent taper to get constant resolution with frequency.
+             Values between 0.5 and 1.0 are plausible but depend on 
+             the actual uv coverage.
+             If <0 then do not apply frequency dependent taper.
   UVRange....(Minimum,Maximum) baseline (kilo-lambda) to
              process. 
   Robust.....Briggs' "robustness" parameter.  "Uniform" weights are
@@ -520,12 +566,21 @@ Adverbs:
              False generally leads to a faster executation.
 
    The following control CLEANing:
+  CLEANFile..If non blank, the path of a text file containing positions
+             and radii of CLEAN windows to be added to the Fly's Eye 
+             (i.e NOT outlyers or specified facets).  
+	     One position per line:
+               hh mm ss.s dd mm ss.s radius
+               where radius is radius of round box in pixels,
+               negative radius -> unbox, max radius = 50
   CLEANBox...A 4x50 array with the specification of a search
              area.
              Box(1,i)=-1 indicates a circle of radius Box(2,i)
              pixels centered on (Box(3,i), Box(4,i))
              Box(1,i) >= 0 indicates a rectangular box.
              0 => full and inner fields.
+             If a round box is specified with pixel positions<=0 then
+             the box will be centered on the center of the image.
              Note: the default boxes are set on the basis of
              the image size, tilling pattern and autoWindow
   autoWindow.If true, automatically set boxes around significant 
@@ -534,9 +589,11 @@ Adverbs:
   minFlux...Stop Clean when abs(resid. image max) < minFlux (Jy)  
             If minFlux < 0 then Clean stops at first negative Clean
             Component. 
+            See below for more options.
   minPatch..Minimum half width of the portion of the beam
             which is used in the minor CLEAN. Default 500
   Niter.....CLEAN iteration limit.  0 => no CLEANing
+            See below for more options.
   ccfLim....Limit CLEAN in each major cycle not to CLEAN below
             ccfLim times the initial residual peak.
             If using SDIGain, set to the maximum value of 0.9.
@@ -550,7 +607,9 @@ Adverbs:
             CLEAN.
             A value of 0.1 is a reasonable initial value
   Beam......CLEAN restoring beam major, minor axis size in asec and
-            the position angle.  If zeroes, fit beam using first frequency.
+            the position angle.  If zeroes, fit beam.
+  targBeam..Target CLEAN beam to be used in frquency dependent weighting.
+            The actual bean will be different, usually somewhat smaller.
   Reuse.....If >0 then each cycle of self cal after the first will
             begin with all summed components whose abs value exceeds
             Reuse*RMS(Field 1). Default 1.0e9
@@ -567,6 +626,7 @@ Adverbs:
             the initial CLEAN is stopped at minFlux=0.1*autoCen
   Cmethod...This determines the method used to compute the
             model visibility values.
+            NOTE: Only the DFT method is implemented for wideband imaging.
             'DFT' uses the direct Fourier transform, this
                method is the most accurate.
             'GRID' does a gridded-FFT interpolation model
@@ -629,6 +689,18 @@ Adverbs:
   minNo.......Min. allowed no. antennas in selfcal
   prtLv.......Print level in selfcal, 0=>none
 
+                       Restarting
+   In a limited range of circumstances CLEANing can be restarted, 
+      limitations:
+      - previous image not "flattened" -  must still have facets
+      - No changes in data selection
+      - outputs must be fully specified
+  doRestart..If True, restart CLEAN
+  nTotal.....The number of facets with which to restart, if zero
+             use the standard definition; if autoCen facets were 
+             created in the previous run, they should be included here.
+  reFlux.....Minimum flux density components to use in restart (Jy).
+             This is applied to indivial compponents, not sums on cells.
 
                        Peeling
   PeelFlux....Peeling is the procedure of doing a self calibration on 
@@ -657,6 +729,43 @@ Adverbs:
   PeelAvgPol..Average Polarizations in Peel self calibration? 
   PeelAvgIF ..Average IFs in Peel self calibration? 
 
+                      Multiresolution CLEAN
+                 A multiresolution CLEAN is enabled using nTaper>0.
+              This allows multiple circular imaging tapers to be 
+              specified in units of pixels; full resolution is 
+              generally 3-8 pixels. The full mosaic is reproduced in 
+              each resolution
+                 Each major cycle, which resolution is to be used is
+              picked on the basis of image statistics, the weightings 
+              of which are controled by MResKnob.
+              The objective function used to chose the resolution is 
+              given by:
+                fact1 * (maxTaper - Taper)/maxTaper +
+                fact2 * (resid_peak/resid_RMS) +
+                fact3 * quality
+              where
+                fact1 is from the reduced MResKnob[0]
+                fact2 = MResKnob[1]
+                fact3 = MResKnob[2]
+                maxTaper is the highest beam taper (lowest res)
+                Taper is the beam taper of the given resolution
+                resid_peak is the peak residual in the facet
+                resid_RMS is the robust RMS of the residual
+                quality is the measure used to pick amoung the facets 
+                   at a given resolution and is a function of peak and 
+                   average residual.
+              The comparison is performed on the facet at each 
+              resolution with the highest "quality".
+  nTaper......Number of resolutions expressed as the number of tapers
+              to be applied to the data
+  Tapers......List of circular Gaussian tapers in (x) pixels.
+  MResKnob....Controls on selecting resolution to be CLEAned next.
+              [0] Bias towards higher resolution, 0=>0.2
+                  As the CLEAN progresses, this factor is reduced by
+                  (1-iteration/niter)**3
+              [1] SNR factor,                     0=>0.35
+              [2] "Quality" factor,               0=>0.2
+
                           Interactive display
   dispURL.....The URL of the display server to use. "None"=>none
               "ObitView" =  "http://localhost:8765/RPC2" 
@@ -667,19 +776,26 @@ Adverbs:
               where myhost is the network name and port is the port
               number (usually 8765), Example:
               dispURL="http://canis.cv.nrao.edu:8765/RPC2"
+                 If the TV display is turned off, it can be 
+              restarted by creating a file from the command line:
+              % touch /tmp/MFImage.doTV
+              This will be deleted when the display restarts.
   nThreads....If The Obit libraries are compiled with multiple
               thread operation enabled, this parameter sets the 
               number of threads that can be used for parallel 
               operations. 
               NB: This only improves performance if there are 
               multiple processors and/or cores in the host.
+  doGPU.......If software is built for a GPU and one is available
+              True=use it, otherwise use CPU
   taskLog.....Log file to write messages to INSTEAD of the terminal
-              This is useful in long runs or batch files where
-              a bug in the ObitTalk message handling may cause
-              tasks to hang.  Path is absolute or relative to where
-              the task executes.
+              This is useful in long runs or batch files.
+              Path is absolute or relative to where the task 
+              executes.
   noScrat.....A list of AIPS disk numbers on which you do not 
               wish scratch files
+  nImaged.....output, Number of sources/pointings successfully 
+              imaged
 ----------------------------------------------------------------
 NB: The following is not all yet implemented
 MFImage Imaging task for radio interferometer
@@ -710,11 +826,12 @@ Related Programs:
       - Add latest CLEAN model back
       - Correct for frequency dependent antenna gain.
    7) Final image and deconvolve
-   8) Reject weak isolated components (CCFILT), subtract
+   8) Force residuals to the target resolution
+   9) Reject weak isolated components (CCFILT), subtract
       surviving components and restore.
-   9) "Flatten" the field images onto the output image.
-  10) Image, deconvolve and flatten Q polarization is requested
-  11) Image, deconvolve and flatten U polarization is requested
+  10) "Flatten" the field images onto the output image.
+  11) Image, deconvolve and flatten Q polarization is requested
+  12) Image, deconvolve and flatten U polarization is requested
 
 Note: until step 8) all model calculation correct for IF
 dependent primary beam corrections.
@@ -780,117 +897,119 @@ is less than (1 + SDIGain).  If the ratio becomes greater than this
 limit at a later step, the BGC Clean will be used until the ratio 
 again falls below the limit.  
 
-NYI:
+Multi resolution CLEAN:
 The MR Clean attempts to avoid the corrugation and S/N issues by using
-more than one component diameter in the modeling.  In the early 1970's
-I (EWG) experimented with using a Gaussian as a component model.  This
-worked well so long as the image contained no sources smaller than the
-Gaussian.  Unfortunately, the sky always contains point sources and
-the method found these and "painted bulls eyes around them".  (The
-bulls eyes are effectively a sin(x)/x function trying to represent a
-small thing as a sum of large things.)  The Wakker and Schmidt MR
-Clean used a smoothed image and beam and a difference image and
-difference beam, doing a fairly normal point-model Clean on each but
-appropriately subtracting the components found in one image from the
-other at every iteration.  In IMAGR, the MR Clean is truly
-multi-resolution, seeking components of intrinsically different
-diameters.  For component i of diameter Di, a dirty image is formed
-by convolving a full-resolution dirty image with a Gaussian Gi of
-diameter Di.  This is actually implemented just by making a normal
-image with an added taper.  This dirty image has a point-spread
-function (dirty point beam) which is the full resolution dirty beam
-convolved with Gi.  However, the response in the dirty image i to a
-Gaussian component Gi is this dirty point spread function convolved a
-second time by Gi.  Thus
-       DirtyImage_i = DirtyImage_0 * Gi
-       BeamImage_i  = BeamImage_0  * Gi * Gi
-where Gi is a Gaussian of diameter Di, subscript 0 refers to the full
-resolution image, and * is a convolution.
+more than one component diameter in the modeling.  
 
-IMAGR uses its large number of fields to implement the MR Clean.  If
-you ask for NFIELD fields and NGAUSS Gaussian components, IMAGR will
-make and Clean NFIELD*NGAUSS fields, the first NFIELD with width
-WGAUSS(1), the next NFIELD with width WGAUSS(2), etc.  The ordinary
-parameters such as FLDSIZE, RASHIFT, DECSHIFT are entered only for
-fields 1-NFIELD and are then replicated for the corresponding fields
-at the other resolutions.  The Clean boxes may be entered for fields
-1-NFIELD and replicated.  If BOXFILE is used to enter Clean boxes for
-a filed number > NFIELD then the boxes from the corresponding field <=
-NFIELD are not replicated to that field.  If you specify BMAJ and
-BMIN, IMAGR computes the correct values to use for the various
-component diameters.  If you give BMAJ=0, IMAGR fits the beam
-parameters after one convolution with Gi before recomputing the beam
-with two convolutions.  The MR Clean might attempt to work in other
-modes, but OVERLAP=2 and DO3DIMAG=TRUE are strongly recommended.  If
-you set DOWAIT=TRUE before starting IMAGR, you will have the desirable
-option of forcing the Clean to use a field of your choosing rather
-than the one with the peak flux.
+Polarization dependent CLEAN
+----------------------------
+   Optional CLEANing parameters, NiterQU, minFluxQU may be given
+to control the CLEANing of Stokes Q, U or V.
+e.g. to add NiterQU=50; minFluxQU=0.001 to task object mf
+addParam(mf,"NiterQU", paramVal=NiterQU, shortHelp="Niter for Q,U", \
+	longHelp="  NiterQU.....Niter for Q,U\n")
+addParam(mf,"minFluxQU", paramVal=minFluxQU, \
+        shortHelp="minFlux for Q,U", \
+	longHelp="  minFluxQU...minFlux for Q,U\n")
 
-The MR Clean is an experimental algorithm and has been provided with a
-number of "knobs" to adjust its behavior.  All the knobs use the ratio
-of the current beam area (BMAJ(field)*BMIN(field)) to the minimum beam
-area (R).  These knobs are:
+e.g. to add NiterV=50; minFluxV=0.00001 to task object mf
+addParam(mf,"NiterV", paramVal=NiterV, shortHelp="Niter for V", \
+	longHelp="  NiterQU.....Niter for V\n")
+addParam(mf,"minFluxV", paramVal=minFluxV, \
+        shortHelp="minFlux for V", \
+	longHelp="  minFluxV...minFlux for V\n")
 
-    1. Show some preference to select higher resolution images (lower
-       R) for the next image to Clean.  Otherwise a strong point with
-       some extended emission will be over Cleaned at low resolution,
-       forcing higher resolutions to correct many pixels:
-          IMAGRPRM(11) select which field to Clean using peak fluxes
-          (in Jy/beam) weighted by 1 / R**IMAGRPRM(11).
+Minimum CLEAN Flux density
+--------------------------
+   Input parameter minFlux sets the minimum depth of the initial
+Stokes I CLEAN; or Stokes Q,U,V lacking minFluxQU, minFluxV.
+Thereafter, the default Stokes minimum CLEAN depth is the RMS of 
+the previous CLEANed central facet.  This can be overridden using
+optional parameter minFList.  This gives a list of minimum CLEAN
+flux densities as a function of self calibration after the first.
+The last entry is used for any subsequent IPol CLEANs.
+minFList = [0.0001,0.00001]  # 0.0001 Jy after 1st, 0.00001 after 2nd
+addParam(mf,"minFList", paramVal=minFList, \
+        shortHelp="minFlux list after SC", \
+	longHelp="  minFList....minFluxes to use in IPol after selfcals\n")
 
-    2. Reduce this preference to zero as one Cleans more and more of
-       the R > 1 fields:
-          IMAGRPRM(12) decrement the initial value of IMAGRPRM(11)
-          used above by IMAGRPRM(12) each time an R > 1 resolution
-          field is Cleaned until it is 0.
 
-    3. The lower resolution fields may easily over Clean creating zero
-       net flux from a mix of negative and positive areas.  These then
-       have to be corrected with numerous high resolution Clean
-       steps.  To use a lower loop gain for lower resolution:
-          IMAGRPRM(13) use gain = GAIN / R ** IMAGRPRM(13)
+Frequency Dependent Resolution
+------------------------------
+   The natural resolution of an interferometer is inversely
+proportional to the frequency but for the algorithm used in this
+program to work properly, the resolution must be at least
+approximately constant.
+   There are two means provided to attempt this, the patameter,
+MFTaper which is used to adjust an algorithm attemption to give
+constant resolution.  The default value, 0.8, is approximately correct
+for VLA uv coverage but depends in detail on the actual coverage.  The
+achieved beams can be determined using saveBeam=True and then Image
+class function GaussFit.
 
-    4. To avoid over Cleaning with lower resolution, one may also
-       Clean each major cycle less deeply with the FACTOR parameter.
-       To control FACTOR:
-          IMAGRPRM(14,15) use
-             factor = FACTOR + IMAGRPRM(14) * (1 - R ** IMAGRPRM(15))
+   If no value of MFTaper is adequate, it is possible to specify the
+Robustness factor and a convolving Taper for each IF selected in the
+data.   The parameters RobustIF and TaperIF need to be defined and
+added to the task interface object (mf in the following examples):
+RobustIF=[0.0,0.1,0.2,0.3]  # One element per IF
+addParam(mf,"RobustIF", paramVal=RobustIF, shortHelp="Robust per IF", \
+	longHelp="  RobustIF....Robust per IF\n"+ \
+	"              Give only for selected IFs\n")
+ # One element per IF:
+TaperIF=[[1000.,20.,0.], [1000.,20.,0.], [1000.,21.,0.] ...]
+addParam(mf,"TaperIF", paramVal=TaperIF, shortHelp="Taper per IF", \
+	longHelp="  TaperIF....Taper per IF\n"+ \
+	"              Give only for selected IFs\n")
 
-Multi-resolution experimental control limits:
-    0 <= IMAGRPRM(11) <= 1.0      Try 0.5 (or larger)
-    0 <= IMAGRPRM(12) <= 0.1      Try 0.03 (or .003)
-    0 <= IMAGRPRM(13) <= 1.0      Try 0.5
-    0 <= IMAGRPRM(14) <= 1.0      Try 0.1
-    0 <= IMAGRPRM(15) <= 1.0      Try 0.5
-Note that IMAGRPRM(11-15) = 0 causes each Clean to be done on the
-field with the highest Jy/point-source-beam with the same GAIN and
-FACTOR.  This will likely lead to undesirable results.
+RobustIF and TaperIF have the same meaning as Robust and UVTaper.
 
-The author (Eric Greisen) of this option conceived this current
-algorithm while listening, at the AIPS++ Imaging Workshop in July
-1999, to Mark Holdaway describe his work done with Tim Cornwell.
-Their "multi-scale" Cleans, according to Mark's vu-graphs, use images
-at various smoothings to determine which scale currently has the most
-flux.  The "cross-beams" used for subtraction indicate that extended
-components are used in the modeling, so long as the (i,i) cross beam
-is used for image i on itself (a point on which I was confused).
-Their algorithms, as described, are done all in the image plane which
-avoids some of the over-Cleaning problems, while IMAGR's is done by
-the Cotton-Schwab scheme of subtracting the model visibilities in the
-visibility plane and re-imaging.
+   When the CLEAN is finished and before restoration of CLEAN
+components, the beam psf in each plane of each facet is fitted by an
+elliptical Gaussian and the residual image convolved with a Gaussian
+which when convolved with the fitted psf will give the restoring beam.
+(Note, any dimensions for which the fitted beam is larger that the
+restoring beam are replaces by zero size).  The intent of this is that
+the residuals have the same resolution as the CLEANed portion of the
+image. 
 
-Limitations using Multiresolution CLEAN
----------------------------------------
-Most of the AIPS model processing functions can only deal with a 
-single size model component at a time.  Since the multiresolution
-CLEAN results in model components at a variety of sizes these 
-features do not work and have (mostly?) been disabled in MFImage when 
-the multiresolution option (NGAUSS>1) has been selected.  
-The disables features include:
-1) Self calibration
-2) Second stage RFI filtering (RFIFILT(3+4)).
-If these options are needed try using an SDI CLEAN first and then 
-feed the resultant uvdata back into MFImage.
+Inverse taper
+------------
+To downweight short baselines it is possible to use an "inverse 
+taper", UVITaper.  This is less harsh alternative to UVRange.
+  UVITaper...(U,V) Inverse Gaussian taper (kilo-lambda) at 70% level
+             as (min wt., major, minor axis, position angle)
+This multiplies the data weight by 
+max(UVITaper[0], 1-exp(UVITaper[1:3] dot baseline))
+# To implement in ObitTalk:
+UVITaper = [0.1, 0.2, 0.2, 0.] 
+addParam(mf,"UVITaper", paramVal=UVITaper, shortHelp="Inverse Taper", \
+	longHelp="  UVITaper....Inverse Taper\n"+ \
+	"              Taper inner portion of uv space\n"+ \
+	"              multiplies weight by "+ \
+	"              max(taper[0],1-exp(taper(13) dot BL))\n")
+
+Maximum Run time
+----------------
+An approximate upper limit (in sec) to the run (wall clock) time can be set,
+maxRealtime = 1000.
+addParam(mf,"maxRealtime", paramVal=maxRealtime, shortHelp="Max. run time (sec)", \
+	longHelp="  maxRealtime....Max. run time (sec)\n"+ \
+	"              Time after which task will begin to shut down, CLEAN\n"+
+	"              and Self cal will be declared done after this time.\n")
+
+Maximum middle CLEAN Loop 
+-------------------------
+When autoWindowing is being used, there is a middle CLEAN loop in which an image 
+plane model subtraction is done allowing more cycles in which a new CLEAN box 
+can be added to each facet.  This is intended as an efficiency measure but if there
+there is a large number of components subtracted this way (>50,000 per cycle) it 
+may become very slow and a value of maxAWLoop = 1 (no middle loop) may be needed. 
+Values larger than 5 are not recommended.
+maxAWLoop = 1
+addParam(mf,"maxAWLoop", paramVal=maxAWLoop, shortHelp="Max. middle CLEAN loop", \
+	longHelp="  maxAWLoop....Max. middle CLEAN Loop count\n"+ \
+	"              Override the default behavior for the autoWin middle loop\n"+
+	"              if > 0.\n")
 
 PS Table
 --------

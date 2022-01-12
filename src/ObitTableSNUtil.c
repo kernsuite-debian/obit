@@ -1,6 +1,6 @@
-/* $Id: ObitTableSNUtil.c 156 2010-02-08 13:28:34Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
-/*;  Copyright (C) 2005,2009                                          */
+/*;  Copyright (C) 2005-2015                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
 /*;                                                                   */
 /*;  This program is free software; you can redistribute it and/or    */
@@ -27,6 +27,7 @@
 /*--------------------------------------------------------------------*/
 
 #include <math.h>
+#include "ObitUVDesc.h"
 #include "ObitTableSNUtil.h"
 #include "ObitTableANUtil.h"
 #include "ObitTableSUUtil.h"
@@ -440,12 +441,12 @@ ObitTableSN* ObitTableSNGetZeroFR (ObitUV *inUV, ObitUV *outUV, olong ver,
   ObitIOAccess access;
   gint32 dim[MAXINFOELEMDIM] = {1,1,1,1,1};
   ObitInfoType type;
-  ofloat *rec, solInt, t0, sumTime, cbase, lastTime=-1.0, lastSource=-1.0, lastFQID=-1.0;
+  ofloat *rec, solInt, t0, sumTime, lastTime=-1.0, lastSource=-1.0, lastFQID=-1.0;
   ofloat delTime, curSou=-1.0, curFQ=-1.0;
   olong i, ia, lrec, maxant, numSubA, iANver;
   olong  nTime, SubA=0, ant1, ant2, lastSubA=-1;
   oint numPol, numIF, numOrb, numPCal;
-  odouble DecR=0.0, RAR=0.0, ArrLong, cosdec=0.0;
+  odouble DecR=0.0, RAR=0.0, ArrLong=0.0, cosdec=0.0;
   gboolean doCalSelect, doFirst=TRUE, someData=FALSE, gotAnt[MAXANT], invert=FALSE;
   ObitIOCode retCode;
   gchar *tname, *ANType = "AIPS AN";;
@@ -526,9 +527,10 @@ ObitTableSN* ObitTableSNGetZeroFR (ObitUV *inUV, ObitUV *outUV, olong ver,
     access   = OBIT_IO_ReadOnly;
     numOrb   = 0;
     numPCal  = 0;
+    numIF    = 0;
 
     ANTable = newObitTableANValue ("AN table", (ObitData*)outUV, 
-				   &iANver, access, numOrb, numPCal, err);
+				   &iANver, access, numIF, numOrb, numPCal, err);
     if (ANTable==NULL) Obit_log_error(err, OBIT_Error, "ERROR with AN table");
     AntList[iANver-1] = ObitTableANGetList (ANTable, err);
     if (err->error) Obit_traceback_val (err, routine, outUV->name, outCal);
@@ -624,10 +626,7 @@ ObitTableSN* ObitTableSNGetZeroFR (ObitUV *inUV, ObitUV *outUV, olong ver,
       if (inUV->myDesc->ilocsu>0) lastSource = rec[inUV->myDesc->ilocsu];
       if (inUV->myDesc->ilocfq>0) lastFQID   = rec[inUV->myDesc->ilocfq];
       lastTime   = rec[inUV->myDesc->iloct];
-      cbase      = rec[inUV->myDesc->ilocb]; /* Baseline */
-      ant1       = (cbase / 256.0) + 0.001;
-      ant2       = (cbase - ant1 * 256) + 0.001;
-      lastSubA   = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
+      ObitUVDescGetAnts(inUV->myDesc, rec, &ant1, &ant2, &lastSubA);
     }
     
     /* Loop over buffer */
@@ -705,10 +704,7 @@ ObitTableSN* ObitTableSNGetZeroFR (ObitUV *inUV, ObitUV *outUV, olong ver,
       
       /* accumulate statistics
 	 Antennas etc. */
-      cbase = rec[inUV->myDesc->ilocb]; /* Baseline */
-      ant1 = (cbase / 256.0) + 0.001;
-      ant2 = (cbase - ant1 * 256) + 0.001;
-      SubA = (olong)(100.0 * (cbase -  ant1 * 256 - ant2) + 1.5);
+      ObitUVDescGetAnts(inUV->myDesc, rec, &ant1, &ant2, &SubA);
       if(lastSubA<=0) lastSubA = SubA;
       gotAnt[ant1] = TRUE;
       gotAnt[ant2] = TRUE;

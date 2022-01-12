@@ -1,4 +1,4 @@
-/* $Id: ObitUVImagerClassDef.h 158 2010-02-24 16:27:22Z bill.cotton $  */
+/* $Id$  */
 /*--------------------------------------------------------------------*/
 /*;  Copyright (C) 2005-2010                                          */
 /*;  Associated Universities, Inc. Washington DC, USA.                */
