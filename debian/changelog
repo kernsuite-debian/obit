@@ -1,3 +1,12 @@
+obit (27JUL20a-1kern1) focal; urgency=medium
+
+  [ Athanaseus Javas Ramaila ]
+  * New upstream version 27JUL20a
+  * Build for focal
+  * Python3 support
+
+ -- KERN packaging <packaging@kernsuite.info>  Wed, 12 Jan 2022 16:10:20 +0000
+
 obit (22JUN10l-1kern2) bionic; urgency=medium
 
   * build for bionic

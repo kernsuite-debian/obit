@@ -3,12 +3,29 @@ Section: science
 Priority: extra
 Maintainer: Mark Kettenis <kettenis@jive.nl>
 Build-Depends:
- debhelper (>=9),
+ debhelper (>=11),
  libglib2.0-dev,
  libcfitsio-dev | libcfitsio3-dev, 
+ libgsl-dev,
  libgsl0-dev,
- python-dev
-Standards-Version: 3.9.7
+ libpgplot0,
+ pgplot5,
+ pkg-config,
+ automake,
+ libtool,
+ autoconf,
+ libssl-dev,
+ autoconf-archive,
+ automake,
+ m4,
+ gcc,
+ make,
+ gettext,
+ dh-autoreconf,
+ libgsl0-dev,
+ python3-dev,
+ python-is-python3
+Standards-Version: 4.5.1
 Homepage: http://www.c6.nrao.edu/~bcotton/Obit.html
 Vcs-Git: https://github.com/kernsuite-debian/obit
 Vcs-Browser: https://github.com/kernsuite-debian/obit
@@ -19,3 +36,10 @@ Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: Obit for ParselTongue
  Obit for ParselTongue is a stripped-down version of Obit that
  provides the functionality needed by ParselTongue.
+
+Package: python3-obit
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${python3:Depends}, obit
+Description: Obit for ParselTongue
+ Python3 Obit for ParselTongue is a stripped-down version of
+ Obit that provides the functionality needed by ParselTongue.
