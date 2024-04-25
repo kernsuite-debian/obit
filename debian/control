@@ -2,8 +2,9 @@ Source: obit
 Section: science
 Priority: extra
 Maintainer: Mark Kettenis <kettenis@jive.nl>
+Uploaders: KERN packaging <packaging@kernsuite.info>
 Build-Depends:
- debhelper (>=11),
+ debhelper-compat (= 13),
  libglib2.0-dev,
  libcfitsio-dev | libcfitsio3-dev, 
  libgsl-dev,
@@ -25,7 +26,7 @@ Build-Depends:
  libgsl0-dev,
  python3-dev,
  python-is-python3
-Standards-Version: 4.5.1
+Standards-Version: 4.6.2.0
 Homepage: http://www.c6.nrao.edu/~bcotton/Obit.html
 Vcs-Git: https://github.com/kernsuite-debian/obit
 Vcs-Browser: https://github.com/kernsuite-debian/obit
