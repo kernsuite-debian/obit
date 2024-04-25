@@ -1,3 +1,10 @@
+obit (27JUL20a-1kern3) jammy; urgency=medium
+
+  [ Athanaseus Javas Ramaila ]
+  * Build for jammy
+
+ -- KERN packaging <packaging@kernsuite.info>  Thu, 25 Apr 2024 18:11:27 +0000
+
 obit (27JUL20a-1kern2) focal; urgency=medium
 
   [ Athanaseus Javas Ramaila ]
